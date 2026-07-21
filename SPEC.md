@@ -7,7 +7,7 @@ rationale see [`ARCHITECTURE.md`](ARCHITECTURE.md); for status see
 ## Layout
 
 ```
-ecosystem/xiom-vector/
+packages/xiom-vector/
 ├── package.xi                  Manifest (deps: xiom-std, xiom.math, xiom-core)
 ├── README.md · ARCHITECTURE.md · ROADMAP.md · COLLECTIONS.md · SPEC.md
 ├── docs/                       Deep-dive design docs
