@@ -2,7 +2,7 @@
 
 > Production-grade vector database engine for XIOM — dense vectors, distance metrics, flat + HNSW ANN search, collections, segments, and a WAL-backed durable write path, built on the shared `xiom-core` durable-systems substrate.
 
-[![XIOM](https://img.shields.io/badge/XIOM-v0.22.1-blue)](https://github.com/xiom-lang/XIOM)
+[![XIOM](https://img.shields.io/badge/XIOM-v0.22.1-blue)](https://github.com/XIOM-lang/XIOM.git )
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 
 ## Overview
@@ -98,5 +98,5 @@ Full detail in [`ROADMAP.md`](ROADMAP.md).
 - `xiom.math` — `sqrt` for magnitude/euclidean/cosine
 - `xiom-core` — shared errors, ids, config, limits, contracts, WAL, metrics
 
-## Links: [github.com/xiom-lang](https://github.com/xiom-lang) | [XIOM](https://github.com/xiom-lang/XIOM)
+## Links: [github.com/xiom-lang](https://github.com/xiom-lang) | [XIOM](https://github.com/XIOM-lang/XIOM.git )
 ## License: MIT OR Apache-2.0
