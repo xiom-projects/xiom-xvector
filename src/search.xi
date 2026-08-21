@@ -1,6 +1,6 @@
 module xiom.vector.search
 
-// DEPRECATED / SUPERSEDED — safe to delete.
+// DEPRECATED / SUPERSEDED -- safe to delete.
 //
 // `SearchResult`, `search_knn`, and `search_range` were migrated to
 // src/query/search_service.xi (module xiom.vector.query.search_service).

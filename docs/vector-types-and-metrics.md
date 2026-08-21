@@ -19,9 +19,9 @@ Vector { data: Vec[Float32]; dimension: UInt }
 
 | Function | Result |
 |----------|--------|
-| `vector_dot(a, b)` | `Σ aᵢbᵢ` (raw similarity) |
-| `vector_magnitude(v)` | `√Σ vᵢ²` (uses `xiom.math.sqrt`) |
-| `vector_normalize(v)` | unit vector (`requires: magnitude > 0`; zero → zero) |
+| `vector_dot(a, b)` | `Sigma aibi` (raw similarity) |
+| `vector_magnitude(v)` | `sqrtSigma vi2` (uses `xiom.math.sqrt`) |
+| `vector_normalize(v)` | unit vector (`requires: magnitude > 0`; zero -> zero) |
 | `vector_add / sub / scale` | element-wise arithmetic, new `Vector` |
 | `vector_dimension(v)` | `v.dimension` |
 
@@ -33,9 +33,9 @@ enum DistanceMetric { Cosine, DotProduct, Euclidean }
 
 | Metric | Formula | Range | Zero-vector behaviour |
 |--------|---------|-------|-----------------------|
-| Euclidean | `√Σ(aᵢ−bᵢ)²` | `[0, ∞)` | well-defined |
-| DotProduct | `−Σ aᵢbᵢ` | `(−∞, ∞)` | 0 |
-| Cosine | `1 − (a·b)/(‖a‖‖b‖)` | `[0, 2]` | returns `1.0` when either magnitude is 0 |
+| Euclidean | `sqrtSigma(ai-bi)2` | `[0, inf)` | well-defined |
+| DotProduct | `-Sigma aibi` | `(-inf, inf)` | 0 |
+| Cosine | `1 - (a-b)/(||a||||b||)` | `[0, 2]` | returns `1.0` when either magnitude is 0 |
 
 Key convention: **all metrics are distances where smaller means closer.**
 DotProduct is negated for exactly this reason, so the same ascending top-K
@@ -56,7 +56,7 @@ vector_distance(a, b, metric)
 ```
 
 `vector_distance` is the single dispatch point. Every search path calls it, so
-adding a metric is a one-variant, one-arm change — and the `match` is
+adding a metric is a one-variant, one-arm change -- and the `match` is
 exhaustive, so the compiler flags any path that forgets the new metric.
 
 ## The distance kernel layer (`distance/`)

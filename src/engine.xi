@@ -3,7 +3,7 @@ module xiom.vector.engine
 use xiom.math;
 
 // ============================================================================
-// XIOM-Vector: Consolidated Engine — Vector + Distances + Index + WAL + API
+// XIOM-Vector: Consolidated Engine -- Vector + Distances + Index + WAL + API
 // ============================================================================
 
 // ---- Inline CoreError (from xiom.core.error) ----

@@ -1013,7 +1013,7 @@ fn vector_error_code(e: &VectorError) -> Int {
 }
 
 // ============================================================================
-// SECTION 1: Types — VectorId, CollectionId, SegmentId construction
+// SECTION 1: Types -- VectorId, CollectionId, SegmentId construction
 // ============================================================================
 
 fn run_types_vector_id_construct() -> Int {
@@ -1091,7 +1091,7 @@ fn test_types_dimension_is_valid() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 2: Distance metrics — L2, cosine, dot product correctness
+// SECTION 2: Distance metrics -- L2, cosine, dot product correctness
 // ============================================================================
 
 fn run_distance_euclidean_same() -> Int {
@@ -1299,7 +1299,7 @@ fn test_distance_dot_raw() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 3: Vector store — insert, search, delete operations
+// SECTION 3: Vector store -- insert, search, delete operations
 // ============================================================================
 
 fn run_store_index_new() -> Int {
@@ -1419,7 +1419,7 @@ fn test_store_index_add_multiple() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 4: HNSW index — construction stubs
+// SECTION 4: HNSW index -- construction stubs
 //   (HNSW has pre-existing T001 errors per AUDIT.md; test parameter types)
 // ============================================================================
 
@@ -1484,7 +1484,7 @@ fn test_hnsw_params_default_values() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 5: Flat index — brute-force search correctness
+// SECTION 5: Flat index -- brute-force search correctness
 // ============================================================================
 
 fn run_flat_search_exact_top1() -> Int {
@@ -1564,7 +1564,7 @@ fn test_flat_search_all_metrics() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 6: Segment management — manifest, state transitions
+// SECTION 6: Segment management -- manifest, state transitions
 // ============================================================================
 
 fn run_segment_new() -> Int {
@@ -1761,7 +1761,7 @@ fn test_state_code_all() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 7: Collection — schema validation, CRUD
+// SECTION 7: Collection -- schema validation, CRUD
 // ============================================================================
 
 fn run_collection_schema_new() -> Int {
@@ -1867,7 +1867,7 @@ fn test_validate_metric_all() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 8: Payload — filter AST, evaluation
+// SECTION 8: Payload -- filter AST, evaluation
 // ============================================================================
 
 fn run_payload_new() -> Int {
@@ -2051,7 +2051,7 @@ fn test_filter_empty_not() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 9: Search — top-K heap, search orchestration
+// SECTION 9: Search -- top-K heap, search orchestration
 // ============================================================================
 
 fn run_topk_new() -> Int {
@@ -2274,7 +2274,7 @@ fn test_engine_full_lifecycle() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 10: ANN index — type dispatch (AnnIndexKind)
+// SECTION 10: ANN index -- type dispatch (AnnIndexKind)
 // ============================================================================
 
 fn run_ann_kind_names() -> Int {
@@ -2429,7 +2429,7 @@ fn test_error_codes_unique() -> TestResult {
 }
 
 // ============================================================================
-// SECTION 12: Durability/engine stubs — WAL, Counter, IdMap
+// SECTION 12: Durability/engine stubs -- WAL, Counter, IdMap
 // ============================================================================
 
 fn run_wal_new() -> Int {
@@ -2751,7 +2751,7 @@ fn test_search_request_fields() -> TestResult {
 }
 
 // ============================================================================
-// Main — manual dispatch
+// Main -- manual dispatch
 // ============================================================================
 
 fn run_one_test(fn_ptr: &fn() -> TestResult) -> Int {

@@ -1,4 +1,4 @@
-# AUDIT.md — xiom-vector
+# AUDIT.md -- xiom-vector
 
 ## Compilation Status: 34/34 files OK
 
@@ -44,7 +44,7 @@ Same issue as xiom-db: functions from xiom.core do not resolve via `use`.
 - Changed all HNSW node IDs from `UInt64` to `Int` for consistency
 
 ### HNSW index (src/index/hnsw.xi)
-The HNSW implementation has 15 T001 type errors from struct field access patterns that the borrow checker cannot resolve correctly. These errors persist regardless of whether the original or updated code is used — they stem from the compiler's handling of `&layer.nodes[i]` field access on generic Vec types inside nested loops.
+The HNSW implementation has 15 T001 type errors from struct field access patterns that the borrow checker cannot resolve correctly. These errors persist regardless of whether the original or updated code is used -- they stem from the compiler's handling of `&layer.nodes[i]` field access on generic Vec types inside nested loops.
 
 **Workaround**: The engine defaults to flat brute-force search (`search_knn`) which is fully implemented in the consolidated engine.xi. The HNSW file is preserved as a stub with a note pointing to this AUDIT.
 

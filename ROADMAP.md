@@ -1,24 +1,24 @@
-# xiom-vector — Roadmap
+# xiom-vector -- Roadmap
 
 A phased plan from the working in-memory engine to a durable, filterable,
 distributed vector database. Each phase lists its Goal, Deliverables, Exit
-criteria, and why it matters — with an honest status on every deliverable.
+criteria, and why it matters -- with an honest status on every deliverable.
 
-Legend: ✅ **Done** · 🟡 **In progress** · 🟠 **Scaffold** (types + stub bodies) · ⛔ **Not started**
+Legend: [OK] **Done** - [YELLOW] **In progress** - [ORANGE] **Scaffold** (types + stub bodies) - [STOP] **Not started**
 
 ---
 
-## Phase 0 — Exact engine (in-memory) ✅ Done
+## Phase 0 -- Exact engine (in-memory) [OK] Done
 
 **Goal:** The correctness foundation everything else is measured against.
 
 **Deliverables:**
-- ✅ Dense `Vector` type + math (dot, magnitude, normalize, add, sub, scale).
-- ✅ Three distance metrics (cosine, dot-product, euclidean) + `vector_distance` dispatch.
-- ✅ Flat columnar `VectorIndex` store (add/remove/get/size).
-- ✅ Exact brute-force `search_knn` / `search_range` (the truth oracle).
-- ✅ Bounded top-K heap with the `len() <= k` invariant.
-- ✅ `VectorEngine` orchestrator wiring create/upsert/search/delete.
+- [OK] Dense `Vector` type + math (dot, magnitude, normalize, add, sub, scale).
+- [OK] Three distance metrics (cosine, dot-product, euclidean) + `vector_distance` dispatch.
+- [OK] Flat columnar `VectorIndex` store (add/remove/get/size).
+- [OK] Exact brute-force `search_knn` / `search_range` (the truth oracle).
+- [OK] Bounded top-K heap with the `len() <= k` invariant.
+- [OK] `VectorEngine` orchestrator wiring create/upsert/search/delete.
 
 **Exit criteria:** exact KNN/range results are correct by construction and serve
 as the oracle every later index is validated against.
@@ -26,16 +26,16 @@ as the oracle every later index is validated against.
 **Why this phase matters:** without a trusted exact baseline there is nothing to
 measure approximate recall against; this phase is the source of truth.
 
-## Phase 1 — Approximate index: HNSW (in-memory) ✅ Done
+## Phase 1 -- Approximate index: HNSW (in-memory) [OK] Done
 
 **Goal:** Sub-linear approximate nearest-neighbour search over the in-memory store.
 
 **Deliverables:**
-- ✅ Hierarchical layer graph (`HNSWGraph`, `HNSWLayer`, `HNSWNode`).
-- ✅ Randomized level assignment (LCG-based) parameterized by `ml`.
-- ✅ Greedy descent search + brute-force in-layer neighbour selection.
-- ✅ Bidirectional edge maintenance bounded by `max_neighbors`.
-- 🟡 Remaining: heuristic neighbour pruning, `ef`-parameterized beam search,
+- [OK] Hierarchical layer graph (`HNSWGraph`, `HNSWLayer`, `HNSWNode`).
+- [OK] Randomized level assignment (LCG-based) parameterized by `ml`.
+- [OK] Greedy descent search + brute-force in-layer neighbour selection.
+- [OK] Bidirectional edge maintenance bounded by `max_neighbors`.
+- [YELLOW] Remaining: heuristic neighbour pruning, `ef`-parameterized beam search,
   metric-agnostic traversal (currently euclidean internally).
 
 **Exit criteria:** HNSW returns high-recall results with `result.len() <= k`, with
@@ -45,17 +45,17 @@ the structural gaps tracked into Phase 4.
 HNSW is the general-purpose ANN the rest of the engine is built around. See
 [`docs/hnsw-design.md`](docs/hnsw-design.md).
 
-## Phase 2 — Durability & recovery 🟡 In progress
+## Phase 2 -- Durability & recovery [YELLOW] In progress
 
-**Goal:** Crash-safe writes — no acknowledged write is ever lost.
+**Goal:** Crash-safe writes -- no acknowledged write is ever lost.
 
 **Deliverables:**
-- 🟡 WAL-before-ack write path wired through `core.wal.wal_writer` (LSNs assigned).
-- 🟠 `durability.write_ahead_events` maps upsert/delete/seal onto core `WalOpKind`.
-- ⛔ Serialize dense vector bytes into `WalRecord.payload`.
-- ⛔ `fsync`/`fdatasync` on commit (blocked on core FFI, Phase 2 of xiom-core).
-- ⛔ Recovery: replay WAL to `manifest.last_lsn`, rebuild in-memory indexes.
-- 🟠 Durable `manifest` (`ManifestUpdate` records) — types exist, not persisted.
+- [YELLOW] WAL-before-ack write path wired through `core.wal.wal_writer` (LSNs assigned).
+- [ORANGE] `durability.write_ahead_events` maps upsert/delete/seal onto core `WalOpKind`.
+- [STOP] Serialize dense vector bytes into `WalRecord.payload`.
+- [STOP] `fsync`/`fdatasync` on commit (blocked on core FFI, Phase 2 of xiom-core).
+- [STOP] Recovery: replay WAL to `manifest.last_lsn`, rebuild in-memory indexes.
+- [ORANGE] Durable `manifest` (`ManifestUpdate` records) -- types exist, not persisted.
 
 **Exit criteria:** a process kill mid-write loses no acknowledged data; recovery
 replays the WAL to `manifest.last_lsn` and reconstructs identical indexes.
@@ -63,16 +63,16 @@ replays the WAL to `manifest.last_lsn` and reconstructs identical indexes.
 **Why this phase matters:** a database that can lose acknowledged writes is not a
 database; durability is the line between a cache and a store of record.
 
-## Phase 3 — Payload & metadata filtering 🟠 Scaffold
+## Phase 3 -- Payload & metadata filtering [ORANGE] Scaffold
 
 **Goal:** Filtered search (`search WHERE color = 'red' AND price IN [..]`).
 
 **Deliverables:**
-- 🟠 `Payload` container + `FieldValue` tagged union.
-- 🟠 `FilterExpr` AST (Eq/Range/Exists/In/And/Or/Not) + constructors.
-- 🟠 `filter_eval`: And/Or/Not/Exists implemented; Eq/Range/In are fail-open stubs.
-- ⛔ Typed value comparison + sorted key index for O(log n) field lookup.
-- ⛔ Pre-filter vs post-filter planner (filter before/after ANN by selectivity).
+- [ORANGE] `Payload` container + `FieldValue` tagged union.
+- [ORANGE] `FilterExpr` AST (Eq/Range/Exists/In/And/Or/Not) + constructors.
+- [ORANGE] `filter_eval`: And/Or/Not/Exists implemented; Eq/Range/In are fail-open stubs.
+- [STOP] Typed value comparison + sorted key index for O(log n) field lookup.
+- [STOP] Pre-filter vs post-filter planner (filter before/after ANN by selectivity).
 
 **Exit criteria:** filtered KNN returns only matching points, and the planner
 chooses pre- vs post-filter by selectivity without changing results.
@@ -81,15 +81,15 @@ chooses pre- vs post-filter by selectivity without changing results.
 constraints; vector search without metadata filtering is only half a query engine.
 See [`docs/metadata-filtering.md`](docs/metadata-filtering.md).
 
-## Phase 4 — HNSW hardening ⛔ Not started
+## Phase 4 -- HNSW hardening [STOP] Not started
 
 **Goal:** Turn the simplified HNSW into a production-grade, tunable index.
 
 **Deliverables:**
-- ⛔ Heuristic neighbour selection (RNG pruning) for better recall.
-- ⛔ `ef_construction` / `ef_search` beam widths honoured from `AnnParams`.
-- ⛔ Delete + tombstone handling in the graph.
-- ⛔ Recall/latency benchmarks vs the flat oracle.
+- [STOP] Heuristic neighbour selection (RNG pruning) for better recall.
+- [STOP] `ef_construction` / `ef_search` beam widths honoured from `AnnParams`.
+- [STOP] Delete + tombstone handling in the graph.
+- [STOP] Recall/latency benchmarks vs the flat oracle.
 
 **Exit criteria:** recall@k meets targets against the flat oracle across the
 tuning ranges, and `ef`/`M` parameters measurably move recall and latency.
@@ -97,17 +97,17 @@ tuning ranges, and `ef`/`M` parameters measurably move recall and latency.
 **Why this phase matters:** the Phase 1 graph is correct but simplified; this
 phase is where recall, tunability, and deletes become production-ready.
 
-## Phase 5 — Segments & compaction 🟠 Scaffold
+## Phase 5 -- Segments & compaction [ORANGE] Scaffold
 
 **Goal:** Bounded-memory, LSM-style vector storage.
 
 **Deliverables:**
-- 🟠 `SegmentStateKind` state machine (Mutable→Sealing→Sealed→Indexing→Immutable→Compacting→Dropped).
-- 🟠 `Segment` wrapping a store + state; `Manifest` of live segments.
-- ⛔ Seal-on-threshold → build an immutable HNSW for the sealed segment.
-- ⛔ Multi-segment search fan-out + merge into one top-K heap.
-- ⛔ Background compaction of small/immutable segments.
-- 🟠 `id_map` for stable ids across compaction (present, linear scan).
+- [ORANGE] `SegmentStateKind` state machine (Mutable->Sealing->Sealed->Indexing->Immutable->Compacting->Dropped).
+- [ORANGE] `Segment` wrapping a store + state; `Manifest` of live segments.
+- [STOP] Seal-on-threshold -> build an immutable HNSW for the sealed segment.
+- [STOP] Multi-segment search fan-out + merge into one top-K heap.
+- [STOP] Background compaction of small/immutable segments.
+- [ORANGE] `id_map` for stable ids across compaction (present, linear scan).
 
 **Exit criteria:** writes seal into immutable indexed segments, search fans out
 and merges correctly, and compaction reclaims space without losing data.
@@ -116,14 +116,14 @@ and merges correctly, and compaction reclaims space without losing data.
 indexed while being written; segments make memory bounded and indexing possible.
 See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 
-## Phase 6 — Public API surface ✅ Done (v1 shape)
+## Phase 6 -- Public API surface [OK] Done (v1 shape)
 
 **Goal:** A stable public interface over the engine.
 
 **Deliverables:**
-- ✅ `vector_api` facade: `create_collection`, `upsert`, `search`, `delete_point`, `get_point`.
-- ⛔ Batch upsert / batch search.
-- ⛔ `get_point` via id_map + manifest once multi-segment lands.
+- [OK] `vector_api` facade: `create_collection`, `upsert`, `search`, `delete_point`, `get_point`.
+- [STOP] Batch upsert / batch search.
+- [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;
 batch and multi-segment paths are wired as later layers land.
@@ -131,13 +131,13 @@ batch and multi-segment paths are wired as later layers land.
 **Why this phase matters:** a clean, stable surface decouples callers from
 internal churn and is the contract external clients depend on.
 
-## Phase 7 — Hybrid search ⛔ Not started
+## Phase 7 -- Hybrid search [STOP] Not started
 
 **Goal:** Combine dense vector similarity with sparse/lexical scoring.
 
 **Deliverables:**
-- ⛔ Sparse/keyword scoring alongside dense ANN.
-- ⛔ Score fusion (RRF / weighted) between dense and sparse hits.
+- [STOP] Sparse/keyword scoring alongside dense ANN.
+- [STOP] Score fusion (RRF / weighted) between dense and sparse hits.
 
 **Exit criteria:** a hybrid query returns a single fused ranking that beats
 either dense-only or lexical-only on the target workload.
@@ -146,14 +146,14 @@ either dense-only or lexical-only on the target workload.
 misses semantics; hybrid ranking is what production search actually needs. See
 [`docs/future-modules.md`](docs/future-modules.md).
 
-## Phase 8 — Distribution ⛔ Not started
+## Phase 8 -- Distribution [STOP] Not started
 
 **Goal:** Scale beyond a single node with explicit consistency and failure behavior.
 
 **Deliverables:**
-- ⛔ Sharding by `ShardId` (already in `core.ids`).
-- ⛔ Replication + read routing.
-- ⛔ Distributed manifest / consensus for segment visibility.
+- [STOP] Sharding by `ShardId` (already in `core.ids`).
+- [STOP] Replication + read routing.
+- [STOP] Distributed manifest / consensus for segment visibility.
 
 **Exit criteria:** searches fan out across shards and merge globally-ranked top-K
 correctly; replica lag and consistency mode are visible and testable; rebalance
@@ -163,14 +163,14 @@ never corrupts manifests or loses acknowledged data.
 distribution that never blurs what a result means. See
 [`docs/sharding-and-replication.md`](docs/sharding-and-replication.md).
 
-## Phase 9 — IVF / PQ (billion-scale) ⛔ Not started
+## Phase 9 -- IVF / PQ (billion-scale) [STOP] Not started
 
 **Goal:** Memory-efficient serving for very large collections.
 
 **Deliverables:**
-- ⛔ IVF (inverted file) index behind `AnnIndexKind.Ivf` (dispatch seam already exists).
-- ⛔ Product Quantization for memory-efficient vectors.
-- ⛔ Disk/mmap-backed segments.
+- [STOP] IVF (inverted file) index behind `AnnIndexKind.Ivf` (dispatch seam already exists).
+- [STOP] Product Quantization for memory-efficient vectors.
+- [STOP] Disk/mmap-backed segments.
 
 **Exit criteria:** IVF/PQ serves far more vectors per node than HNSW at an
 acceptable recall/latency tradeoff, with parameters validated against collection
@@ -180,14 +180,14 @@ size.
 IVF/PQ is the tier that makes billion-scale serving economical. See
 [`docs/ivf-roadmap.md`](docs/ivf-roadmap.md).
 
-## Phase 10 — Hardening & performance ⛔ Not started
+## Phase 10 -- Hardening & performance [STOP] Not started
 
 **Goal:** Production-grade performance, correctness verification, and observability.
 
 **Deliverables:**
-- ⛔ SIMD/FMA distance kernels in `distance/` (call-site seam already in place).
-- ⛔ Fuzz + property tests (ANN recall bounds, WAL replay determinism).
-- ⛔ Observability: histograms for latency/recall via `core.metrics`.
+- [STOP] SIMD/FMA distance kernels in `distance/` (call-site seam already in place).
+- [STOP] Fuzz + property tests (ANN recall bounds, WAL replay determinism).
+- [STOP] Observability: histograms for latency/recall via `core.metrics`.
 
 **Exit criteria:** hot-loop distance is SIMD-accelerated, invariants hold under
 fuzzing, and latency/recall are observable in production via metrics.
@@ -201,15 +201,15 @@ not assumed; this phase turns a working engine into an operable one.
 
 | Layer | Status |
 |-------|--------|
-| Vector math + metrics | ✅ Done |
-| Flat exact search + top-K | ✅ Done |
-| In-memory HNSW | ✅ Done |
-| Engine orchestration + API facade | ✅ Done |
-| WAL write path | 🟡 In progress |
-| Collections / schema / validator | 🟡 In progress |
-| Payload + filtering | 🟠 Scaffold |
-| Segments + manifest + recovery | 🟠 Scaffold |
-| IVF / PQ / disk / SIMD / distributed | ⛔ Not started |
+| Vector math + metrics | [OK] Done |
+| Flat exact search + top-K | [OK] Done |
+| In-memory HNSW | [OK] Done |
+| Engine orchestration + API facade | [OK] Done |
+| WAL write path | [YELLOW] In progress |
+| Collections / schema / validator | [YELLOW] In progress |
+| Payload + filtering | [ORANGE] Scaffold |
+| Segments + manifest + recovery | [ORANGE] Scaffold |
+| IVF / PQ / disk / SIMD / distributed | [STOP] Not started |
 
 ## Milestone summary
 
@@ -229,25 +229,25 @@ not assumed; this phase turns a working engine into an operable one.
 
 ## Implementation cadence
 
-- **Alpha** — Phases 0–2: exact engine, HNSW, durability. The engine is correct
+- **Alpha** -- Phases 0-2: exact engine, HNSW, durability. The engine is correct
   and crash-safe in memory.
-- **Beta** — Phases 3–5: filtering, HNSW hardening, segments. The engine is
+- **Beta** -- Phases 3-5: filtering, HNSW hardening, segments. The engine is
   feature-complete for single-node production shape.
-- **Production candidate** — Phases 6–8: public API, hybrid search, distribution.
+- **Production candidate** -- Phases 6-8: public API, hybrid search, distribution.
   The engine is externally usable and horizontally scalable.
-- **Scale / harden** — Phases 9–10: IVF/PQ and performance hardening. The engine
+- **Scale / harden** -- Phases 9-10: IVF/PQ and performance hardening. The engine
   serves billion-scale workloads and is fully observable.
 
 ## Success metrics
 
-- **Correctness** — approximate results validated against the exact flat oracle;
+- **Correctness** -- approximate results validated against the exact flat oracle;
   invariants (`len() <= k`, WAL replay determinism) hold under fuzzing.
-- **Recall@k** — approximate recall meets targets across the tuning ranges for
+- **Recall@k** -- approximate recall meets targets across the tuning ranges for
   each index.
-- **Latency** — p50 / p95 / p99 query latency measured against target workloads.
-- **Memory per vector** — bytes per stored vector, the key economic lever for the
+- **Latency** -- p50 / p95 / p99 query latency measured against target workloads.
+- **Memory per vector** -- bytes per stored vector, the key economic lever for the
   IVF/PQ scale tier.
-- **Operability** — recovery time, rebalance safety, and metrics/observability
+- **Operability** -- recovery time, rebalance safety, and metrics/observability
   coverage in production.
 
 ---
@@ -268,9 +268,9 @@ not assumed; this phase turns a working engine into an operable one.
 | 8 | Payload (filter AST, evaluation) | 14 | set/has/len, FieldValue kinds, Eq/Exists/And/Or/Not combinators |
 | 9 | Search (top-K heap, engine orchestration) | 14 | bounded push, sorted invariant, is_full, worst, upsert/search/delete lifecycle |
 | 10 | ANN index (type dispatch) | 3 | AnnIndexKind names, variant discrimination, params on Collection |
-| 11 | Error types (VectorError) | 8 | all 6 variants: codes (1001–1006), to_str, uniqueness |
+| 11 | Error types (VectorError) | 8 | all 6 variants: codes (1001-1006), to_str, uniqueness |
 | 12 | Durability (WAL, Counter, IdMap) | 16 | append, LSN tracking, flush, before-ack contract, counter increment, id_map CRUD |
-| — | Boundary / validation | 7 | is_valid_dimension, is_valid_top_k, empty search, Float32 approx, SearchRequest fields |
+| -- | Boundary / validation | 7 | is_valid_dimension, is_valid_top_k, empty search, Float32 approx, SearchRequest fields |
 
 ### Contract status
 

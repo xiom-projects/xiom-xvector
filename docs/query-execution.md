@@ -8,10 +8,10 @@ involved: `api/vector_api`, `engine`, `query/*`, `index/*`, `storage/*`,
 
 ```
 api.upsert(eng, point, vec)
-  └─> engine_upsert
+  `-> engine_upsert
         1. validate     (vec.dimension as Int) == eng.dimension   else CoreError.InvalidInput
         2. WAL-before-ack   durability.log_upsert(&mut eng.wal, collection, point)
-                            → core wal_writer_append → assigns LSN
+                            -> core wal_writer_append -> assigns LSN
         3. apply        storage.index_add(&mut eng.store, point, vec)
         4. observe      counter_inc(&mut eng.upserts)
         5. ack          Ok(true)
@@ -24,7 +24,7 @@ same shape via `log_delete` + `index_remove`.
 
 ```
 api.search(eng, query, k)
-  └─> engine_search
+  `-> engine_search
         1. validate
              (query.dimension as Int) == eng.dimension     else CoreError.InvalidInput
              is_valid_top_k(k)                              else CoreError.InvalidInput
@@ -51,7 +51,7 @@ The correctness oracle. For each stored vector:
 2. Push a `SearchResult`, bubble it left by insertion sort.
 3. If the buffer exceeds `k`, pop the worst.
 
-Cost O(n·k); `ensures: result.len() <= k`. `search_range` is the same loop with a
+Cost O(n-k); `ensures: result.len() <= k`. `search_range` is the same loop with a
 radius test instead of a top-K cap (`requires: radius > 0.0`).
 
 ## Bounded top-K (`query/topk_heap`)
@@ -63,7 +63,7 @@ topk_push  ensures: items.len() <= capacity
 
 Insertion-sorted ascending; on overflow the worst (last) element is dropped.
 This is the component that makes the `result.len() <= k` guarantee compose across
-multiple contributing indexes/segments — every source pushes into one heap.
+multiple contributing indexes/segments -- every source pushes into one heap.
 
 ## Request modelling (`query/search_request`)
 
@@ -99,5 +99,5 @@ contribute, so the top-level guarantee is unchanged.
 - Dimension validated before any distance is computed.
 - `top_k` bounded by `core.limits.max_top_k()`.
 - `result.len() <= k` on every path (`search_knn`, `hnsw_search`, `search_execute`).
-- Cold/empty index → empty result, never a panic.
+- Cold/empty index -> empty result, never a panic.
 - All failures are explicit `Result[T, CoreError]` values.

@@ -1,6 +1,6 @@
 # Segment Lifecycle
 
-`src/segment/` — how vectors are physically organised for bounded memory,
+`src/segment/` -- how vectors are physically organised for bounded memory,
 efficient indexing, and compaction. SCAFFOLD: the state machine and types are in
 place; the side effects (building immutable indexes, fan-out search, compaction)
 land in Phase 5.
@@ -22,23 +22,23 @@ enum SegmentStateKind { Mutable, Sealing, Sealed, Indexing, Immutable, Compactin
 Legal transitions (enforced by `segment_state_can_transition`):
 
 ```
-Mutable ──▶ Sealing ──▶ Sealed ──▶ Indexing ──▶ Immutable
-                                                   │  ▲
-                                                   ▼  │
+Mutable --> Sealing --> Sealed --> Indexing --> Immutable
+                                                   |  ^
+                                                   v  |
                                               Compacting
-                                                   │
-                    Immutable/Compacting ──────────┴──▶ Dropped   (terminal)
+                                                   |
+                    Immutable/Compacting ----------+--> Dropped   (terminal)
 ```
 
 | State | Writable? | Meaning |
 |-------|-----------|---------|
-| `Mutable` | ✅ | Accepts new upserts. |
-| `Sealing` | ❌ | Being frozen; no new writes. |
-| `Sealed` | ❌ | Frozen; contents final. |
-| `Indexing` | ❌ | Building the immutable ANN index. |
-| `Immutable` | ❌ | Read-only, fully indexed, searchable. |
-| `Compacting` | ❌ | Being merged with other segments. |
-| `Dropped` | ❌ | Terminal; storage reclaimed. |
+| `Mutable` | [OK] | Accepts new upserts. |
+| `Sealing` | [FAIL] | Being frozen; no new writes. |
+| `Sealed` | [FAIL] | Frozen; contents final. |
+| `Indexing` | [FAIL] | Building the immutable ANN index. |
+| `Immutable` | [FAIL] | Read-only, fully indexed, searchable. |
+| `Compacting` | [FAIL] | Being merged with other segments. |
+| `Dropped` | [FAIL] | Terminal; storage reclaimed. |
 
 Helpers: `segment_state_is_writable` (only `Mutable`), `segment_state_is_terminal`
 (only `Dropped`), `segment_state_code` (dense ordinal used to express the table).
@@ -72,15 +72,15 @@ and rebuilds in-memory indexes from `active_segments`.
 ## Lifecycle timeline
 
 ```
-upsert ─▶ [Mutable segment] grows
-        │
-        └▶ size ≥ threshold
-              ├▶ transition Mutable→Sealing→Sealed   (+ SegmentSeal WAL event)
-              ├▶ transition Sealed→Indexing           (build immutable HNSW)
-              └▶ transition Indexing→Immutable         (add to manifest, searchable)
+upsert -> [Mutable segment] grows
+        |
+        `> size >= threshold
+              |> transition Mutable->Sealing->Sealed   (+ SegmentSeal WAL event)
+              |> transition Sealed->Indexing           (build immutable HNSW)
+              `> transition Indexing->Immutable         (add to manifest, searchable)
 
 background: many small Immutable segments
-        └▶ Immutable→Compacting→Immutable             (merge) → old segments Dropped
+        `> Immutable->Compacting->Immutable             (merge) -> old segments Dropped
 ```
 
 ## Interaction with search
