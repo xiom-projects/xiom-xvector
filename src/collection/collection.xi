@@ -1,5 +1,5 @@
 module xiom.vector.collection.collection
-// Local type wrappers — mirrors xiom.core.ids and xiom.vector.index.ann_index.
+// Local type wrappers -- mirrors xiom.core.ids and xiom.vector.index.ann_index.
 pub type CollectionId = { value: Int; }
 pub type SegmentId = { value: Int; }
 

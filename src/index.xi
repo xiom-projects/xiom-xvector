@@ -1,6 +1,6 @@
 module xiom.vector.index
 
-// DEPRECATED / SUPERSEDED — safe to delete.
+// DEPRECATED / SUPERSEDED -- safe to delete.
 //
 // `VectorIndex` and its index_new/add/remove/get/size API were migrated to
 // src/storage/vector_store.xi (module xiom.vector.storage.vector_store).

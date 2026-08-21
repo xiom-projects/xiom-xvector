@@ -17,7 +17,7 @@ limits) would create drift: recovery would need to parse multiple log shapes, a
 
 | Concern | Core module | What vector uses | Vector module that consumes it |
 |---------|-------------|------------------|--------------------------------|
-| Errors | `xiom.core.error` | `CoreError`, `core_error_to_str` | `error` (bridges `VectorError → CoreError`), `engine`, `api`, `validator` |
+| Errors | `xiom.core.error` | `CoreError`, `core_error_to_str` | `error` (bridges `VectorError -> CoreError`), `engine`, `api`, `validator` |
 | Identity | `xiom.core.ids` | `CollectionId`, `VectorId`, `SegmentId` (+ constructors/eq) | `ids` (adds `PointId`), `collection`, `segment`, `manifest`, `engine` |
 | Limits | `xiom.core.limits` | `max_dimensions`, `max_top_k`, `max_graph_degree` | `types.dimension`, `index.ann_index`, `engine` |
 | Predicates | `xiom.core.contracts` | `is_valid_dimension`, `is_valid_top_k` | `types.dimension`, `collection.schema`, `collection.validator`, `engine` |
@@ -28,13 +28,13 @@ limits) would create drift: recovery would need to parse multiple log shapes, a
 
 ## What is vector-specific (lives here, not in core)
 
-- **Value types** — `Vector`, `Neighbor`, `Dimension` and all vector math.
-- **Distance** — the three metrics + kernels; nothing else in XIOM needs them.
-- **Indexes** — flat baseline and HNSW graph; ANN is the whole point of this engine.
-- **Query** — top-K semantics, request modelling, index dispatch.
-- **Collections & schema** — dimension/metric binding, payload field specs.
-- **Payload & filtering** — the `FieldValue`/`FilterExpr` model.
-- **Segment semantics** — while the *WAL format* is core, the *meaning* of an
+- **Value types** -- `Vector`, `Neighbor`, `Dimension` and all vector math.
+- **Distance** -- the three metrics + kernels; nothing else in XIOM needs them.
+- **Indexes** -- flat baseline and HNSW graph; ANN is the whole point of this engine.
+- **Query** -- top-K semantics, request modelling, index dispatch.
+- **Collections & schema** -- dimension/metric binding, payload field specs.
+- **Payload & filtering** -- the `FieldValue`/`FilterExpr` model.
+- **Segment semantics** -- while the *WAL format* is core, the *meaning* of an
   upsert/seal event (a vector event) is vector-specific and lives in
   `durability.write_ahead_events`.
 
@@ -50,11 +50,11 @@ The WAL is the clearest example of the split:
   and (Phase 2) that the dense vector bytes go into `WalRecord.payload`.
 
 This way, xiom-db and xiom-vector both extend the operation set through tagged
-payloads rather than forking the record layout — one recovery parser serves all.
+payloads rather than forking the record layout -- one recovery parser serves all.
 
 ## Identity: why `PointId` is separate from `VectorId`
 
-`VectorId` (core) is an internal storage handle — effectively a slot. `PointId`
+`VectorId` (core) is an internal storage handle -- effectively a slot. `PointId`
 (vector) is the stable, user-facing id of a logical point. Keeping them as
 distinct single-field wrapper types means the compiler rejects passing one where
 the other is expected, even though both wrap an `Int`. The `ids` module provides

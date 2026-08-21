@@ -2,7 +2,7 @@ module xiom.vector.segment.segment
 
 use xiom.vector.segment.segment_state;
 
-// Local types — mirrors types absorbed into engine.
+// Local types -- mirrors types absorbed into engine.
 pub type SegmentId = { value: Int; }
 pub type Vector = {
   data: Vec[Float32];

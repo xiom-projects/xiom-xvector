@@ -1,6 +1,6 @@
 # Metadata Filtering
 
-`src/payload/` — attaching metadata to points and filtering search results by
+`src/payload/` -- attaching metadata to points and filtering search results by
 it. SCAFFOLD (Phase 3): the data model and AST are complete and the boolean
 combinators evaluate; typed value comparisons are the remaining work.
 
@@ -41,7 +41,7 @@ recursive tree. `Not` uses a one-element `Vec` (via the `filter_not` constructor
 Constructors: `filter_eq`, `filter_range`, `filter_exists`, `filter_in`,
 `filter_and`, `filter_or`, `filter_not`.
 
-Example — `color = "red" AND price ∈ [10, 100]`:
+Example -- `color = "red" AND price in [10, 100]`:
 
 ```xiom
 var clauses = Vec[FilterExpr].new();
@@ -58,15 +58,15 @@ filter_matches(expr: &FilterExpr, p: &Payload) -> Bool
 
 | Variant | Status | Behaviour |
 |---------|--------|-----------|
-| `Exists` | ✅ implemented | true iff the field is present |
-| `And` | ✅ implemented | all clauses match (short-circuits false) |
-| `Or` | ✅ implemented | any clause matches (short-circuits true) |
-| `Not` | ✅ implemented | negation of the single clause |
-| `Eq` | 🟠 fail-open | currently only checks field presence |
-| `Range` | 🟠 fail-open | currently only checks field presence |
-| `In` | 🟠 fail-open | currently only checks field presence |
+| `Exists` | [OK] implemented | true iff the field is present |
+| `And` | [OK] implemented | all clauses match (short-circuits false) |
+| `Or` | [OK] implemented | any clause matches (short-circuits true) |
+| `Not` | [OK] implemented | negation of the single clause |
+| `Eq` | [ORANGE] fail-open | currently only checks field presence |
+| `Range` | [ORANGE] fail-open | currently only checks field presence |
+| `In` | [ORANGE] fail-open | currently only checks field presence |
 
-"Fail-open" means the value predicates don't yet reject on value mismatch — they
+"Fail-open" means the value predicates don't yet reject on value mismatch -- they
 pass if the field exists. This lets the search path be wired end-to-end before
 typed comparison lands. Each stub carries a `// TODO(Phase 3):` marker.
 

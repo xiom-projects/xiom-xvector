@@ -1,5 +1,5 @@
 module xiom.vector.collection.validator
-// Local types — mirrors core types absorbed into engine.
+// Local types -- mirrors core types absorbed into engine.
 
 pub enum VectorError {
   DimensionMismatch(expected: Int, got: Int),

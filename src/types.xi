@@ -1,6 +1,6 @@
 module xiom.vector.types
 
-// DEPRECATED / SUPERSEDED — safe to delete.
+// DEPRECATED / SUPERSEDED -- safe to delete.
 //
 // The contents of this flat module were migrated into the layered tree:
 //   Vector + vector math .............. src/types/dense_vector.xi

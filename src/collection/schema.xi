@@ -5,7 +5,7 @@ use xiom.core.contracts;
 
 // The immutable description of a collection: its vector dimension, distance
 // metric, normalization policy, and the payload fields eligible for filtering.
-// Dimension and metric are fixed at creation — this is the root of the
+// Dimension and metric are fixed at creation -- this is the root of the
 // "dimension is constant" invariant enforced by the validator.
 
 pub enum NormalizationMode {

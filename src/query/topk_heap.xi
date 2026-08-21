@@ -4,8 +4,8 @@ use xiom.vector.types.neighbor;
 
 // Bounded top-K collector. Maintains at most `capacity` neighbours in ascending
 // distance order using the same insertion-sort-then-truncate strategy as the
-// brute-force scan. The core invariant — items.len() <= capacity after every
-// push — is what lets the query layer guarantee `search` never returns more
+// brute-force scan. The core invariant -- items.len() <= capacity after every
+// push -- is what lets the query layer guarantee `search` never returns more
 // than the requested k.
 
 pub type TopKHeap = {

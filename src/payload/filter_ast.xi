@@ -4,7 +4,7 @@ use xiom.vector.payload.payload;
 
 // Filter expression tree evaluated against a point's Payload during search.
 // And/Or/Not carry their operands in a Vec: XIOM has no direct self-referential
-// enum field, and a Vec supplies the required indirection. SCAFFOLD — the
+// enum field, and a Vec supplies the required indirection. SCAFFOLD -- the
 // constructors are real; evaluation lives in filter_eval (Phase 3).
 
 pub enum FilterExpr {

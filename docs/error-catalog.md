@@ -1,21 +1,21 @@
 # Error Catalog
 
-`xiom-vector` follows the XIOM rule that **errors are values** — every fallible
+`xiom-vector` follows the XIOM rule that **errors are values** -- every fallible
 API returns `Result[T, CoreError]` (or `Option[T]` for simple lookups). There
 are no exceptions and no hidden failure channels.
 
 Two error types are in play:
 
-- `xiom.core.error.CoreError` — the shared cross-engine error the public API and
+- `xiom.core.error.CoreError` -- the shared cross-engine error the public API and
   storage/WAL boundaries speak.
-- `xiom.vector.error.VectorError` — the vector-specific taxonomy, which maps onto
+- `xiom.vector.error.VectorError` -- the vector-specific taxonomy, which maps onto
   `CoreError` via `vector_error_to_core`.
 
 ## VectorError (`src/error.xi`)
 
 | Variant | Code | `to_str` | Maps to `CoreError` | Raised when |
 |---------|------|----------|---------------------|-------------|
-| `DimensionMismatch(expected, got)` | 1001 | "vector dimension mismatch" | `InvalidInput` | a vector's dimension ≠ the collection dimension |
+| `DimensionMismatch(expected, got)` | 1001 | "vector dimension mismatch" | `InvalidInput` | a vector's dimension = the collection dimension |
 | `UnsupportedMetric(name)` | 1002 | "unsupported distance metric" | `Unsupported` | a metric not valid for the schema is requested |
 | `CollectionNotFound(id)` | 1003 | "collection not found" | `NotFound` | an operation targets an unknown collection |
 | `InvalidVector(msg)` | 1004 | "invalid vector" | `InvalidInput` | a vector is malformed (e.g. schema dim out of range) |
@@ -42,7 +42,7 @@ The public facade (`api/vector_api`) and `engine` return `CoreError` directly:
 | `VersionMismatch` | no | recovery (Phase 2) | on-disk format version mismatch |
 | `OutOfBounds` | no | internal invariants | index out of range (should be prevented by contracts) |
 
-`core_error_is_retryable` classifies these: only `IOFailure` is retryable —
+`core_error_is_retryable` classifies these: only `IOFailure` is retryable --
 logical errors are deterministic and must not be retried.
 
 ## Where each error originates
@@ -53,10 +53,10 @@ logical errors are deterministic and must not be retried.
 | `upsert` | `InvalidInput` (dimension mismatch); Phase 2: `IOFailure` (WAL) |
 | `search` | `InvalidInput` (dimension mismatch, `top_k` out of range) |
 | `delete_point` | Phase 2: `IOFailure` (WAL) |
-| `get_point` | returns `Option[Vector]` — `None` for a missing id (not an error) |
+| `get_point` | returns `Option[Vector]` -- `None` for a missing id (not an error) |
 | `validate_vector` | `VectorError.InvalidVector`, `VectorError.DimensionMismatch` |
 | `validate_metric` | `VectorError.UnsupportedMetric` (all built-ins currently supported) |
-| segment ops (Phase 5) | `VectorError.SegmentSealed` → `InvalidState` |
+| segment ops (Phase 5) | `VectorError.SegmentSealed` -> `InvalidState` |
 
 ## Handling pattern
 

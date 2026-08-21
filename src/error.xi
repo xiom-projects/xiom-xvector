@@ -1,6 +1,6 @@
 module xiom.vector.error
 
-// Local CoreError type — mirrors xiom.core.error.CoreError.
+// Local CoreError type -- mirrors xiom.core.error.CoreError.
 pub enum CoreError {
   NotFound,
   InvalidInput(msg: Str),
