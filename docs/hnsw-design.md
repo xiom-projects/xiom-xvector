@@ -1,3 +1,8 @@
+<!--
+Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
+SPDX-License-Identifier: MIT OR Apache-2.0
+-->
+
 # HNSW Design
 
 `src/index/hnsw.xi` -- the approximate nearest-neighbour (ANN) index. This

@@ -1,3 +1,8 @@
+<!--
+Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
+SPDX-License-Identifier: MIT OR Apache-2.0
+-->
+
 # xiom-vector -- Roadmap
 
 A phased plan from the working in-memory engine to a durable, filterable,

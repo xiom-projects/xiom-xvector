@@ -1,3 +1,8 @@
+<!--
+Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
+SPDX-License-Identifier: MIT OR Apache-2.0
+-->
+
 # Sharding & Replication (Distributed Layer)
 
 `src/cluster/` (planned) -- how `xiom-vector` scales beyond a single node. NOT
