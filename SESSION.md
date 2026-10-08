@@ -81,15 +81,23 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
     engine, torn-record skip).
   - Suite: SECTION 15 (9 tests) -> **165/165 x2**; readiness tracker
     `docs/PRODUCTION-READINESS.md` created (weighted scorecard; ~53 % today).
-- **Module extraction milestone (third continuation):** the payload/filter
+- **Module extraction milestone 2 (fourth continuation):** the types /
+  storage / search layers are now real modules too:
+  `src/types/dense_vector.xi` (Vector + dot/magnitude),
+  `src/types/metric.xi` (DistanceMetric + 3 distances + dispatch),
+  `src/types/neighbor.xi`, `src/storage/vector_store.xi` (VectorIndex CRUD +
+  vector WAL codec), `src/query/search_service.xi` (SearchResult/SearchHits +
+  search_knn/search_knn_filtered). `engine.xi` imports them; probes and
+  compiler-lane evidence files import the submodules directly. All probes x2
+  + suite 165/165 green. Still inline in engine.xi: core-error/ids/counter,
+  WAL types + wal_writer_*, recovery/checkpoint, VectorEngine + engine_*
+  functions, API facade -- the next extraction targets.
+- **Module extraction milestone 1 (third continuation):** the payload/filter
   layer is now the first REAL module of the post-AUDIT tree --
   `src/payload/payload.xi` (FieldValue/Payload + codec + PayloadStore),
   `src/payload/filter_ast.xi` (FilterExpr + constructors),
   `src/payload/filter_eval.xi` (typed eval + payload_store_matches).
-  `engine.xi` imports them and no longer carries the code; probes that use
-  payload symbols import the submodules directly. All probes x2 + suite
-  165/165 x2 green after the extraction. Next extraction targets: vector
-  codec/WAL, then store/engine facade.
+  All probes x2 + suite 165/165 x2 green after the extraction.
 - **Green evidence (exact commands):**
   - `scripts\run-suite.ps1 -Runs 2` -> `165/165 passed` twice, exit 0,
     stderr 0; same on WSL: `bash scripts/run-suite.sh 2 180`.

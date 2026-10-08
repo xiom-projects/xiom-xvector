@@ -46,21 +46,21 @@ src/
 |                     VectorEngine orchestrator -- engine_new,
 |                     engine_create_collection, engine_upsert, engine_search,
 |                     engine_delete (REAL dispatch to store + WAL + search)
-|                     NOTE: engine.xi is currently the CONSOLIDATED working
-|                     core -- the payload/filter layer has been EXTRACTED to
-|                     the payload/ modules below (engine imports them); the
-|                     vector codec, WAL, recovery/checkpoint, store, and the
-|                     API facade are still inline and are the next extraction
-|                     targets (cross-file imports work on v0.64.0; the
-|                     subdirectories below are the post-porter target tree).
+|                     NOTE: engine.xi is the CONSOLIDATED working core being
+|                     unwound layer by layer. EXTRACTED so far: payload/
+|                     filter layer; types (dense_vector/metric/neighbor);
+|                     storage/vector_store (+ vector WAL codec);
+|                     query/search_service. Still inline: core-error/ids/
+|                     counter/WAL types, recovery/checkpoint, VectorEngine +
+|                     engine_* functions, API facade (next extraction
+|                     targets; cross-file imports work on v0.64.0).
 |
 |-- types/
-|   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude/normalize/
-|   |                     add/sub/scale/dimension                    [DONE]
+|   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude          [EXTRACTED]
 |   |-- metric.xi         DistanceMetric + cosine/dot/euclidean +
-|   |                     vector_distance dispatch                   [DONE]
-|   |-- neighbor.xi       Neighbor (id, distance) low-level edge      [DONE]
-|   `-- dimension.xi      Dimension wrapper + validation (reuses core) [DONE]
+|   |                     vector_distance dispatch                   [EXTRACTED]
+|   |-- neighbor.xi       Neighbor (id, distance) low-level edge      [EXTRACTED]
+|   `-- dimension.xi      Dimension wrapper + validation              [DONE]
 |
 |-- collection/
 |   |-- schema.xi         CollectionSchema (dim, metric, normalization,
@@ -69,12 +69,12 @@ src/
 |   `-- validator.xi      dimension/metric compatibility, typed errors [IN PROGRESS]
 |
 |-- payload/
-|   |-- payload.xi        Payload + FieldValue + WAL codec + store      [DONE]
-|   |-- filter_ast.xi     FilterExpr (Eq/Range/Exists/In/And/Or/Not)  [DONE]
-|   `-- filter_eval.xi    typed eval + payload_store_matches          [DONE]
+|   |-- payload.xi        Payload + FieldValue + WAL codec + store      [EXTRACTED]
+|   |-- filter_ast.xi     FilterExpr (Eq/Range/Exists/In/And/Or/Not)  [EXTRACTED]
+|   `-- filter_eval.xi    typed eval + payload_store_matches          [EXTRACTED]
 |
 |-- storage/
-|   |-- vector_store.xi   VectorIndex flat columnar store (CRUD)      [DONE]
+|   |-- vector_store.xi   VectorIndex flat store + vector WAL codec   [EXTRACTED]
 |   `-- id_map.xi         VectorId -> (segment, offset) mapping       [DONE-ish]
 |
 |-- segment/
@@ -95,7 +95,7 @@ src/
 |-- query/
 |   |-- search_request.xi SearchRequest (query, top_k, metric, filter) [DONE]
 |   |-- topk_heap.xi      bounded top-K heap (invariant: <= k)         [DONE]
-|   `-- search_service.xi search_knn/search_range + search_execute     [DONE]
+|   `-- search_service.xi search_knn / search_knn_filtered (exact)    [EXTRACTED]
 |
 |-- durability/
 |   `-- write_ahead_events.xi vector WAL events on core WAL           [SCAFFOLD]
