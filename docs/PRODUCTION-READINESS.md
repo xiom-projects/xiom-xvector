@@ -32,10 +32,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 65 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
-| J | Ecosystem & release engineering | 8 | 20 | scaffold | CI, version stamp, porter extraction, release |
+| J | Ecosystem & release engineering | 8 | 25 | scaffold | CI, version stamp, porter extraction (first module extracted), release |
 
 **Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x90 +
-0.08x60 + 0.10x10 + 0.05x20 + 0.09x65 + 0.08x20 = **52.6 -> 53 %**.
+0.08x60 + 0.10x10 + 0.05x20 + 0.09x65 + 0.08x25 = **52.95 -> 53 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -132,6 +132,9 @@ the owner greenlights public release).
   durability landed (D raised to 55, E to 90, I to 65); suite 126 -> 165
   checks; XVC-C-05/06/07 build-rejection discipline adopted. Overall ~42
   (recomputed bootstrap baseline: scaffold-phase engine) -> 53 %.
+- **2026-10-08 (later):** first module extracted (payload/filter layer,
+  `src/payload/*`; engine imports it) -- J 20 -> 25, porter prep advanced;
+  suite 165/165 x2 and all probes green after extraction. Overall 53 %.
 
 ## Update rule
 

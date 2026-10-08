@@ -112,7 +112,10 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 ## `xiom.vector.collection.validator`
 `validate_dimension(schema, dim) -> Bool`; `validate_vector(schema, v) -> Result[Bool, VectorError]` (enforces dimension constancy); `validate_metric(schema, metric) -> Result[Bool, VectorError]`.
 
-## `xiom.vector.payload.{payload,filter_ast,filter_eval}`
+## `xiom.vector.payload.{payload,filter_ast,filter_eval}` (extracted modules)
+Real modules since 2026-10-08 (first layer of the post-AUDIT module tree);
+`xiom.vector.engine` imports them (`use xiom.vector.payload.payload/filter_ast/filter_eval`),
+and consumers of payload/filter symbols import the submodules directly.
 `enum FieldValue { IntVal, FloatVal, TextVal, BoolVal }`; `Payload` +
 `payload_new/set/has/get/len`, `field_value_kind`, `field_value_eq` (exact
 within type; cross-type false), `field_value_as_float` (Int promotes).

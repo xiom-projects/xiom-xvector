@@ -47,12 +47,12 @@ src/
 |                     engine_create_collection, engine_upsert, engine_search,
 |                     engine_delete (REAL dispatch to store + WAL + search)
 |                     NOTE: engine.xi is currently the CONSOLIDATED working
-|                     core -- it also carries the vector codec, the payload
-|                     WAL codec, payload/filter evaluation, PayloadStore,
-|                     recovery/checkpoint, and the API facade (cross-file
-|                     imports work on v0.64.0; the subdirectories below are
-|                     the post-porter target tree, being unwound layer by
-|                     layer with engine.xi as the stable facade).
+|                     core -- the payload/filter layer has been EXTRACTED to
+|                     the payload/ modules below (engine imports them); the
+|                     vector codec, WAL, recovery/checkpoint, store, and the
+|                     API facade are still inline and are the next extraction
+|                     targets (cross-file imports work on v0.64.0; the
+|                     subdirectories below are the post-porter target tree).
 |
 |-- types/
 |   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude/normalize/
@@ -69,9 +69,9 @@ src/
 |   `-- validator.xi      dimension/metric compatibility, typed errors [IN PROGRESS]
 |
 |-- payload/
-|   |-- payload.xi        Payload + FieldValue tagged union           [SCAFFOLD]
-|   |-- filter_ast.xi     FilterExpr (Eq/Range/Exists/In/And/Or/Not)  [SCAFFOLD]
-|   `-- filter_eval.xi    evaluate filter vs payload (combinators live) [SCAFFOLD]
+|   |-- payload.xi        Payload + FieldValue + WAL codec + store      [DONE]
+|   |-- filter_ast.xi     FilterExpr (Eq/Range/Exists/In/And/Or/Not)  [DONE]
+|   `-- filter_eval.xi    typed eval + payload_store_matches          [DONE]
 |
 |-- storage/
 |   |-- vector_store.xi   VectorIndex flat columnar store (CRUD)      [DONE]
