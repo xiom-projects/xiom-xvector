@@ -61,15 +61,15 @@ fn main() -> Int {
 
   var p1 = payload_new();
   payload_set(&mut p1, "color", FieldValue.TextVal("red"));
-  payload_set(&mut p1, "price", FieldValue.IntVal(5));
+  payload_set(&mut p1, "price", FieldValue.FloatVal(5.0));
   var ok1 = set_payload(&mut eng, 1, p1);
   var p2 = payload_new();
   payload_set(&mut p2, "color", FieldValue.TextVal("blue"));
-  payload_set(&mut p2, "price", FieldValue.IntVal(50));
+  payload_set(&mut p2, "price", FieldValue.FloatVal(50.0));
   var ok2 = set_payload(&mut eng, 2, p2);
   var p3 = payload_new();
   payload_set(&mut p3, "color", FieldValue.TextVal("red"));
-  payload_set(&mut p3, "price", FieldValue.IntVal(500));
+  payload_set(&mut p3, "price", FieldValue.FloatVal(500.0));
   var ok3 = set_payload(&mut eng, 3, p3);
   // point 4 intentionally has no payload
   var ok_set: Bool = false;
@@ -164,9 +164,7 @@ fn main() -> Int {
   }
   fails = check(dist_ids_ok, "filtered top-2 after delete -> {2,3}", fails);
 
-  // FloatVal payload diagnostic (NON-GATING, XVC-C-06): on v0.64.0 the
-  // Float32 payload of an enum can read as 0 depending on the compilation
-  // unit/build, so it is reported, not asserted here.
+  // FloatVal payload gate (XVC-C-06 fixed in v0.64.1; was diagnostic-only).
   var fv = FieldValue.FloatVal(2.5);
   var fv_p = payload_new();
   payload_set(&mut fv_p, "f", fv);
@@ -182,6 +180,7 @@ fn main() -> Int {
   }
   io.println("    diag FloatVal(2.5) roundtrip bits=" + int_to_str(fv_bits) +
              " (expected " + int_to_str(float.float_bits(2.5)) + ")");
+  fails = check(fv_bits == float.float_bits(2.5), "FloatVal(2.5) roundtrip bit-exact", fails);
 
   io.println("");
   io.println("probe_filtered_search: " + int_to_str(fails) + " failed checks");

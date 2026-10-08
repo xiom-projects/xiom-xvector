@@ -3556,13 +3556,10 @@ fn test_filter_eq_value_mismatch() -> TestResult {
 }
 
 fn run_filter_range_inclusive() -> Int {
-  // NOTE (XVC-C-06): this suite's compilation unit zeroes Float32 enum
-  // payloads (a directly constructed FieldValue.FloatVal(10.0) extracts as
-  // 0.0 here, tag intact), so IntVal fields carry the suite-side bounds
-  // checks. FloatVal end-to-end coverage lives in the separate-unit probe
-  // tests/probes/probe_filtered_search.xi.
+  // FloatVal restored after the v0.64.1 fix of XVC-C-06 (v0.64.0 zeroed f32
+  // enum payloads in this unit; the FloatVal roundtrip pin probe guards it).
   var p = payload_new();
-  payload_set(&mut p, "price", FieldValue.IntVal(10));
+  payload_set(&mut p, "price", FieldValue.FloatVal(10.0));
   var at_lo = filter_range("price", 10.0, 20.0);
   var at_hi = filter_range("price", 0.0, 10.0);
   var above = filter_range("price", 10.01, 20.0);
@@ -3677,15 +3674,15 @@ fn setup_filtered_engine() -> VectorEngine {
   engine_upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
   var p1 = payload_new();
   payload_set(&mut p1, "color", FieldValue.TextVal("red"));
-  payload_set(&mut p1, "price", FieldValue.IntVal(5));      // XVC-C-06: IntVal keeps f32 bounds checks valid in this unit
+  payload_set(&mut p1, "price", FieldValue.FloatVal(5.0));
   engine_set_payload(&mut eng, 1, p1);
   var p2 = payload_new();
   payload_set(&mut p2, "color", FieldValue.TextVal("blue"));
-  payload_set(&mut p2, "price", FieldValue.IntVal(50));
+  payload_set(&mut p2, "price", FieldValue.FloatVal(50.0));
   engine_set_payload(&mut eng, 2, p2);
   var p3 = payload_new();
   payload_set(&mut p3, "color", FieldValue.TextVal("red"));
-  payload_set(&mut p3, "price", FieldValue.IntVal(500));
+  payload_set(&mut p3, "price", FieldValue.FloatVal(500.0));
   engine_set_payload(&mut eng, 3, p3);
   return eng;
 }
@@ -3915,6 +3912,35 @@ fn run_payload_encode_roundtrip() -> Int {
 fn test_payload_encode_roundtrip() -> TestResult {
   if run_payload_encode_roundtrip() == 0 { return assert(true, "Payload codec: text/int(-3)/bool roundtrip"); }
   return assert(false, "Payload codec: roundtrip failed");
+}
+
+fn run_payload_encode_floatval() -> Int {
+  // XVC-C-06 guard: FloatVal must survive the WAL codec bit-exactly.
+  var p = payload_new();
+  payload_set(&mut p, "price", FieldValue.FloatVal(-2.5));
+  var words = payload_encode(&p);
+  match payload_decode(&words) {
+    Some(q) => {
+      match payload_get(&q, "price") {
+        Some(v) => {
+          let expected = float.float_bits(-2.5);
+          match v {
+            FloatVal(f) => {
+              if float.float_bits(f as Float64) == expected { return 0; }
+              return 1;
+            }
+            _ => { return 2; }
+          }
+        }
+        None => { return 3; }
+      }
+    }
+    None => { return 4; }
+  }
+}
+fn test_payload_encode_floatval() -> TestResult {
+  if run_payload_encode_floatval() == 0 { return assert(true, "Payload codec: FloatVal bit-exact roundtrip"); }
+  return assert(false, "Payload codec: FloatVal roundtrip failed");
 }
 
 fn run_payload_decode_malformed() -> Int {
@@ -4266,6 +4292,7 @@ fn main() -> Int {
   // SECTION 15: Durable payloads (WAL codec + recovery)
   failed = failed + run_one_test(test_payload_encode_empty()); total = total + 1;
   failed = failed + run_one_test(test_payload_encode_roundtrip()); total = total + 1;
+  failed = failed + run_one_test(test_payload_encode_floatval()); total = total + 1;
   failed = failed + run_one_test(test_payload_decode_malformed()); total = total + 1;
   failed = failed + run_one_test(test_payload_wal_before_ack()); total = total + 1;
   failed = failed + run_one_test(test_recover_payloads()); total = total + 1;

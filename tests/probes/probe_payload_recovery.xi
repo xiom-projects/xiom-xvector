@@ -183,6 +183,7 @@ fn main() -> Int {
   }
   io.println("    diag durable FloatVal(2.5) bits=" + int_to_str(f_bits) +
              " (expected " + int_to_str(float.float_bits(2.5)) + ")");
+  fails = check(f_bits == float.float_bits(2.5), "durable FloatVal bit-exact through reopen", fails);
 
   io.println("");
   io.println("probe_payload_recovery: " + int_to_str(fails) + " failed checks");
