@@ -14,6 +14,7 @@ use xiom.vector.engine.core;
 use xiom.vector.core.shim;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
+use xiom.vector.index.ann_index;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.query.search_service;
@@ -21,6 +22,12 @@ use xiom.vector.query.search_request;
 
 pub fn create_collection(eng: &mut VectorEngine, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError] {
   return engine_create_collection(eng, dim, metric);
+}
+
+// Select the ANN index (Flat default; Hnsw validates params and rebuilds the
+// graph from the flat store). In-memory only -- re-apply after engine_recover.
+pub fn set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) -> Result[Bool, CoreError] {
+  return engine_set_index(eng, kind, params);
 }
 
 pub fn upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError] {

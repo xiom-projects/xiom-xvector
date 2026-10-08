@@ -13,7 +13,10 @@ module xiom.vector.engine.core
 use xiom.vector.core.shim;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
+use xiom.vector.types.neighbor;
 use xiom.vector.storage.vector_store;
+use xiom.vector.index.ann_index;
+use xiom.vector.index.hnsw;
 use xiom.vector.query.search_service;
 use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
@@ -23,8 +26,13 @@ use xiom.vector.durability.recovery;
 use xiom.vector.durability.write_ahead_events;
 
 // ---- VectorEngine ----
+// The flat store is always maintained (source of truth for ids/vectors);
+// when `index_kind` is Hnsw, `graph` mirrors it for approximate search.
 pub type VectorEngine = {
   store: VectorIndex;
+  graph: HNSWGraph;
+  index_kind: AnnIndexKind;
+  ann: AnnParams;
   metric: DistanceMetric;
   dimension: Int;
   created: Bool;
@@ -38,6 +46,9 @@ pub type VectorEngine = {
 pub fn engine_new() -> VectorEngine {
   return VectorEngine{
     store: index_new(1),
+    graph: hnsw_new(16, 4.0),
+    index_kind: AnnIndexKind.Flat,
+    ann: ann_params_default(),
     metric: DistanceMetric.Euclidean,
     dimension: 0,
     created: false,
@@ -56,6 +67,9 @@ pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: Distan
     return Err(CoreError.InvalidInput("dimension out of range"));
   }
   eng.store = index_new(dim);
+  eng.graph = hnsw_new(16, 4.0);
+  eng.index_kind = AnnIndexKind.Flat;
+  eng.ann = ann_params_default();
   eng.dimension = dim;
   eng.metric = metric;
   eng.created = true;
@@ -63,6 +77,33 @@ pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: Distan
   var id = collection_id(eng.next_collection);
   eng.next_collection = eng.next_collection + 1;
   return Ok(id);
+}
+
+// Select the ANN index for the active collection. Hnsw validates its params
+// and (re)builds the graph from the flat store; Flat resets the graph to
+// empty. The choice is in-memory only (collection metadata persistence is
+// future work), so callers re-apply it after engine_recover.
+pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  if kind == AnnIndexKind.Hnsw {
+    if !ann_params_valid(&params) {
+      return Err(CoreError.InvalidInput("invalid ann params"));
+    }
+    eng.graph = hnsw_new(params.m, 4.0);
+    var i: Int = 0;
+    while i < eng.store.ids.len() {
+      var pid = eng.store.ids[i];
+      var pv = eng.store.vectors[i];
+      hnsw_insert_ref(&mut eng.graph, pid, &pv, eng.metric);
+      i = i + 1;
+    }
+  } else {
+    eng.graph = hnsw_new(16, 4.0);
+  }
+  eng.index_kind = kind;
+  eng.ann = params;
+  return Ok(true);
 }
 
 pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError]
@@ -73,9 +114,24 @@ pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[
   }
   var payload = vector_encode(&vec);
   log_upsert(&mut eng.wal, 1, point, payload);
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    hnsw_insert_ref(&mut eng.graph, point, &vec, eng.metric);
+  }
   var ok = index_add(&mut eng.store, point, vec);
   counter_inc(&mut eng.upserts);
   return Ok(ok);
+}
+
+// HNSW results are Neighbor(id: UInt64, distance); the engine surface uses
+// SearchResult(id: Int, distance).
+fn neighbors_to_results(items: &Vec[Neighbor]) -> Vec[SearchResult] {
+  var out = Vec[SearchResult].new();
+  var i: Int = 0;
+  while i < items.len() {
+    out.push(SearchResult{ id: items[i].id as Int, distance: items[i].distance });
+    i = i + 1;
+  }
+  return out;
 }
 
 pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError]
@@ -88,6 +144,10 @@ pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Searc
   if !is_valid_top_k(k) {
     return Err(CoreError.InvalidInput("top_k out of range"));
   }
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var neighbors = hnsw_search(&eng.graph, query, k, eng.ann.ef_search, eng.metric);
+    return Ok(SearchHits{ items: neighbors_to_results(&neighbors) });
+  }
   var hits = search_knn(&eng.store, query, k, eng.metric);
   return Ok(SearchHits{ items: hits });
 }
@@ -97,6 +157,9 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
 {
   log_delete(&mut eng.wal, 1, point);
   var ok = index_remove(&mut eng.store, point);
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    hnsw_delete(&mut eng.graph, point);
+  }
   payload_store_remove(&mut eng.payloads, point);   // no orphan metadata
   counter_inc(&mut eng.deletes);
   return Ok(ok);
@@ -124,7 +187,9 @@ pub fn engine_get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
   return payload_store_get(&eng.payloads, point);
 }
 
-// Filtered exact top-k: dimension/top_k validation, then a filtered scan.
+// Filtered exact top-k: dimension/top_k validation, then the exact flat
+// filtered scan (the planner picks the pre/post plan). ANN + filter is
+// future work, so this path is always exact even on an Hnsw collection.
 pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Result[SearchHits, CoreError]
   requires: eng.created
   requires: k > 0
@@ -158,8 +223,15 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     return Err(CoreError.InvalidInput("metric mismatch"));
   }
   if search_request_has_filter(req) {
+    // Filtered search always uses the exact flat scan (ANN + filter is
+    // future work); the flat store is always maintained.
     var hits = search_knn_filtered(&eng.store, &eng.payloads, &req.query, req.top_k, eng.metric, &req.filter[0]);
     return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+  }
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var nn = hnsw_search(&eng.graph, &req.query, req.top_k, eng.ann.ef_search, eng.metric);
+    var hh = neighbors_to_results(&nn);
+    return Ok(HydratedHits{ items: hydrate_hits(&hh, &eng.payloads, req.with_payload) });
   }
   var hits = search_knn(&eng.store, &req.query, req.top_k, eng.metric);
   return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
