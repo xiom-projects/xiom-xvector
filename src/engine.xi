@@ -4,6 +4,7 @@
 module xiom.vector.engine
 
 use xiom.math;
+use xiom.num.float;
 
 // ============================================================================
 // XIOM-Vector: Consolidated Engine -- Vector + Distances + Index + WAL + API
@@ -72,6 +73,40 @@ pub fn wal_writer_current_lsn(w: &WalWriter) -> Int {
 pub fn wal_writer_flush(w: &mut WalWriter) -> Bool {
   w.synced_lsn = w.next_lsn - 1;
   return true;
+}
+
+// Append a record carrying an opaque payload (used for encoded vectors).
+// key = point id, value = collection id (recovery replays by key).
+pub fn wal_writer_append_payload(w: &mut WalWriter, op: WalOpKind, key: Int, value: Int, payload: Vec[Int]) -> Int {
+  var assigned = w.next_lsn;
+  var rec = WalRecord{
+    lsn: assigned, op: op, key: key, value: value, payload: payload, timestamp: 0,
+  };
+  w.records.push(rec);
+  w.next_lsn = w.next_lsn + 1;
+  return assigned;
+}
+
+// Resume a WAL after recovery: empty record buffer, LSN continuity preserved
+// so post-recovery appends never reuse an LSN.
+pub fn wal_writer_resume(next_lsn: Int) -> WalWriter {
+  var records = Vec[WalRecord].new();
+  return WalWriter{ records: records, next_lsn: next_lsn, synced_lsn: next_lsn - 1 };
+}
+
+// Compacted checkpoint log: re-encode every live point of `idx` as an Insert
+// record with fresh LSNs continuing after `w`. The returned log alone
+// reconstructs the store, so a reopened engine can itself be reopened. This
+// is the recovery-time compaction step; a durable manifest (Phase 2) will
+// later persist it instead of rebuilding on every open.
+pub fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex) -> WalWriter {
+  var out = wal_writer_resume(w.next_lsn);
+  var i: Int = 0;
+  while i < idx.ids.len() {
+    wal_writer_append_payload(&mut out, WalOpKind.Insert, idx.ids[i], 1, vector_encode(&idx.vectors[i]));
+    i = i + 1;
+  }
+  return out;
 }
 
 // ---- Inline Counter (from xiom.core.metrics) ----
@@ -314,11 +349,52 @@ pub fn index_size(idx: &VectorIndex) -> Int {
   return idx.ids.len();
 }
 
+// ---- Durable vector codec: WAL payload = [dim, bits0, bits1, ...] ----
+// Float32 -> Float64 -> IEEE-754 bits (exact: every Float32 is exactly
+// representable in Float64; `float_bits` lowers to a true LLVM bitcast
+// since v0.64.0/m194).
+pub fn vector_encode(v: &Vector) -> Vec[Int] {
+  var out = Vec[Int].new();
+  out.push(v.dimension);
+  var i: Int = 0;
+  while i < v.dimension {
+    out.push(float.float_bits(v.data[i] as Float64));
+    i = i + 1;
+  }
+  return out;
+}
+
+// Rebuild a vector from a WAL payload; None on any malformed shape (short
+// buffer, invalid dim, length mismatch) so recovery can skip torn records.
+pub fn vector_decode(payload: &Vec[Int]) -> Option[Vector] {
+  if payload.len() < 1 { return None; }
+  var dim = payload[0];
+  if !is_valid_dimension(dim) { return None; }
+  if payload.len() != dim + 1 { return None; }
+  var v = Vector.new(dim);
+  var i: Int = 0;
+  while i < dim {
+    v.data[i] = float.bits_to_float(payload[i + 1]) as Float32;
+    i = i + 1;
+  }
+  return Some(v);
+}
+
 // ---- SearchResult + search (from search_service.xi) ----
 pub type SearchResult = {
   id: Int;
   distance: Float32;
 } derive[Clone]
+
+// Ok-payload wrapper for search results. Rationale: on compiler v0.64.0 a
+// Result/Option whose payload is DIRECTLY a Vec[T] with non-scalar T loses
+// element field data for the caller (len survives, fields read as zero /
+// address-like; XVC-C-04, repro docs/repro/xv-result-vec-struct/).
+// Wrapping the Vec in a struct preserves the payload. Unwrap this type when
+// the compiler finding is fixed.
+pub type SearchHits = {
+  items: Vec[SearchResult];
+}
 
 pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMetric) -> Vec[SearchResult]
   requires: k > 0
@@ -348,12 +424,60 @@ pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMet
 }
 
 // ---- Write-ahead events (inline, from write_ahead_events.xi) ----
-pub fn log_upsert(w: &mut WalWriter, collection: Int, point: Int) -> Int {
-  return wal_writer_append(w, WalOpKind.Insert, collection, point);
+// Record layout for vectors: key = point id, value = collection id,
+// payload = encoded vector ([dim, bits...]).
+pub fn log_upsert(w: &mut WalWriter, collection: Int, point: Int, payload: Vec[Int]) -> Int {
+  return wal_writer_append_payload(w, WalOpKind.Insert, point, collection, payload);
 }
 
 pub fn log_delete(w: &mut WalWriter, collection: Int, point: Int) -> Int {
-  return wal_writer_append(w, WalOpKind.Delete, collection, point);
+  return wal_writer_append(w, WalOpKind.Delete, point, collection);
+}
+
+// ---- Recovery: replay a WAL into a fresh store ("reopen" path) ----
+// Insert records are decoded from their payload and re-applied; Delete
+// records remove the point. Malformed payloads are skipped (torn-tail
+// tolerance). Records of any other kind are ignored for now.
+pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+  requires: dim > 0
+{
+  var idx = index_new(dim);
+  var i: Int = 0;
+  while i < w.records.len() {
+    var op = w.records[i].op;
+    var key = w.records[i].key;
+    match op {
+      Insert => {
+        match vector_decode(&w.records[i].payload) {
+          Some(v) => {
+            if v.dimension == dim { index_add(&mut idx, key, v); }
+          }
+          None => {}
+        }
+      }
+      Delete => {
+        index_remove(&mut idx, key);
+      }
+      _ => {}
+    }
+    i = i + 1;
+  }
+  return idx;
+}
+
+// Rebuild an engine from its WAL: replay the log into a fresh store, then
+// write a compacted checkpoint log (so the recovered engine is itself
+// recoverable). LSNs stay monotonic; dimension/metric are restored.
+pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
+  requires: dim > 0
+{
+  var eng = engine_new();
+  eng.store = recover_store(w, dim);
+  eng.dimension = dim;
+  eng.metric = metric;
+  eng.created = true;
+  eng.wal = wal_writer_checkpoint_from(w, &eng.store);
+  return eng;
 }
 
 // ---- VectorEngine (from engine.xi) ----
@@ -402,13 +526,14 @@ pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[
   if vec.dimension != eng.dimension {
     return Err(CoreError.InvalidInput("dimension mismatch"));
   }
-  log_upsert(&mut eng.wal, 1, point);
+  var payload = vector_encode(&vec);
+  log_upsert(&mut eng.wal, 1, point, payload);
   var ok = index_add(&mut eng.store, point, vec);
   counter_inc(&mut eng.upserts);
   return Ok(ok);
 }
 
-pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Vec[SearchResult], CoreError]
+pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError]
   requires: eng.created
   requires: k > 0
 {
@@ -419,7 +544,7 @@ pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Vec[S
     return Err(CoreError.InvalidInput("top_k out of range"));
   }
   var hits = search_knn(&eng.store, query, k, eng.metric);
-  return Ok(hits);
+  return Ok(SearchHits{ items: hits });
 }
 
 pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
@@ -448,7 +573,7 @@ pub fn upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, C
   return engine_upsert(eng, point, vec);
 }
 
-pub fn search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Vec[SearchResult], CoreError] {
+pub fn search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError] {
   return engine_search(eng, query, k);
 }
 
