@@ -45,6 +45,7 @@ pub type HNSWGraph = {
   m: Int;
   ml: Float32;
   ef_construction: Int;
+  build_ops: Int;
   entry: Int;
 }
 
@@ -72,8 +73,21 @@ pub fn hnsw_new(m: Int, ml: Float32) -> HNSWGraph
     m: m,
     ml: ml,
     ef_construction: 200,
+    build_ops: 0,
     entry: -1,
   };
+}
+
+// Build-work proxy: distance computations performed by the construction
+// path (not persisted by the codec; it is a metric, not structure).
+pub fn hnsw_build_ops(g: &HNSWGraph) -> Int {
+  return g.build_ops;
+}
+
+// Distance helper for the build path (counts the work proxy).
+fn dist_build(g: &mut HNSWGraph, a: Int, b: Int, metric: DistanceMetric) -> Float32 {
+  g.build_ops = g.build_ops + 1;
+  return vector_distance(&g.vectors[a], &g.vectors[b], metric);
 }
 
 // Build-time beam width (honoured by the construction search). Values below
@@ -217,7 +231,7 @@ fn select_diverse(g: &mut HNSWGraph, cands: &Vec[Neighbor], m: Int, metric: Dist
     var good: Bool = true;
     var s: Int = 0;
     while s < selected.len() && good {
-      var dcs = vector_distance(&g.vectors[c.id as Int], &g.vectors[selected[s].id as Int], metric);
+      var dcs = dist_build(g, c.id as Int, selected[s].id as Int, metric);
       if dcs < c.distance { good = false; }
       s = s + 1;
     }
@@ -244,11 +258,11 @@ fn add_edge(g: &mut HNSWGraph, a: Int, layer: Int, b: Int, metric: DistanceMetri
   var j: Int = 0;
   while j < g.deg[row] {
     var nb = g.adj[row * g.m + j];
-    var d = vector_distance(&g.vectors[a], &g.vectors[nb], metric);
+    var d = dist_build(g, a, nb, metric);
     cands.push(Neighbor{ id: nb as UInt64, distance: d });
     j = j + 1;
   }
-  var dnb = vector_distance(&g.vectors[a], &g.vectors[b], metric);
+  var dnb = dist_build(g, a, b, metric);
   cands.push(Neighbor{ id: b as UInt64, distance: dnb });
   var sorted = Vec[Neighbor].new();
   var q: Int = 0;
@@ -355,6 +369,7 @@ fn greedy_layer(g: &HNSWGraph, query: &Vector, start: Int, layer: Int, metric: D
 // Build-path greedy descent (takes the mutable graph directly).
 fn greedy_layer_pos(g: &mut HNSWGraph, query: &Vector, start: Int, layer: Int, metric: DistanceMetric) -> Int {
   var cur: Int = start;
+  g.build_ops = g.build_ops + 1;
   var cur_d = vector_distance(&g.vectors[cur], query, metric);
   var improved: Bool = true;
   while improved {
@@ -363,6 +378,7 @@ fn greedy_layer_pos(g: &mut HNSWGraph, query: &Vector, start: Int, layer: Int, m
     var j: Int = 0;
     while j < g.deg[row] {
       var nb = g.adj[row * g.m + j];
+      g.build_ops = g.build_ops + 1;
       var d = vector_distance(&g.vectors[nb], query, metric);
       if d < cur_d {
         cur = nb;
@@ -387,6 +403,7 @@ fn search_layer_build(g: &mut HNSWGraph, query: &Vector, start: Int, ef: Int, la
   }
   var results = Vec[Neighbor].new();
   var frontier = Vec[Neighbor].new();
+  g.build_ops = g.build_ops + 1;
   var dx = vector_distance(&g.vectors[start], query, metric);
   visited[start] = true;
   neighbor_push_bounded(&mut results, start as UInt64, dx, ef);
@@ -411,6 +428,7 @@ fn search_layer_build(g: &mut HNSWGraph, query: &Vector, start: Int, ef: Int, la
         var npos = g.adj[crow * g.m + j];
         if !visited[npos] {
           visited[npos] = true;
+          g.build_ops = g.build_ops + 1;
           var dist = vector_distance(&g.vectors[npos], query, metric);
           if results.len() < ef {
             neighbor_push_bounded(&mut results, npos as UInt64, dist, ef);
