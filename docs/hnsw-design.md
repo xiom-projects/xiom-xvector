@@ -6,8 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 # HNSW Design
 
 `src/index/hnsw.xi` -- the approximate nearest-neighbour (ANN) index. This
-documents the current (working, simplified) implementation and the production
-TODOs from [`../ROADMAP.md`](../ROADMAP.md) (Phases 1 and 4).
+documents the current (working, layer-0) implementation and the production
+TODOs from [`../ROADMAP.md`](../ROADMAP.md) (Phase 4).
 
 ## What HNSW is
 
@@ -17,27 +17,39 @@ subset. Search enters at the top, greedily descends to the closest node on each
 layer, then does a wider search on layer 0. This yields sub-linear query time
 with high recall.
 
-## Node layout
+## Current implementation (v0.64.1 era): the layer-0 core
+
+The bootstrap's nested-graph attempt hit 15 T001 borrow errors (field access
+on `&layer.nodes[i]` inside nested loops; see `AUDIT.md`). The working
+implementation stores the graph as **flat parallel arrays** instead; no nested
+aggregate struct is ever borrowed:
 
 ```
-HNSWNode  { id: UInt64; neighbors: Vec[Neighbor] }
-HNSWLayer { nodes: Vec[HNSWNode]; vectors: Vec[Vector] }
-HNSWGraph { layers: Vec[HNSWLayer]; max_neighbors: Int; ml: Float32 }
+HNSWGraph {
+  ids:     Vec[Int];      // position -> user id
+  vectors: Vec[Vector];   // position -> vector (index-aligned with ids)
+  adj:     Vec[Int];      // row-major m slots per node: adj[pos*m + slot]
+  deg:     Vec[Int];      // live slots are 0 .. deg[pos]
+  m:       Int;           // max degree (hnsw_new requires m > 0)
+  ml:      Float32;       // reserved for level assignment (requires > 0.0)
+  entry:   Int;           // entry position, -1 when empty
+}
 ```
 
-- `nodes` and `vectors` are index-aligned within a layer (`nodes[i]` <-> `vectors[i]`).
-- Adjacency is stored as `Neighbor(id, distance)`; cross-layer identity is by
-  `id` (`find_node_pos` resolves an id to a per-layer position).
-- Results are `Vec[Neighbor]` -- the index layer never references the query layer.
+Adjacency rows are fixed-capacity: a full block is pruned by **replacing its
+farthest live edge** when the incoming edge is closer (the standard simple
+heuristic). `adj`/`deg` hold positions; results and `best` lists hold
+positions internally, and `hnsw_search` maps them to user ids on output
+(`Neighbor.id`).
 
 ## Parameters
 
-| Param | Meaning | Typical | Enforced by |
-|-------|---------|---------|-------------|
-| `max_neighbors` (M) | Max edges per node per layer. | 16 | `hnsw_new requires: > 0`; <= `core.limits.max_graph_degree()` (512) |
-| `ml` | Level multiplier; P(level >= l) ~= `ml^(-l)`. | 4.0 | `hnsw_new requires: > 0.0` |
-| `ef_construction` | Build-time beam width. | 200 | `AnnParams` (not yet honoured -- Phase 4) |
-| `ef_search` | Query-time beam width. | 64 | `AnnParams` (not yet honoured -- Phase 4) |
+| Param | Meaning | Typical | Status |
+|-------|---------|---------|--------|
+| `m` | Max edges per node. | 16 | enforced: `hnsw_new requires: m > 0`; production bound <= `core.limits.max_graph_degree()` (512) via `AnnParams` |
+| `ml` | Level multiplier (P(level >= l) ~= `ml^(-l)`). | 4.0 | reserved for level assignment (next hardening step) |
+| `ef` | Query-time beam width (`hnsw_search` arg). | 64 | **honoured**: breadth = `max(k, ef)` |
+| `ef_construction` | Build-time beam width. | 200 | not needed yet: construction is exact k-NN (see below) |
 
 `AnnParams` (in `index/ann_index.xi`) carries `m`, `ef_construction`, and
 `ef_search`; `ann_params_valid` bounds `m` by the shared core graph-degree limit.
@@ -54,61 +66,61 @@ recall/latency.
 | `ef_construction` | ~= 2xM, up to ~200 | 200 | Better graph quality, slower build. |
 | `ef_search` (query breadth) | 64-128 | 64 | Better recall, higher latency. |
 
-- **`M` (graph degree)** -- 16-32. Higher `M` means more edges per node, so
-  better recall at the cost of more memory per vector.
-- **`ef_construction`** -- heuristic is ~= 2xM, up to roughly 200. Higher values
-  build a higher-quality graph but make construction slower.
-- **`ef_search` (query breadth)** -- 64-128. Higher values widen the query-time
-  beam for better recall at the cost of higher latency.
-
-**How to tune:** benchmark **recall@k** and **p99 latency** against your target
-workloads and adjust within these ranges. HNSW tuning is fundamentally a balance
-among **memory, construction cost, and runtime recall/latency** -- there is no
-single best point, only the best point for a given workload and budget.
+- **How to tune:** benchmark **recall@k** and **p99 latency** against your
+  target workloads and adjust within these ranges. The recall harness
+  (`tests/probes/probe_hnsw_recall.xi`) is the instrument: it prints
+  recall@10 for ef=64 and ef=8 against the flat oracle.
 
 ## Build path (`hnsw_insert`)
 
-1. **Level assignment** -- `assign_level(node_count, ml)` uses a linear
-   congruential generator seeded from the node count to draw a level from the
-   exponential distribution (XIOM has no built-in RNG; this is deterministic and
-   well-distributed).
-2. **Ensure layers** -- grow `layers` up to the new node's level.
-3. **First node** -- if the graph is empty, insert into every layer as the sole
-   entry point.
-4. **Descend** -- from the top layer down to `level+1`, greedily move to the
-   closest node, remapping the entry point across layers by id.
-5. **Connect** -- from `level` down to 0: greedy-descend, select up to
-   `max_neighbors` nearest nodes in the layer (brute force), insert the node, and
-   add **bidirectional** edges.
+1. Append the node (`ids`/`vectors`), reserve `m` adjacency slots, `deg = 0`.
+2. First node becomes the entry point.
+3. **Exact k-NN selection** -- brute-force the `m` nearest existing nodes
+   (positions), bounded-insert into a sorted best list.
+4. **Connect bidirectionally** -- for each selected position, add directed
+   edges both ways; each side prunes a full block by replacing its farthest
+   edge when the new edge is closer.
+5. A dimension mismatch vs the first inserted vector is ignored (the engine
+   validates dimensions upstream).
+
+This build is O(n^2) in the same sense as a brute-force k-NN graph build, but
+it produces high-quality layer-0 edges; recall on the harness workload is
+100% at ef=64. `ef_construction` becomes meaningful once construction switches
+to beam-based insertion (multi-layer hardening).
 
 ## Search path (`hnsw_search`)
 
-1. Start at layer-0-projected top entry point.
-2. For each layer above 0: `greedy_search_layer` walks to a local minimum, then
-   remaps to the next layer by id.
-3. On layer 0: a beam-style expansion from the entry -- pop the closest frontier
-   candidate, visit unvisited neighbours, push them as candidates.
-4. Sort candidates by distance; return the first `k` as `Vec[Neighbor]`.
-5. `ensures: result.len() <= k`.
+1. Empty graph or dimension mismatch -> empty result (no contract trap).
+2. Best-first beam from `entry`: `frontier` (positions, ascending) and
+   `results` (user ids, ascending), both bounded by `breadth = max(k, ef)`.
+3. Pop the closest frontier candidate; when `results` is full and the popped
+   candidate is farther than the current worst result, stop (done-flag; the
+   language has no `break`).
+4. Expand unvisited neighbours; push into `results`/`frontier` when the beam
+   is not full or the candidate beats the worst result.
+5. Return the first `k` results as `Vec[Neighbor]` (`ensures: len <= k`).
 
 ## Contracts
 
-- `hnsw_new` -- `max_neighbors > 0`, `ml > 0.0`.
+- `hnsw_new` -- `m > 0`, `ml > 0.0`.
 - `hnsw_search` -- `k > 0`, and `result.len() <= k`.
-- Neighbour selection caps adjacency at `max_neighbors` (the graph-degree
-  invariant; see [`contracts-and-invariants.md`](contracts-and-invariants.md)).
+- Neighbour selection caps adjacency at `m` (the graph-degree invariant; see
+  [`contracts-and-invariants.md`](contracts-and-invariants.md)).
 - Cold/empty graph returns an empty result -- never panics.
 
 ## Current simplifications (and the production TODOs)
 
-| Area | Now (simplified) | Production (Phase 4) |
-|------|------------------|----------------------|
-| Neighbour selection | brute-force nearest within the layer | heuristic RNG pruning for diversity/recall |
-| Beam width | implicit (visit-all frontier) | honour `ef_construction` / `ef_search` |
-| Metric | euclidean internally for traversal | metric-agnostic via `vector_distance` |
-| Node position lookup | linear `find_node_pos` | id -> position hash map |
+| Area | Now (working) | Production (Phase 4) |
+|------|---------------|----------------------|
+| Layers | single layer (layer-0 core); `ml` reserved | level assignment + top-down descent |
+| Build | brute-force exact k-NN per insert + farthest-edge prune | beam insertion honouring `ef_construction`, diversified pruning (`neighbor_closer`) |
+| Search | best-first beam honouring `ef` | top-layer greedy descent, adaptive ef |
+| Metric | metric-agnostic via `vector_distance` | unchanged (done) |
+| Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
 | Deletes | not supported | tombstones + edge repair |
 | Persistence | in-memory only | serialized into sealed segments |
+| Engine wiring | module + harness only | `search_execute` Hnsw route / collection index kind |
 
-These are structural, not correctness, gaps: the flat index remains the truth
-oracle, and HNSW recall is validated against it in Phase 4.
+The flat index remains the truth oracle; the recall harness validates the
+graph against it at every build (gates: recall@10 >= 0.85 at ef=64, >= 0.50
+at ef=8, cosine >= 0.60).

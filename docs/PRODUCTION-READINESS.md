@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post selectivity pre/post filter planner)
-- **Overall:** **56 %** (weighted; see method)
+- **As of:** 2026-10-08 (post HNSW layer-0 graph + recall harness)
+- **Overall:** **59 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -25,7 +25,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 25 | scaffold | graph quality/tuning, recall harness, tombstones |
+| C | ANN index (HNSW hardening) | 14 | 45 | buildable | multi-layer, ef_construction build, deletes, id map, engine wiring, persistence |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x92 + 0.14x25 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **56.34 -> 56 %**.
+**Overall today:** 0.08x95 + 0.10x92 + 0.14x45 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **59.14 -> 59 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -67,11 +67,16 @@ Done: flat exact KNN, k-bounded sorted results, filtered exact search
 public shape, error paths.
 Remaining: range-search surface, batch search.
 
-### C. ANN index -- 25 %
-Done: in-memory HNSW from the bootstrap (simplified), AnnParams validation.
-Remaining: graph build quality, ef tuning, search recall harness vs flat
-oracle, tombstone/delete handling, memory accounting, persistence of the
-graph.
+### C. ANN index -- 45 %
+Done: working layer-0 HNSW graph (`index/hnsw.xi`: flat parallel arrays,
+exact-kNN bidirectional build with farthest-edge pruning, best-first beam
+honouring `ef`, metric-agnostic, user-id results), recall harness vs the
+flat oracle (n=200 dim=8: recall@10 300/300 at ef=64, 299/300 at ef=8,
+cosine 100/100; gate `probe_hnsw_recall`), AnnParams validation.
+Remaining: multi-layer level assignment + top-down descent, beam
+construction honouring `ef_construction` with diversified pruning,
+deletes/tombstones + edge repair, id -> position map, engine
+`search_execute`/index-kind wiring, memory accounting, graph persistence.
 
 ### D. Persistence & durability -- 55 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -108,7 +113,7 @@ Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
 ### I. Testing & verification -- 72 %
-Done: 168-check conformance suite (x2 Windows + WSL), 10 probes, build-time
+Done: 168-check conformance suite (x2 Windows + WSL), 11 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates.
 Remaining: soak (long-running upsert/search), fuzz (codec + filters),
 kill-recovery acceptance script, reference oracle cross-check, CI wiring.
@@ -192,6 +197,15 @@ lane.
   equivalence vs a scan reference + fallback case, stress 6/6 fresh builds).
   B 90 -> 92, E 95 -> 97; overall 56.34 -> 56 %. Evidence: suite 168/168 x2
   (Win+WSL), all 10 probes x2 (Win) + WSL spot.
+- **2026-10-08 (twelfth pass):** Phase 4 start -- HNSW stub replaced by a
+  working layer-0 graph (`index/hnsw.xi`: flat parallel arrays dodging the
+  AUDIT T001 shape; exact-kNN bidirectional build with farthest-edge
+  pruning; best-first beam honouring `ef`; metric-agnostic; user-id
+  results) + recall harness vs the flat oracle (new probe
+  `probe_hnsw_recall`: recall@10 300/300 at ef=64, 299/300 at ef=8, cosine
+  100/100, reachability 200/200, stress 6/6 fresh builds; gates >= 0.85 /
+  0.50 / 0.60). C 25 -> 45; overall 56.34 -> 59 %. Evidence: suite 168/168
+  x2 (Win+WSL), all 11 probes x2 (Win) + WSL spot (recall bit-identical).
 
 ## Update rule
 
