@@ -133,7 +133,9 @@ fn main() -> Int {
     "encode: version-2 word stream carrying ef_construction=77", fails);
   match hnsw_decode(&words) {
     Some(g2) => {
-      fails = check(graphs_equal(&g, &g2), "roundtrip: ids/levels/deleted/vectors/adjacency identical", fails);
+      fails = check(graphs_equal(&g, &g2) && hnsw_find_node_pos(&g2, 100) == 99
+        && hnsw_find_node_pos(&g2, 7) == 6,
+        "roundtrip: ids/levels/deleted/vectors/adjacency identical + id map rebuilt", fails);
       var parity: Bool = true;
       var q: Int = 0;
       while q < 10 {
@@ -227,6 +229,30 @@ fn main() -> Int {
     match nbr { Some(_) => {} None => { no7 = true; } }
   }
   fails = check(no7, "reject: out-of-range neighbor position", fails);
+
+  // duplicate ids are rejected (the id map is unique).
+  var sg = hnsw_new(4, 4.0);
+  var s1 = Vector.new(2);
+  s1.set(0, 1.0); s1.set(1, 0.0);
+  var s2 = Vector.new(2);
+  s2.set(0, 0.0); s2.set(1, 1.0);
+  hnsw_insert(&mut sg, 1, s1, DistanceMetric.Euclidean);
+  hnsw_insert(&mut sg, 2, s2, DistanceMetric.Euclidean);
+  var dupw = hnsw_encode(&sg);
+  var pw: Int = 7;
+  var vw1: Int = dupw[pw + 3];
+  pw = pw + 4 + vw1;
+  var rr: Int = 0;
+  while rr < hnsw_layer_capacity() {
+    var dgw: Int = dupw[pw];
+    pw = pw + 1 + dgw;
+    rr = rr + 1;
+  }
+  dupw[pw] = dupw[7];
+  var ndup = hnsw_decode(&dupw);
+  var no_dup: Bool = true;
+  match ndup { Some(_) => { no_dup = false; } None => {} }
+  fails = check(no_dup, "reject: duplicate ids", fails);
 
   // --- a decoded graph stays mutable ---
   match hnsw_decode(&hnsw_encode(&g)) {

@@ -354,9 +354,14 @@ fn main() -> Int {
   }
   fails = check(hnsw_live_count(&graph) == 150 && hnsw_size(&graph) == 200,
     "pre-compact: 50 tombstoned, size 200, live 150", fails);
+  fails = check(hnsw_find_node_pos(&graph, 151) == 150 && hnsw_find_node_pos(&graph, 42) == 41,
+    "id map pre-compact: 151 -> 150, 42 -> 41", fails);
   var compacted = hnsw_compact(&graph, DistanceMetric.Euclidean);
   fails = check(hnsw_size(&compacted) == 150 && hnsw_live_count(&compacted) == 150,
     "hnsw_compact: size 150, live 150, no tombstones", fails);
+  fails = check(hnsw_find_node_pos(&compacted, 151) == 100 && hnsw_find_node_pos(&compacted, 200) == 149
+    && hnsw_find_node_pos(&compacted, 101) == -1,
+    "id map post-compact: 151 -> 100, 200 -> 149, deleted 101 gone", fails);
   var stray_c: Int = 0;
   var hits_c: Int = 0;
   qi = 0;

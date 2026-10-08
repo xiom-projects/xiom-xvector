@@ -40,6 +40,8 @@ pub type HNSWGraph = {
   adj: Vec[Int];
   deg: Vec<Int];
   deleted: Vec[Bool];
+  id_keys: Vec[Int];
+  id_vals: Vec[Int];
   m: Int;
   ml: Float32;
   ef_construction: Int;
@@ -56,6 +58,8 @@ pub fn hnsw_new(m: Int, ml: Float32) -> HNSWGraph
   var adj = Vec[Int].new();
   var deg = Vec[Int].new();
   var deleted = Vec[Bool].new();
+  var id_keys = Vec[Int].new();
+  var id_vals = Vec[Int].new();
   return HNSWGraph{
     ids: ids,
     vectors: vectors,
@@ -63,6 +67,8 @@ pub fn hnsw_new(m: Int, ml: Float32) -> HNSWGraph
     adj: adj,
     deg: deg,
     deleted: deleted,
+    id_keys: id_keys,
+    id_vals: id_vals,
     m: m,
     ml: ml,
     ef_construction: 200,
@@ -85,12 +91,43 @@ pub fn hnsw_level_of(g: &HNSWGraph, pos: Int) -> Int {
   return g.levels[pos];
 }
 
-// Linear id -> position lookup (hardening: id -> position map).
+// Sorted id -> position map (binary search; ids are unique). Insert a new
+// (id, pos) pair; returns false when the id already exists.
+fn id_map_insert_raw(g: &mut HNSWGraph, id: Int, pos: Int) -> Bool {
+  var lo: Int = 0;
+  var hi: Int = g.id_keys.len();
+  while lo < hi {
+    var mid: Int = (lo + hi) / 2;
+    if g.id_keys[mid] < id { lo = mid + 1; } else { hi = mid; }
+  }
+  if lo < g.id_keys.len() && g.id_keys[lo] == id { return false; }
+  g.id_keys.push(id);
+  g.id_vals.push(pos);
+  var j: Int = g.id_keys.len() - 1;
+  while j > lo {
+    g.id_keys[j] = g.id_keys[j - 1];
+    g.id_vals[j] = g.id_vals[j - 1];
+    j = j - 1;
+  }
+  g.id_keys[lo] = id;
+  g.id_vals[lo] = pos;
+  return true;
+}
+
+// O(log n) id -> position lookup over the sorted map (-1 when absent).
 pub fn hnsw_find_node_pos(g: &HNSWGraph, id: Int) -> Int {
-  var i: Int = 0;
-  while i < g.ids.len() {
-    if g.ids[i] == id { return i; }
-    i = i + 1;
+  var lo: Int = 0;
+  var hi: Int = g.id_keys.len();
+  while lo < hi {
+    var mid: Int = (lo + hi) / 2;
+    if g.id_keys[mid] < id {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  if lo < g.id_keys.len() && g.id_keys[lo] == id {
+    return g.id_vals[lo];
   }
   return -1;
 }
@@ -246,6 +283,7 @@ pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetr
   g.ids.push(id);
   g.vectors.push(vec);
   g.deleted.push(false);
+  id_map_insert_raw(g, id, pos);
   var lv: Int = assign_level(pos, g.ml);
   g.levels.push(lv);
   var i: Int = 0;
@@ -624,6 +662,7 @@ pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
         g.vectors.push(v);
         g.levels.push(level);
         if del == 1 { g.deleted.push(true); } else { g.deleted.push(false); }
+        if !id_map_insert_raw(&mut g, id, i) { return None; }
         var l: Int = 0;
         while l < hnsw_layer_capacity() {
           if pos >= words.len() { return None; }
