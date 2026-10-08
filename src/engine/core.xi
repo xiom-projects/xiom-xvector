@@ -90,15 +90,20 @@ pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnP
     if !ann_params_valid(&params) {
       return Err(CoreError.InvalidInput("invalid ann params"));
     }
-    eng.graph = hnsw_new(params.m, 4.0);
-    hnsw_set_ef_construction(&mut eng.graph, params.ef_construction);
+    // Build into a local graph, then assign once: repeated cross-module
+    // access to eng.graph inside the loop crashed the WSL build of this
+    // function after the id-map fields landed (Windows green); the local
+    // form is verified on both platforms.
+    var g = hnsw_new(params.m, 4.0);
+    hnsw_set_ef_construction(&mut g, params.ef_construction);
     var i: Int = 0;
     while i < eng.store.ids.len() {
       var pid = eng.store.ids[i];
       var pv = eng.store.vectors[i];
-      hnsw_insert_ref(&mut eng.graph, pid, &pv, eng.metric);
+      hnsw_insert_ref(&mut g, pid, &pv, eng.metric);
       i = i + 1;
     }
+    eng.graph = g;
   } else {
     eng.graph = hnsw_new(16, 4.0);
   }
