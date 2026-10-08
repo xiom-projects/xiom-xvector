@@ -1,6 +1,7 @@
 module probe_debug_filter
 
 use xiom.vector.engine;
+use xiom.vector.types.dense_vector;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.io;
