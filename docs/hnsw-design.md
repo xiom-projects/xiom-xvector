@@ -121,6 +121,18 @@ revives the node (edges are kept; re-linking on update is a hardening TODO).
 rebuilt around the survivors, and their slots are reclaimed. The engine
 wrapper is `compact_index` (Flat -> 0 reclaimed).
 
+## Persistence (graph codec)
+
+`hnsw_encode(g) -> Vec[Int]` / `hnsw_decode(words) -> Option[HNSWGraph]` is
+a deterministic word codec mirroring the WAL style: header
+(`version=1, m, ml_bits, layer_capacity, entry, node_count`), then per node
+`id, level, deleted, vector words` (via `storage.vector_store.vector_encode`)
+followed by every layer row's degree + neighbor positions. Decode is
+strict: truncated, tampered, out-of-range, or trailing-junk input returns
+`None` (torn-record tolerance). The codec is the step before file-backed
+graph segments (stdlib fd/fsync pending); today the engine still rebuilds
+the graph from the flat store on load, which the codec will replace.
+
 ## Contracts
 
 - `hnsw_new` -- `m > 0`, `ml > 0.0`.
@@ -157,7 +169,7 @@ empty search. Full run ~0.9s.
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
 | Deletes | **tombstones + `hnsw_compact`** (rebuild from live nodes, reclaim) | background/automatic compaction policy |
-| Persistence | in-memory only | serialized into sealed segments |
+| Persistence | **word codec** (`hnsw_encode`/`hnsw_decode`, strict roundtrip) | file-backed graph segments (stdlib I/O), engine load path |
 | Engine wiring | module + harness only | `search_execute` Hnsw route / collection index kind |
 
 The flat index remains the truth oracle; the recall harness validates the

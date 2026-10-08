@@ -8,20 +8,20 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (16 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (17 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
 payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
-engine HNSW wiring -> HNSW tombstone compaction).
+engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `81bccbb` (feat: HNSW tombstone
-compaction), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `074cd7e` (feat: HNSW graph codec),
+then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -31,7 +31,7 @@ compaction), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `81bccbb` + this wrap commit | this repo |
+| xvector | `074cd7e` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -104,6 +104,11 @@ compaction), then this wrap commit. Identity `Lefteris Notas
   `compact_index` (Flat -> `Ok(0)`, returns reclaimed). Gates: compact-all
   -> empty graph; 50 deletes -> size/live 150 with recall 200/200 and
   stray_deleted=0; engine-level reclaim 1 + post-compact recall holds.
+- **HNSW graph codec:** `hnsw_encode`/`hnsw_decode` (deterministic word
+  stream, strict decode: malformed/truncated/tampered -> None). Gate
+  `probe_hnsw_codec` (9 checks: 100-node structural roundtrip + search
+  bit-identical, tombstones, empty graph, six rejection cases, decoded
+  graph mutable). File-backed segments stay pending on stdlib I/O.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -117,18 +122,18 @@ final extraction wave):**
   in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
-- All **12 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- All **13 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
-  `probe_engine_hnsw` (run via `scripts\run-probe.ps1`).
-- WSL spot: `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 +
-  `probe_filter_plan` x2 + `probe_filtered_search` x1 + `probe_vector_store`
-  green (`bash scripts/run-probe.sh`).
+  `probe_engine_hnsw`, `probe_hnsw_codec` (run via `scripts\run-probe.ps1`).
+- WSL spot: `probe_hnsw_codec` x2 + `probe_engine_hnsw` x1 +
+  `probe_hnsw_recall` x2 + `probe_filter_plan` x2 + `probe_filtered_search`
+  x1 + `probe_vector_store` green (`bash scripts/run-probe.sh`).
 - Stresses: `probe_search_request` 8/8, `probe_payload_index` 6/6,
-  `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6
-  fresh builds (see XVC-C-08 for why trailing-field reads are not asserted
-  in the suite).
+  `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6,
+  `probe_hnsw_codec` 6/6 fresh builds (see XVC-C-08 for why trailing-field
+  reads are not asserted in the suite).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -157,11 +162,12 @@ final extraction wave):**
 The extraction tree is final; what remains is capability work.
 
 1. **HNSW round 5 (Phase 4, remaining):** beam construction honouring
-   `ef_construction` + diversified pruning; id -> position map; graph
-   persistence (codec first, file-backed with stdlib I/O); harness latency
-   metrics. Optional E stretch: multi-key / index-driven candidate
-   iteration. Then concurrency/soak (G phase). Gates today:
-   `probe_hnsw_recall`, `probe_engine_hnsw` (both stress 6/6).
+   `ef_construction` + diversified pruning; id -> position map; harness
+   latency metrics; file-backed graph segments once stdlib I/O lands (the
+   word codec is ready). Optional E stretch: multi-key / index-driven
+   candidate iteration. Then concurrency/soak (G phase). Gates today:
+   `probe_hnsw_recall`, `probe_engine_hnsw`, `probe_hnsw_codec` (all
+   stress 6/6).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -278,7 +284,7 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-168/168 x2 (Windows + WSL), 12 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 13 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -296,7 +302,8 @@ n=200 300/300, n=800 200/200, delete checks vs the flat oracle).
 Engine HNSW wiring (set_index Flat/Hnsw, upsert graph upkeep, engine_search
 routing with ef=ann.ef_search, filtered stays exact; gate
 probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
-hnsw_compact tombstone compaction + engine compact_index).
+hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
+hnsw_decode strict graph codec).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -304,11 +311,11 @@ docs/repro/xv-trailing-field-vec; gate such reads only in real-module
 probes).
 
 NEXT TASK (priority 1): HNSW round 5 (remaining) -- beam construction
-honouring ef_construction + diversified pruning; id -> position map; graph
-persistence (codec first, file-backed with stdlib I/O); harness latency
-metrics. Optional E stretch: multi-key / index-driven candidate iteration.
-Add suite + probe gates for each step, keep the numeric gates per build.
-Standby: M2 file-backed WAL when stdlib lands
+honouring ef_construction + diversified pruning; id -> position map;
+harness latency metrics; file-backed graph segments once stdlib I/O lands
+(the word codec is ready). Optional E stretch: multi-key / index-driven
+candidate iteration. Add suite + probe gates for each step, keep the
+numeric gates per build. Standby: M2 file-backed WAL when stdlib lands
 fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08); unwind
 candidates (C-04 SearchHits wrapper, C-01 direct dispatch).
 
