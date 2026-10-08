@@ -99,3 +99,20 @@ mitigation: hydration flags are gated only in the real-module probe; the
 suite mirror documents the defect and drops trailing-flag assertions. This is
 a silent wrong-metadata defect (a hydrated result can claim a payload it does
 not have) -- please triage alongside XVC-C-05/C-06 at the next archive.
+
+**Addendum 5 (2026-10-08, later): XVC-C-09 -- WSL-only segfault on nested-field mutation across modules.**
+
+Found while adding the HNSW id -> position map. At commit `bca8b7f`,
+calling `engine_set_index` (module `xiom.vector.engine.core`) -- which
+assigns a nested struct field (`eng.graph = hnsw_new(...)`) and then loops
+mutating it through another module's function
+(`hnsw_insert_ref(&mut eng.graph, ...)`) while reading sibling fields --
+**segfaults on WSL 3/3 runs** while the same revision is green on Windows
+(probe x2 + 6/6 stress). The identical steps inlined in the probe unit are
+green on WSL; the raw-store build loop is green too: context-sensitive
+lowering (layout-sensitive, same family as XVC-C-08). Repro (revision-
+pinned): `docs/repro/xv-wsl-nested-field/` (probe + README). Workaround
+adopted: build the graph in a local variable, assign the field once --
+green on Windows + WSL afterwards. Please prioritize the whole
+context-sensitive family (C-05/C-06/C-08/C-09); it makes cross-platform
+verification unreliable.

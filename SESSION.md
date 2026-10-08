@@ -8,21 +8,21 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (18 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (19 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
 payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
-beam construction + diversified pruning).
+beam construction + diversified pruning -> HNSW id map [XVC-C-09 found]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `bca8b7f` (feat: beam construction +
-diversified pruning), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `cceae11` (feat: HNSW id map + WSL
+nested-field workaround), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -32,7 +32,7 @@ diversified pruning), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `bca8b7f` + this wrap commit | this repo |
+| xvector | `cceae11` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -118,6 +118,12 @@ diversified pruning), then this wrap commit. Identity `Lefteris Notas
   setter ignores < 1) and is seeded by `set_index` from AnnParams. Harness:
   n=200 300/300 (ef=64) / 296/300 (ef=8), n=800 200/200,
   deletes/compaction still green, run ~1.8s.
+- **HNSW id map + XVC-C-09 workaround:** sorted `id_keys`/`id_vals` map
+  (binary-search insert/find; duplicate ids rejected; codec unchanged and
+  rebuilds the map; compaction rebuilds it). Wiring it exposed **XVC-C-09**:
+  the compiled `engine_set_index` segfaulted on WSL while Windows stayed
+  green; fixed by building the graph in a local then assigning `eng.graph`
+  once. Repro pinned at `bca8b7f`: `docs/repro/xv-wsl-nested-field/`.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -161,8 +167,13 @@ final extraction wave):**
   compilation unit. Repro: `docs/repro/xv-trailing-field-vec/` (probe exit
   1, variants matrix exit 5). The shipped `hydrate_hits` is green in its own
   unit (probe 8/8 builds); the suite mirror asserts ids only.
+- **XVC-C-09 OPEN (new on v0.64.1, WSL only):** the compiled
+  `engine_set_index` segfaulted on WSL while Windows was green (context-
+  sensitive lowering; same family as C-08). Worked around (local graph then
+  single field assign). Repro pinned at `bca8b7f`:
+  `docs/repro/xv-wsl-nested-field/`.
 - Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addendum 3 =
-  v0.64.1 results; Addendum 4 = XVC-C-08).
+  v0.64.1 results; Addendum 4 = XVC-C-08; Addendum 5 = XVC-C-09).
 
 ---
 
@@ -170,12 +181,13 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **HNSW round 5 (Phase 4, remaining):** id -> position map; harness
-   latency metrics; file-backed graph segments once stdlib I/O lands (the
-   word codec is ready). Optional E stretch: multi-key / index-driven
-   candidate iteration. Then concurrency/soak (G phase). Gates today:
-   `probe_hnsw_recall`, `probe_engine_hnsw`, `probe_hnsw_codec` (all
-   stress 6/6).
+1. **Compiler-workaround unwind candidates (slice 5):** `SearchHits` struct
+   wrapper (C-04 fixed) -- decide API shape deliberately; suite direct
+   dispatch (C-01); predicate-based negative tests (C-02). Only land what is
+   verified green per build (Windows + WSL). Then HNSW round-5 finishing:
+   harness latency metrics; file-backed graph segments once stdlib I/O
+   lands. Gates today: `probe_hnsw_recall`, `probe_engine_hnsw`,
+   `probe_hnsw_codec` (all stress 6/6).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -231,6 +243,11 @@ The extraction tree is final; what remains is capability work.
   only in real-module probes (never in the suite mirror); repro
   `docs/repro/xv-trailing-field-vec/`. Verify any layout workaround per unit
   (the flag-first reorder was green in the bundle but segfaulted the suite).
+- **XVC-C-09 (open, WSL only): a compiled function that mutates a nested
+  struct field through another module in a loop can segfault on WSL while
+  Windows is green.** Build the nested value in a local and assign the field
+  once; repro `docs/repro/xv-wsl-nested-field/` (pinned `bca8b7f`). Always
+  run the WSL spot before trusting a green Windows wrap.
 - Historical v0.64.0-era traps (C-01..C-06) are fixed; if any reappears,
   open a delta row instead of re-bisecting (details in the findings doc).
 - Keep numeric gates per build (suite/probes assert exact bits; red = build
@@ -266,8 +283,8 @@ The extraction tree is final; what remains is capability work.
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/8 fixed (v0.64.1); C-07 + C-08 open |
-| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = v0.64.1 re-test; Addendum 4 = XVC-C-08 |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/9 fixed (v0.64.1); C-07 + C-08 + C-09 open |
+| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = v0.64.1 re-test; 4 = C-08; 5 = C-09 |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still blocking M2 |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
@@ -312,20 +329,23 @@ routing with ef=ann.ef_search, filtered stays exact; gate
 probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
 hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
 hnsw_decode strict graph codec; beam construction honouring
-ef_construction with diversified pruning).
+ef_construction with diversified pruning; sorted id map).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
 docs/repro/xv-trailing-field-vec; gate such reads only in real-module
-probes).
+probes); XVC-C-09 OPEN (WSL-only nested-field mutation segfault; build into
+a local then assign once; repro docs/repro/xv-wsl-nested-field pinned at
+bca8b7f).
 
-NEXT TASK (priority 1): HNSW round 5 (remaining) -- id -> position map;
-harness latency metrics; file-backed graph segments once stdlib I/O lands
-(the word codec is ready). Optional E stretch: multi-key / index-driven
-candidate iteration. Add suite + probe gates for each step, keep the
-numeric gates per build. Standby: M2 file-backed WAL when stdlib lands
-fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08); unwind
-candidates (C-04 SearchHits wrapper, C-01 direct dispatch).
+NEXT TASK (priority 1): compiler-workaround unwind candidates (slice 5) --
+`SearchHits` struct wrapper (C-04 fixed; decide the API shape), suite direct
+dispatch (C-01), predicate-based negative tests (C-02) -- only what is
+verified green per build on Windows + WSL. Then HNSW round-5 finishing:
+harness latency metrics; file-backed graph segments once stdlib I/O lands.
+Add suite + probe gates for each step, keep the numeric gates per build.
+Standby: M2 file-backed WAL when stdlib lands fsync/fd-write/append-bytes
+(still stubs -- re-checked 2026-10-08).
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module

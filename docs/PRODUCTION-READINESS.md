@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post HNSW beam construction + diversified pruning)
-- **Overall:** **65 %** (weighted; see method)
+- **As of:** 2026-10-08 (post HNSW id map; XVC-C-09 worked around)
+- **Overall:** **66 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -25,7 +25,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 90 | release-grade | id map, file-backed persistence, latency metrics |
+| C | ANN index (HNSW hardening) | 14 | 95 | release-grade | file-backed persistence, latency metrics |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x92 + 0.14x90 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **65.44 -> 65 %**.
+**Overall today:** 0.08x95 + 0.10x92 + 0.14x95 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **66.14 -> 66 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -67,25 +67,25 @@ Done: flat exact KNN, k-bounded sorted results, filtered exact search
 public shape, error paths.
 Remaining: range-search surface, batch search.
 
-### C. ANN index -- 90 %
+### C. ANN index -- 95 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
 adjacency rows, deterministic geometric levels, greedy descent + layer-0
-beam honouring `ef`, metric-agnostic, user-id results), tombstone deletes
-(never returned, routers kept, revive on re-insert), tombstone compaction
+beam honouring `ef`, metric-agnostic, user-id results; **O(log n) sorted
+id -> position map** with duplicate rejection), tombstone deletes (never
+returned, routers kept, revive on re-insert), tombstone compaction
 (`hnsw_compact` rebuilds from live nodes; engine `compact_index`), **engine
 wiring** (`VectorEngine.graph/index_kind/ann`, `set_index` Flat/Hnsw,
 upsert/delete upkeep, `engine_search` routing with `ef = ann.ef_search`,
 filtered search stays exact, recover + re-apply), **strict word codec**
-(`hnsw_encode`/`hnsw_decode` v2), **beam construction honouring
-`ef_construction`** with diversified pruning (`select_diverse`;
-`hnsw_set_ef_construction`; AnnParams seeded by `set_index`), recall
-harness vs the flat oracle (n=200: 300/300 at ef=64, 296/300 at ef=8; n=800:
-200/200; after-delete 300/300 stray42=0; compacted 200/200
-stray_deleted=0; engine-level recall 200/200 incl. an ef_construction=32
-build; gates `probe_hnsw_recall`, `probe_engine_hnsw`, `probe_hnsw_codec`),
-AnnParams validation.
-Remaining: id -> position map, file-backed graph segments (stdlib I/O
-pending), harness latency metrics.
+(`hnsw_encode`/`hnsw_decode` v2, map rebuilt on decode), **beam
+construction honouring `ef_construction`** with diversified pruning,
+recall harness vs the flat oracle (n=200: 300/300 at ef=64, 296/300 at
+ef=8; n=800: 200/200; after-delete 300/300; compacted 200/200; engine-level
+recall 200/200 incl. ef_construction=32; gates `probe_hnsw_recall`,
+`probe_engine_hnsw`, `probe_hnsw_codec`), AnnParams validation.
+Remaining: file-backed graph segments (stdlib I/O pending), harness latency
+metrics. Note: the WSL segfault found while wiring the map (XVC-C-09) is
+worked around and pinned as a repro for the compiler lane.
 
 ### D. Persistence & durability -- 55 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -265,6 +265,15 @@ lane.
   hold; engine ef_construction=32 build recall holds); three HNSW probes
   stress 6/6 each. C 85 -> 90; overall 64.74 -> 65 %. Evidence: suite
   168/168 x2 (Win+WSL), all 13 probes x2 (Win) + WSL spot.
+- **2026-10-08 (nineteenth pass):** Phase 4 -- HNSW sorted id -> position
+  map (`id_keys`/`id_vals`, O(log n) find, duplicates rejected, codec
+  rebuilds it, compaction rebuilds it). Found **XVC-C-09** while wiring it:
+  the compiled `engine_set_index` segfaulted on WSL while Windows stayed
+  green; worked around (local graph + single field assign), repro pinned at
+  `bca8b7f` (`docs/repro/xv-wsl-nested-field/`). C 90 -> 95; overall 65.44
+  -> 66 %. Evidence: suite 168/168 x2 (Win+WSL), all 13 probes x2 (Win) +
+  WSL spot (engine/recall/codec probes green post-workaround); three HNSW
+  probes stress 6/6 each.
 
 ## Update rule
 
