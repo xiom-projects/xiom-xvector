@@ -34,9 +34,10 @@ pub fn hnsw_layer_capacity() -> Int {
 pub type HNSWGraph = {
   ids: Vec[Int];
   vectors: Vec[Vector];
-  levels: Vec[Int];
+  levels: Vec<Int];
   adj: Vec[Int];
-  deg: Vec[Int];
+  deg: Vec<Int];
+  deleted: Vec[Bool];
   m: Int;
   ml: Float32;
   entry: Int;
@@ -51,12 +52,14 @@ pub fn hnsw_new(m: Int, ml: Float32) -> HNSWGraph
   var levels = Vec[Int].new();
   var adj = Vec[Int].new();
   var deg = Vec[Int].new();
+  var deleted = Vec[Bool].new();
   return HNSWGraph{
     ids: ids,
     vectors: vectors,
     levels: levels,
     adj: adj,
     deg: deg,
+    deleted: deleted,
     m: m,
     ml: ml,
     entry: -1,
@@ -79,6 +82,28 @@ pub fn hnsw_find_node_pos(g: &HNSWGraph, id: Int) -> Int {
     i = i + 1;
   }
   return -1;
+}
+
+// Tombstone a node by id. The node stays in the graph as a routing node
+// (its edges are kept) but `hnsw_search` never returns it. Idempotent:
+// returns false for an unknown id or an already-deleted node.
+pub fn hnsw_delete(g: &mut HNSWGraph, id: Int) -> Bool {
+  var pos: Int = hnsw_find_node_pos(g, id);
+  if pos < 0 { return false; }
+  if g.deleted[pos] { return false; }
+  g.deleted[pos] = true;
+  return true;
+}
+
+// Live (non-tombstoned) node count.
+pub fn hnsw_live_count(g: &HNSWGraph) -> Int {
+  var n: Int = 0;
+  var i: Int = 0;
+  while i < g.deleted.len() {
+    if !g.deleted[i] { n = n + 1; }
+    i = i + 1;
+  }
+  return n;
 }
 
 fn adj_row(pos: Int, layer: Int) -> Int {
@@ -171,15 +196,24 @@ fn add_edge(g: &mut HNSWGraph, a: Int, layer: Int, b: Int, metric: DistanceMetri
   }
 }
 
-// Insert a point. A dimension mismatch (vs the first inserted vector) is
+// Insert a point. Re-inserting an existing id updates the vector in place
+// and revives a tombstoned node (edges are kept; re-linking on update is a
+// hardening TODO). A dimension mismatch (vs the first inserted vector) is
 // ignored; the engine validates dimensions before calling.
 pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetric) {
   if g.ids.len() > 0 {
     if vec.dimension != g.vectors[0].dimension { return; }
   }
+  var existing: Int = hnsw_find_node_pos(g, id);
+  if existing >= 0 {
+    g.vectors[existing] = vec;
+    g.deleted[existing] = false;
+    return;
+  }
   var pos: Int = g.ids.len();
   g.ids.push(id);
   g.vectors.push(vec);
+  g.deleted.push(false);
   var lv: Int = assign_level(pos, g.ml);
   g.levels.push(lv);
   var i: Int = 0;
@@ -275,7 +309,10 @@ fn hnsw_search_core(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: Dist
   var d0 = vector_distance(&g.vectors[start], query, metric);
   visited[start] = true;
   seen = seen + 1;
-  neighbor_push_bounded(&mut results, g.ids[start] as UInt64, d0, breadth);
+  // Tombstoned nodes stay in the graph as routers but are never returned.
+  if !g.deleted[start] {
+    neighbor_push_bounded(&mut results, g.ids[start] as UInt64, d0, breadth);
+  }
   neighbor_push_bounded(&mut frontier, start as UInt64, d0, breadth);
 
   var done: Bool = false;
@@ -302,12 +339,16 @@ fn hnsw_search_core(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: Dist
           seen = seen + 1;
           var dist = vector_distance(&g.vectors[npos], query, metric);
           if results.len() < breadth {
-            neighbor_push_bounded(&mut results, g.ids[npos] as UInt64, dist, breadth);
+            if !g.deleted[npos] {
+              neighbor_push_bounded(&mut results, g.ids[npos] as UInt64, dist, breadth);
+            }
             neighbor_push_bounded(&mut frontier, npos as UInt64, dist, breadth);
           } else {
             var worst2 = results[results.len() - 1].distance;
             if dist < worst2 {
-              neighbor_push_bounded(&mut results, g.ids[npos] as UInt64, dist, breadth);
+              if !g.deleted[npos] {
+                neighbor_push_bounded(&mut results, g.ids[npos] as UInt64, dist, breadth);
+              }
               neighbor_push_bounded(&mut frontier, npos as UInt64, dist, breadth);
             }
           }
