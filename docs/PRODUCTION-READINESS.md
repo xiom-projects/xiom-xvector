@@ -150,6 +150,9 @@ the owner greenlights public release).
 - **2026-10-08 (seventh pass):** FloatVal workaround unwound -- float
   payload gates restored in suite (166 checks) + probes. I 70 -> 72;
   overall 54 %.
+- **2026-10-08 (handoff):** re-verified full green on compiler v0.64.1 +
+  stdlib **0.64.2** (`4dd8844`): suite 166/166 x2 (Win+WSL), probes green;
+  fsync/fd-write still stubbed on 0.64.2 (M2 unchanged). No score change.
 
 ## Update rule
 
