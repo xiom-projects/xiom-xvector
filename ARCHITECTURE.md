@@ -47,13 +47,13 @@ src/
 |                     engine_create_collection, engine_upsert, engine_search,
 |                     engine_delete (REAL dispatch to store + WAL + search)
 |                     NOTE: engine.xi is the CONSOLIDATED working core being
-|                     unwound layer by layer. EXTRACTED so far: payload/
-|                     filter layer; types (dense_vector/metric/neighbor);
-|                     storage/vector_store (+ vector WAL codec);
-|                     query/search_service. Still inline: core-error/ids/
-|                     counter/WAL types, recovery/checkpoint, VectorEngine +
-|                     engine_* functions, API facade (next extraction
-|                     targets; cross-file imports work on v0.64.0).
+|                     unwound layer by layer. EXTRACTED: payload/filter;
+|                     types; storage/vector_store (+codec); query/
+|                     search_service; durability (wal/recovery/events).
+|                     Still inline: core-error/ids/counter + validity
+|                     predicates, VectorEngine + engine_* functions, API
+|                     facade (final extraction wave; cross-file imports
+|                     work on v0.64.0).
 |
 |-- types/
 |   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude          [EXTRACTED]
@@ -98,7 +98,9 @@ src/
 |   `-- search_service.xi search_knn / search_knn_filtered (exact)    [EXTRACTED]
 |
 |-- durability/
-|   `-- write_ahead_events.xi vector WAL events on core WAL           [SCAFFOLD]
+|   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
+|   |-- recovery.xi       recover_state/store + checkpoint compaction    [EXTRACTED]
+|   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/
     `-- vector_api.xi     public facade (create/upsert/search/delete/get) [DONE]

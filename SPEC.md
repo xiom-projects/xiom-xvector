@@ -158,20 +158,20 @@ removes the point's payload.
 `Segment { id; state; store }` + `segment_new/insert/transition/size/is_writable`.
 `Manifest { collection; active_segments; last_lsn }` + `manifest_new/add_segment/remove_segment/set_lsn/segment_count`.
 
-## `xiom.vector.durability.write_ahead_events`
-`enum VectorWalEvent { UpsertEvent, DeleteEvent, SegmentSeal }`. Record layout
+## `xiom.vector.durability.{wal,recovery,write_ahead_events}` (extracted modules)
+Real modules since 2026-10-08 (wave 3). `wal.xi` holds
+`WalOpKind/WalRecord/WalWriter` + `wal_writer_new/append/append_payload/
+current_lsn/flush/resume`; `recovery.xi` holds replay + compaction;
+`write_ahead_events.xi` holds the event constructors. Record layout
 for vectors: **key = point id, value = collection id, payload = encoded
 vector**.
-- `wal_writer_append(w, op, key, value)` -- scalar record (delete and friends).
-- `wal_writer_append_payload(w, op, key, value, payload)` -- record with an
-  encoded vector payload.
+- `log_upsert(w, collection, point, payload)`, `log_delete(w, collection, point)`,
+  `log_payload_set(w, collection, point, words)` map onto the WAL appends.
 - `wal_writer_resume(next_lsn) -> WalWriter` -- empty buffer, LSN continuity.
 - `wal_writer_checkpoint_from(w, idx, payloads) -> WalWriter` -- compacted
   checkpoint log: every live point re-encoded as an Insert and every payload
   as an Update with fresh LSNs continuing after `w`; the returned log alone
   reconstructs store + metadata.
-- `log_upsert(w, collection, point, payload)`, `log_delete(w, collection, point)`,
-  `log_payload_set(w, collection, point, words)` map onto the above; `event_op`.
 - `recover_state(w, dim) -> RecoveredState { store; payloads }` -- replay in
   LSN order (Insert -> store, Delete -> store+payload removal, Update ->
   payload set/overwrite, malformed records skipped); `recover_store` returns
