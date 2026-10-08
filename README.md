@@ -61,7 +61,7 @@ src/
 |-- engine/core.xi            VectorEngine orchestrator (real dispatch)
 |-- types/                    dense_vector - metric - neighbor - dimension
 |-- collection/               schema - collection - validator
-|-- payload/                  payload - filter_ast - filter_eval
+|-- payload/                  payload (+ sorted key index) - filter_ast - filter_eval
 |-- storage/                  vector_store - id_map
 |-- segment/                  segment_state - segment - manifest
 |-- index/                    ann_index - flat_index - hnsw

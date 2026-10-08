@@ -135,6 +135,17 @@ within type; Range inclusive with Int->Float32 promotion; In membership;
 Exists; And/Or/Not combinators. No-payload semantics: value predicates false,
 `And([])=true`, `Or([])=false`, `Not([])=true`.
 `PayloadStore` (id -> Payload, swap-remove) + `payload_store_put/get/remove/len/matches`.
+Sorted key index (Phase 3 refinement): rows kept sorted by
+`(field, kind, num, text, id)` in parallel vectors (deliberately not a
+`Vec[Struct]` -- that shape is compiler finding XVC-C-08), maintained by
+put/overwrite/remove.
+- `payload_store_index_len`; `payload_store_index_exists(field)`;
+  `payload_store_index_field_count(field)` (selectivity stat for the planner).
+- `payload_store_index_eq(field, value) -> Vec[Int]` -- exact tuple search
+  for Int/Bool/Text; Float32 values scan the field window and compare
+  semantically (IEEE +-0.0 / NaN stay consistent with `field_value_eq`).
+- `payload_store_index_range(field, lo, hi) -> Vec[Int]` -- numeric rows of
+  the field window (Int promotes to Float32); results come in value order.
 NOTE (compiler XVC-C-06): Float32 enum payloads can read as 0 in affected
 builds; lane gates avoid FloatVal assertions until fixed.
 
