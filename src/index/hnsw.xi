@@ -42,6 +42,7 @@ pub type HNSWGraph = {
   deleted: Vec[Bool];
   m: Int;
   ml: Float32;
+  ef_construction: Int;
   entry: Int;
 }
 
@@ -64,8 +65,16 @@ pub fn hnsw_new(m: Int, ml: Float32) -> HNSWGraph
     deleted: deleted,
     m: m,
     ml: ml,
+    ef_construction: 200,
     entry: -1,
   };
+}
+
+// Build-time beam width (honoured by the construction search). Values below
+// 1 are ignored; the build clamps the effective width to >= m.
+pub fn hnsw_set_ef_construction(g: &mut HNSWGraph, ef: Int) {
+  if ef < 1 { return; }
+  g.ef_construction = ef;
 }
 
 pub fn hnsw_size(g: &HNSWGraph) -> Int {
@@ -159,26 +168,32 @@ fn edge_slot(g: &HNSWGraph, a: Int, layer: Int, b: Int) -> Int {
   return -1;
 }
 
-// Farthest live slot in `a`'s block on `layer` (-1 when empty).
-fn farthest_slot(g: &HNSWGraph, a: Int, layer: Int, metric: DistanceMetric) -> Int {
-  var row = adj_row(a, layer);
-  var f: Int = -1;
-  var worst: Float32 = 0.0;
+// Diversified neighbour selection (the HNSW heuristic): walk candidates in
+// ascending distance to the anchor and keep up to `m` that are closer to the
+// anchor than to every already-selected neighbour. Reads only; takes &mut so
+// the build path can pass its mutable graph directly.
+fn select_diverse(g: &mut HNSWGraph, cands: &Vec[Neighbor], m: Int, metric: DistanceMetric) -> Vec[Neighbor] {
+  var selected = Vec[Neighbor].new();
   var i: Int = 0;
-  while i < g.deg[row] {
-    var nb = g.adj[row * g.m + i];
-    var d = vector_distance(&g.vectors[a], &g.vectors[nb], metric);
-    if f < 0 || d > worst {
-      f = i;
-      worst = d;
+  while i < cands.len() && selected.len() < m {
+    var c = cands[i];
+    var good: Bool = true;
+    var s: Int = 0;
+    while s < selected.len() && good {
+      var dcs = vector_distance(&g.vectors[c.id as Int], &g.vectors[selected[s].id as Int], metric);
+      if dcs < c.distance { good = false; }
+      s = s + 1;
+    }
+    if good {
+      selected.push(Neighbor{ id: c.id, distance: c.distance });
     }
     i = i + 1;
   }
-  return f;
+  return selected;
 }
 
-// Add a directed edge a -> b on `layer`, pruning by "replace farthest when
-// closer".
+// Add a directed edge a -> b on `layer`. A full block is pruned with the
+// diversified heuristic over (existing edges + the new one).
 fn add_edge(g: &mut HNSWGraph, a: Int, layer: Int, b: Int, metric: DistanceMetric) {
   if a == b { return; }
   if edge_slot(g, a, layer, b) >= 0 { return; }
@@ -188,14 +203,29 @@ fn add_edge(g: &mut HNSWGraph, a: Int, layer: Int, b: Int, metric: DistanceMetri
     g.deg[row] = g.deg[row] + 1;
     return;
   }
-  var f: Int = farthest_slot(g, a, layer, metric);
-  if f < 0 { return; }
-  var far_id = g.adj[row * g.m + f];
-  var d_new = vector_distance(&g.vectors[a], &g.vectors[b], metric);
-  var d_far = vector_distance(&g.vectors[a], &g.vectors[far_id], metric);
-  if d_new < d_far {
-    g.adj[row * g.m + f] = b;
+  var cands = Vec[Neighbor].new();
+  var j: Int = 0;
+  while j < g.deg[row] {
+    var nb = g.adj[row * g.m + j];
+    var d = vector_distance(&g.vectors[a], &g.vectors[nb], metric);
+    cands.push(Neighbor{ id: nb as UInt64, distance: d });
+    j = j + 1;
   }
+  var dnb = vector_distance(&g.vectors[a], &g.vectors[b], metric);
+  cands.push(Neighbor{ id: b as UInt64, distance: dnb });
+  var sorted = Vec[Neighbor].new();
+  var q: Int = 0;
+  while q < cands.len() {
+    neighbor_push_bounded(&mut sorted, cands[q].id, cands[q].distance, cands.len());
+    q = q + 1;
+  }
+  var sel = select_diverse(g, &sorted, g.m, metric);
+  var w: Int = 0;
+  while w < sel.len() {
+    g.adj[row * g.m + w] = sel[w].id as Int;
+    w = w + 1;
+  }
+  g.deg[row] = sel.len();
 }
 
 // Insert a point. Re-inserting an existing id updates the vector in place
@@ -232,28 +262,30 @@ pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetr
     g.entry = pos;
     return;
   }
+  var nv = g.vectors[pos];
   var top: Int = g.levels[g.entry];
+  var cur: Int = g.entry;
+  var l: Int = top;
+  while l > lv {
+    cur = greedy_layer_pos(g, &nv, cur, l, metric);
+    l = l - 1;
+  }
   var lc: Int = lv;
   if lc > top { lc = top; }
-  var l: Int = lc;
+  var ef: Int = g.ef_construction;
+  if ef < g.m { ef = g.m; }
+  l = lc;
   while l >= 0 {
-    // Exact k-NN among the layer's existing members.
-    var best = Vec[Neighbor].new();
-    var j: Int = 0;
-    while j < pos {
-      if g.levels[j] >= l {
-        var d = vector_distance(&g.vectors[j], &g.vectors[pos], metric);
-        neighbor_push_bounded(&mut best, j as UInt64, d, g.m);
-      }
-      j = j + 1;
-    }
+    var cands = search_layer_build(g, &nv, cur, ef, l, metric);
+    var sel = select_diverse(g, &cands, g.m, metric);
     var c: Int = 0;
-    while c < best.len() {
-      var cid = best[c].id as Int;
+    while c < sel.len() {
+      var cid = sel[c].id as Int;
       add_edge(g, pos, l, cid, metric);
       add_edge(g, cid, l, pos, metric);
       c = c + 1;
     }
+    if cands.len() > 0 { cur = cands[0].id as Int; }
     l = l - 1;
   }
   if lv > top { g.entry = pos; }
@@ -280,6 +312,84 @@ fn greedy_layer(g: &HNSWGraph, query: &Vector, start: Int, layer: Int, metric: D
     }
   }
   return cur;
+}
+
+// Build-path greedy descent (takes the mutable graph directly).
+fn greedy_layer_pos(g: &mut HNSWGraph, query: &Vector, start: Int, layer: Int, metric: DistanceMetric) -> Int {
+  var cur: Int = start;
+  var cur_d = vector_distance(&g.vectors[cur], query, metric);
+  var improved: Bool = true;
+  while improved {
+    improved = false;
+    var row = adj_row(cur, layer);
+    var j: Int = 0;
+    while j < g.deg[row] {
+      var nb = g.adj[row * g.m + j];
+      var d = vector_distance(&g.vectors[nb], query, metric);
+      if d < cur_d {
+        cur = nb;
+        cur_d = d;
+        improved = true;
+      }
+      j = j + 1;
+    }
+  }
+  return cur;
+}
+
+// Beam search over one layer for construction: positions sorted by distance
+// to `query`, capped at `ef`. Tombstoned nodes are included (they stay as
+// routers). Build-path variant (mutable graph).
+fn search_layer_build(g: &mut HNSWGraph, query: &Vector, start: Int, ef: Int, layer: Int, metric: DistanceMetric) -> Vec[Neighbor] {
+  var visited = Vec[Bool].new();
+  var i: Int = 0;
+  while i < g.ids.len() {
+    visited.push(false);
+    i = i + 1;
+  }
+  var results = Vec[Neighbor].new();
+  var frontier = Vec[Neighbor].new();
+  var dx = vector_distance(&g.vectors[start], query, metric);
+  visited[start] = true;
+  neighbor_push_bounded(&mut results, start as UInt64, dx, ef);
+  neighbor_push_bounded(&mut frontier, start as UInt64, dx, ef);
+  var done: Bool = false;
+  while frontier.len() > 0 && !done {
+    var cur = frontier[0];
+    var s: Int = 1;
+    while s < frontier.len() {
+      frontier[s - 1] = frontier[s];
+      s = s + 1;
+    }
+    frontier.pop();
+    if results.len() >= ef {
+      var worst = results[results.len() - 1].distance;
+      if cur.distance > worst { done = true; }
+    }
+    if !done {
+      var crow = adj_row(cur.id as Int, layer);
+      var j: Int = 0;
+      while j < g.deg[crow] {
+        var npos = g.adj[crow * g.m + j];
+        if !visited[npos] {
+          visited[npos] = true;
+          var dist = vector_distance(&g.vectors[npos], query, metric);
+          if results.len() < ef {
+            neighbor_push_bounded(&mut results, npos as UInt64, dist, ef);
+            neighbor_push_bounded(&mut frontier, npos as UInt64, dist, ef);
+          } else {
+            var worst2 = results[results.len() - 1].distance;
+            if dist < worst2 {
+              neighbor_push_bounded(&mut results, npos as UInt64, dist, ef);
+              neighbor_push_bounded(&mut frontier, npos as UInt64, dist, ef);
+            }
+          }
+        }
+        j = j + 1;
+      }
+    }
+  }
+  return results;
 }
 
 // Shared search: greedy descent above layer 0, then a best-first beam on
@@ -422,17 +532,18 @@ pub fn hnsw_search_visited(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metri
 
 // ---- Graph codec (persistence) ----
 // Deterministic word encoding (Vec[Int]) mirroring the WAL codec style:
-//   [version=1, m, ml_bits(Float64), layer_capacity, entry, node_count,
-//    per node: id, level, deleted(0|1), vector_words_len, vector words...,
-//    per layer (0..capacity): degree, neighbor positions...]
+//   [version=2, m, ml_bits(Float64), ef_construction, layer_capacity, entry,
+//    node_count, per node: id, level, deleted(0|1), vector_words_len, vector
+//    words..., per layer (0..capacity): degree, neighbor positions...]
 // Vectors are encoded with storage.vector_store.vector_encode (dim + f32
 // bits). Decode is strict: malformed / truncated / out-of-range input
 // returns None (torn-record tolerance).
 pub fn hnsw_encode(g: &HNSWGraph) -> Vec[Int] {
   var out = Vec[Int].new();
-  out.push(1);
+  out.push(2);
   out.push(g.m);
   out.push(float.float_bits(g.ml as Float64));
+  out.push(g.ef_construction);
   out.push(hnsw_layer_capacity());
   out.push(g.entry);
   out.push(g.ids.len());
@@ -465,19 +576,22 @@ pub fn hnsw_encode(g: &HNSWGraph) -> Vec[Int] {
 }
 
 pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
-  if words.len() < 6 { return None; }
-  if words[0] != 1 { return None; }
+  if words.len() < 7 { return None; }
+  if words[0] != 2 { return None; }
   var m: Int = words[1];
   if m <= 0 { return None; }
   var ml = float.bits_to_float(words[2]) as Float32;
   if !(ml > 0.0) { return None; }
-  if words[3] != hnsw_layer_capacity() { return None; }
-  var entry: Int = words[4];
-  var count: Int = words[5];
+  var ef: Int = words[3];
+  if ef < 1 { return None; }
+  if words[4] != hnsw_layer_capacity() { return None; }
+  var entry: Int = words[5];
+  var count: Int = words[6];
   if count < 0 { return None; }
   var g = hnsw_new(m, ml);
+  hnsw_set_ef_construction(&mut g, ef);
   var expected_dim: Int = -1;
-  var pos: Int = 6;
+  var pos: Int = 7;
   var i: Int = 0;
   while i < count {
     if pos + 3 > words.len() { return None; }

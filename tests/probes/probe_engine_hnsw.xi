@@ -159,6 +159,25 @@ fn main() -> Int {
   io.println("    diag engine recall@10 (Hnsw vs flat): " + int_to_str(hits) + "/" + int_to_str(qn * k));
   fails = check(hits * 100 >= qn * k * 80, "engine Hnsw recall@10 >= 0.80", fails);
 
+  // Params flow: a low ef_construction build must still work end-to-end.
+  match set_index(&mut ann, AnnIndexKind.Hnsw, AnnParams{ m: 16, ef_construction: 32, ef_search: 64 }) {
+    Ok(_) => {}
+    Err(_) => { fails = fails + 1; }
+  }
+  fails = check(ann.graph.ef_construction == 32, "set_index honours ef_construction=32", fails);
+  var hits32: Int = 0;
+  q = 0;
+  while q < 5 {
+    var c32 = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut c32);
+    var qv32 = vec_from_coords(&c32);
+    var o32 = eng_search(&flat, &qv32, k);
+    var a32 = eng_search(&ann, &qv32, k);
+    hits32 = hits32 + hit_count(&o32, &a32, k);
+    q = q + 1;
+  }
+  fails = check(hits32 * 100 >= 5 * k * 80, "ef_construction=32 build recall@10 >= 0.80", fails);
+
   // --- deletes propagate into the graph ---
   match delete_point(&mut ann, 7) { Ok(_) => {} Err(_) => { fails = fails + 1; } }
   match delete_point(&mut flat, 7) { Ok(_) => {} Err(_) => { fails = fails + 1; } }
