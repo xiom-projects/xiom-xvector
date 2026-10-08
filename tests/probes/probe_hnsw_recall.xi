@@ -133,6 +133,9 @@ fn main() -> Int {
   fails = check(hnsw_size(&graph) == n && index_size(&flat) == n, "dataset indexed: HNSW + flat both size 200", fails);
   fails = check(hnsw_find_node_pos(&graph, 100) == 99 && hnsw_find_node_pos(&graph, 999) == -1,
     "find_node_pos: 100 -> 99, missing -> -1", fails);
+  var bops = hnsw_build_ops(&graph);
+  io.println("    diag build work: " + int_to_str(bops) + " distance ops (n^2 = " + int_to_str(n * n) + ")");
+  fails = check(bops > 0 && bops <= n * n * 4, "build-work proxy bounded (0 < ops <= 4*n^2)", fails);
 
   // diag: layer-0 degree stats, level distribution, reachability from entry
   var zero_deg: Int = 0;
@@ -216,6 +219,35 @@ fn main() -> Int {
   // Gate: ef=64 recall must be >= 85% (measured baseline documented in SPEC).
   fails = check(hits64 * 100 >= denom * 85, "recall@10 ef=64 >= 0.85", fails);
   fails = check(hits8 * 100 >= denom * 50, "recall@10 ef=8 >= 0.50", fails);
+
+  // --- latency/recall tradeoff table (10 queries per ef) ---
+  var efs = Vec[Int].new();
+  efs.push(8);
+  efs.push(16);
+  efs.push(32);
+  efs.push(64);
+  efs.push(128);
+  var ei: Int = 0;
+  while ei < efs.len() {
+    var efv = efs[ei];
+    var hh: Int = 0;
+    var vv: Int = 0;
+    var qq: Int = 0;
+    while qq < 10 {
+      var ce = Vec[Float32].new();
+      state = rand_coords(state, dim, &mut ce);
+      var qe = vec_from_coords(&ce);
+      var oe = search_knn(&flat, &qe, k, DistanceMetric.Euclidean);
+      var ae = hnsw_search(&graph, &qe, k, efv, DistanceMetric.Euclidean);
+      hh = hh + hit_count(&oe, &ae, k);
+      vv = vv + hnsw_search_visited(&graph, &qe, k, efv, DistanceMetric.Euclidean);
+      qq = qq + 1;
+    }
+    io.println("    diag ef=" + int_to_str(efv) + " recall=" + int_to_str(hh) + "/" + int_to_str(10 * k)
+      + " avg_visited=" + int_to_str(vv / 10) + "/" + int_to_str(n));
+    fails = check(hh * 100 >= 10 * k * 60, "ef=" + int_to_str(efv) + " recall >= 0.60", fails);
+    ei = ei + 1;
+  }
 
   // --- cosine sanity: same shape, separate graph ---
   var state2: Int = 246813579;
