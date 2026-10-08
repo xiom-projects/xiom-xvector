@@ -283,6 +283,65 @@ fn main() -> Int {
   fails = check(hits3 * 100 >= denom3 * 80, "n=800 recall@10 ef=64 >= 0.80", fails);
   fails = check(hnsw_size(&graph3) == nbig, "n=800 graph size", fails);
 
+  // --- deletes/tombstones (n=200 graph) ---
+  var del_ok = hnsw_delete(&mut graph, 42);
+  fails = check(del_ok && hnsw_size(&graph) == n && hnsw_live_count(&graph) == n - 1,
+    "delete id42: tombstoned, size 200, live 199", fails);
+  fails = check(!hnsw_delete(&mut graph, 42) && !hnsw_delete(&mut graph, 99999),
+    "delete id42 again / unknown id -> false", fails);
+  index_remove(&mut flat, 42);
+  var hits_del: Int = 0;
+  var bad_del: Int = 0;
+  qi = 0;
+  while qi < queries {
+    var qcd = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut qcd);
+    var qdel = vec_from_coords(&qcd);
+    var oracle_d = search_knn(&flat, &qdel, k, DistanceMetric.Euclidean);
+    var approx_d = hnsw_search(&graph, &qdel, k, 64, DistanceMetric.Euclidean);
+    hits_del = hits_del + hit_count(&oracle_d, &approx_d, k);
+    var t42: Int = 0;
+    while t42 < approx_d.len() {
+      if approx_d[t42].id == 42 { bad_del = bad_del + 1; }
+      t42 = t42 + 1;
+    }
+    qi = qi + 1;
+  }
+  io.println("    diag after delete: recall@10 ef=64 " + int_to_str(hits_del) + "/" + int_to_str(denom)
+    + "  stray42=" + int_to_str(bad_del));
+  fails = check(bad_del == 0, "deleted id42 never returned", fails);
+  fails = check(hits_del * 100 >= denom * 85, "recall@10 after delete >= 0.85", fails);
+
+  // Re-inserting the id revives the tombstoned node (vector updated in place).
+  var coords_r = Vec[Float32].new();
+  state = rand_coords(state, dim, &mut coords_r);
+  var v42 = vec_from_coords(&coords_r);
+  hnsw_insert(&mut graph, 42, v42, DistanceMetric.Euclidean);
+  fails = check(hnsw_live_count(&graph) == n, "re-insert id42 revives it (live 200)", fails);
+  index_add(&mut flat, 42, vec_from_coords(&coords_r));
+
+  // --- delete-all on a small graph -> empty results, live 0 ---
+  var small = hnsw_new(4, 4.0);
+  var sc: Int = 0;
+  while sc < 5 {
+    var c2 = Vec[Float32].new();
+    state = rand_coords(state, 2, &mut c2);
+    var sv = vec_from_coords(&c2);
+    hnsw_insert(&mut small, sc + 1, sv, DistanceMetric.Euclidean);
+    sc = sc + 1;
+  }
+  sc = 1;
+  var all_del: Bool = true;
+  while sc <= 5 {
+    if !hnsw_delete(&mut small, sc) { all_del = false; }
+    sc = sc + 1;
+  }
+  fails = check(all_del && hnsw_live_count(&small) == 0, "small graph: delete all 5 -> live 0", fails);
+  var qd = Vector.new(2);
+  qd.set(0, 1.0); qd.set(1, 0.0);
+  var after_all = hnsw_search(&small, &qd, 3, 8, DistanceMetric.Euclidean);
+  fails = check(after_all.len() == 0, "all tombstoned -> empty search", fails);
+
   // --- cold graph + dimension mismatch are safe ---
   var cold = hnsw_new(4, 4.0);
   var q1 = Vector.new(1);
