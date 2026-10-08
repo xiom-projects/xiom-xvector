@@ -55,6 +55,27 @@ getelementptr indices`); passing the Vec **by value** is correct (stdlib
 convention). Minimal repro: `docs/repro/xv-from-utf8-vec-ref/`. Found while
 writing the payload WAL codec; compile fails loudly.
 
-Context: the lane builds a durable vector database; its distance kernel is
+**Addendum 3 (2026-10-08): v0.64.1 re-test -- 6 of 7 FIXED.**
+
+All seven bundles were re-run on **v0.64.1** (Windows + WSL):
+
+- **XVC-C-01 FIXED** -- both `f()` and `(*f)()` compile and run exit 0.
+- **XVC-C-02 FIXED** -- contract violation now exits **1**.
+- **XVC-C-03 FIXED** -- W004 count 0 in the suite (was 18+).
+- **XVC-C-04 FIXED** -- all six matrix shapes correct, incl.
+  `Result[Vec[SR]]` and `Option[Vec[SR]]`.
+- **XVC-C-05 FIXED** -- Windows 3/3 and WSL 9/9 builds (incl.
+  `--sequential`) produce exact Float32 results.
+- **XVC-C-06 FIXED** -- new pin probe
+  `tests/probes/probe_floatval_roundtrip.xi` green 3/3 Windows + 2/2 WSL.
+- **XVC-C-07 OPEN** -- `Str::from_utf8(&kb)` still fails: Windows clang
+  `invalid getelementptr indices`; WSL LLVM verifier same at
+  `out/r07_lin.exe.ll:648`. Repro: `docs/repro/xv-from-utf8-vec-ref/`.
+
+Regression on v0.64.1: suite **165/165 x2** (Windows + WSL), all five probes
+green x2, WSL matrix 9/9; no new regressions. The lane re-pinned to v0.64.1
+and will re-test `xv-from-utf8-vec-ref` at the next archive.
+
+Context: the lane builds a durable vector database; its distance kernel was
 exactly the XVC-C-05 shape, and its test harness was exactly the XVC-C-01
 shape (both worked around, see SESSION.md).

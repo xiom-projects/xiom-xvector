@@ -6,11 +6,11 @@
 # use. Record the exact versions and lane hashes in SESSION.md at every wrap.
 #
 # As of 2026-10-08:
-#   compiler  v0.64.0  %LOCALAPPDATA%\xiom.new\bin\xiom.exe
+#   compiler  v0.64.1  %LOCALAPPDATA%\xiom.new\bin\xiom.exe
 #   stdlib    E:\xiom-lang\stdlib (stdlib-lane checkout = latest lane work)
 #   packages  %LOCALAPPDATA%\xiom\packages (none consumed by xvector yet)
 #
-# XIOM_RUNTIME_DIR is RETIRED on v0.64.0: release R65 makes the installed
+# XIOM_RUNTIME_DIR is retired since v0.64.0: release R65 makes the installed
 # compiler link lib\runtime and lib\xiom without overrides (verified env-free
 # by PULSE 2026-10-05).
 #
@@ -36,4 +36,4 @@ if ($missing.Count -gt 0) {
 $ver = (& $env:XIOM_COMPILER --version 2>&1 | Select-Object -First 1)
 Write-Host "dev-env: $ver"
 Write-Host "dev-env: XIOM_STDLIB = $env:XIOM_STDLIB"
-Write-Host "dev-env: XIOM_RUNTIME_DIR retired (v0.64.0 R65 install-layout fix)"
+Write-Host "dev-env: XIOM_RUNTIME_DIR retired (v0.64.1 R65 install-layout fix)"
