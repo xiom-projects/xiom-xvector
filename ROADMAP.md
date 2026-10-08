@@ -85,15 +85,16 @@ search-identical -> delete -> reopen-again -> LSN continuity) green x2 on
 Windows and WSL. The WAL is still in-memory; file-backed segments wait on the
 stdlib fsync/append primitives.
 
-## Phase 3 -- Payload & metadata filtering [ORANGE] Scaffold
+## Phase 3 -- Payload & metadata filtering [YELLOW] In progress
 
 **Goal:** Filtered search (`search WHERE color = 'red' AND price IN [..]`).
 
 **Deliverables:**
-- [ORANGE] `Payload` container + `FieldValue` tagged union.
-- [ORANGE] `FilterExpr` AST (Eq/Range/Exists/In/And/Or/Not) + constructors.
-- [ORANGE] `filter_eval`: And/Or/Not/Exists implemented; Eq/Range/In are fail-open stubs.
-- [STOP] Typed value comparison + sorted key index for O(log n) field lookup.
+- [OK] `Payload` container + `FieldValue` tagged union (+ `payload_get`, overwrite semantics on `payload_set`).
+- [OK] `FilterExpr` AST (Eq/Range/Exists/In/And/Or/Not) + constructors.
+- [OK] `filter_eval`: full typed evaluation (Eq within-type exact; Range inclusive with Int->Float32 promotion; In membership; Exists) + no-payload semantics (value predicates false; `Not` true).
+- [OK] Engine integration: `PayloadStore` (id -> payload, swap-remove), `engine_set_payload` / `engine_get_payload`, `search_filtered` / `engine_search_filtered` (pre-filter exact scan, `k`-bounded), delete removes metadata.
+- [YELLOW] Typed value comparison done via linear scans; **sorted key index for O(log n) field lookup** still open.
 - [STOP] Pre-filter vs post-filter planner (filter before/after ANN by selectivity).
 
 **Exit criteria:** filtered KNN returns only matching points, and the planner
@@ -102,6 +103,14 @@ chooses pre- vs post-filter by selectivity without changing results.
 **Why this phase matters:** real workloads combine similarity with structured
 constraints; vector search without metadata filtering is only half a query engine.
 See [`docs/metadata-filtering.md`](docs/metadata-filtering.md).
+
+**Session evidence (2026-10-08):** 20 new conformance tests (SECTION 14) ->
+**156/156 x2** on Windows; `tests/probes/probe_filtered_search.xi` green x2
+(engine-import unit: Range/Eq/In/And/Not/Exists + delete cleanup + missing
+point + k bound). FloatVal payloads are diagnostic-only in this slice
+(compiler XVC-C-06 zeroes f32 enum payloads in affected builds); payload
+durability is a follow-up (WAL does not encode payloads yet, recovery drops
+metadata -- see `engine_recover` NOTE).
 
 ## Phase 4 -- HNSW hardening [STOP] Not started
 

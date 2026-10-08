@@ -163,7 +163,8 @@ api.search
         2. route (search_execute): AnnIndexKind selects the physical index
              Flat/Ivf -> search_service.search_knn  (exact scan, O(n))
              Hnsw     -> index.hnsw.hnsw_search      (approximate, greedy)
-        3. (Phase 3) filter: evaluate FilterExpr against each candidate payload
+        3. filter (Phase 3): evaluate FilterExpr against each candidate payload
+           BEFORE distance (pre-filter exact scan; selectivity planner later)
         4. rerank: bounded top-K heap keeps <= k best by distance
         5. (Phase 3) hydrate: attach payloads when with_payload = true
         6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)
