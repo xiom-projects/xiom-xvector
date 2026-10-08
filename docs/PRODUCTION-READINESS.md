@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post sorted payload key index)
+- **As of:** 2026-10-08 (post selectivity pre/post filter planner)
 - **Overall:** **56 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -24,18 +24,18 @@ the code merely exists. Blockers are named; blocked work still scores.
 | # | Phase | Weight | Score | Level | Blockers |
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
-| B | Exact search & query engine | 10 | 90 | release-grade | range-search surface, post-filter planner |
+| B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 25 | scaffold | graph quality/tuning, recall harness, tombstones |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
-| E | Metadata & filtering | 8 | 95 | release-grade | pre/post planner, multi-key indexes |
+| E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x95 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **55.98 -> 56 %**.
+**Overall today:** 0.08x95 + 0.10x92 + 0.14x25 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **56.34 -> 56 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -57,14 +57,15 @@ the code merely exists. Blockers are named; blocked work still scores.
 
 ### A. Core data model & vector math -- 95 %
 Done: Vector/VectorIndex types, 3 distance metrics, magnitude/normalize,
-top-K bounded heap, exact f32<->bits codec, 166-check suite.
+top-K bounded heap, exact f32<->bits codec, 168-check suite.
 Remaining: reference cross-check (numpy-style oracle) under fuzz; NaN/Inf
 documented policy in distance kernels.
 
-### B. Exact search & query engine -- 90 %
+### B. Exact search & query engine -- 92 %
 Done: flat exact KNN, k-bounded sorted results, filtered exact search
-(pre-filter), SearchHits public shape, error paths.
-Remaining: range-search surface, post-filter planner, batch search.
+(pre-filter scan + selectivity-based post plan with fallback), SearchHits
+public shape, error paths.
+Remaining: range-search surface, batch search.
 
 ### C. ANN index -- 25 %
 Done: in-memory HNSW from the bootstrap (simplified), AnnParams validation.
@@ -81,13 +82,13 @@ Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 manifest (`ManifestUpdate` persistence), crash-kill test harness, WAL
 retention/pruning policy.
 
-### E. Metadata & filtering -- 95 %
+### E. Metadata & filtering -- 97 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
 integration, durable metadata, filtered probe, sorted key index
 (parallel-vector rows; exists/count/Eq/Range with semantic float compare;
-gate `probe_payload_index`).
-Remaining: pre/post-filter planner (consumes the index for candidate ids +
-selectivity), multi-key indexes.
+gate `probe_payload_index`), selectivity planner (exact counts for
+Eq/Range/Exists; pre/post choice + fallback; gate `probe_filter_plan`).
+Remaining: multi-key indexes (index-driven candidate iteration).
 
 ### F. API & query surface -- 70 %
 Done: facade (create/upsert/search/delete/get + payloads + filtered search),
@@ -107,7 +108,7 @@ Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
 ### I. Testing & verification -- 72 %
-Done: 168-check conformance suite (x2 Windows + WSL), 8 probes, build-time
+Done: 168-check conformance suite (x2 Windows + WSL), 10 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates.
 Remaining: soak (long-running upsert/search), fuzz (codec + filters),
 kill-recovery acceptance script, reference oracle cross-check, CI wiring.
@@ -183,6 +184,14 @@ lane.
   builds). E 90 -> 95; overall 55.98 -> 56 %. Evidence: suite 168/168 x2
   (Win+WSL), all 9 probes x2 (Win) + WSL spot. Stdlib re-check: fd/fsync/
   append-bytes still stubs (M2 stays parked).
+- **2026-10-08 (eleventh pass):** Phase 3 refinement -- selectivity-based
+  pre/post-filter planner (`query/filter_plan.xi`: exact counts for
+  Eq/Range/Exists incl. allocation-free `index_count_eq/_range`; post only
+  for known count >= k and majority; post path with scan fallback inside
+  `search_knn_filtered`; new probe `probe_filter_plan`, 16 checks incl.
+  equivalence vs a scan reference + fallback case, stress 6/6 fresh builds).
+  B 90 -> 92, E 95 -> 97; overall 56.34 -> 56 %. Evidence: suite 168/168 x2
+  (Win+WSL), all 10 probes x2 (Win) + WSL spot.
 
 ## Update rule
 

@@ -26,7 +26,7 @@ packages/xiom-vector/
     |-- segment/{segment_state,segment,manifest}.xi
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
-    |-- query/{search_request,topk_heap,search_service}.xi
+    |-- query/{search_request,filter_plan,topk_heap,search_service}.xi
     |-- durability/{wal,recovery,write_ahead_events}.xi
     `-- api/vector_api.xi
 ```
@@ -105,6 +105,19 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 ## `xiom.vector.query.topk_heap`
 `TopKHeap { capacity; items: Vec[Neighbor] }`. `topk_new(capacity)` `requires: capacity > 0` `ensures: items.len() == 0`; `topk_push` `ensures: items.len() <= capacity`; `topk_len`, `topk_is_full`, `topk_worst`.
 
+## `xiom.vector.query.filter_plan` (planner)
+Selectivity-based plan choice for filtered search.
+- `filter_matching_count(payloads, expr) -> Int` -- exact matching-point count
+  from the sorted payload index for Eq/Range/Exists; `-1` for unknown shapes
+  (In, And/Or/Not).
+- `choose_filter_plan(payloads, expr, total, k) -> Int` -- `1` = pre-filter
+  scan (default; unknown selectivity, count < k, or a minority match),
+  `2` = post-filter (count >= k and a majority of the store).
+- `search_service.search_knn_filtered` executes the choice: post ranks the
+  whole store and keeps the matching subset (provably exact when the subset
+  fills k; otherwise falls back to the scan); equal-distance ties may select
+  different ids across plans -- distances and the k-bound are unaffected.
+
 ## `xiom.vector.query.search_service` (extracted module)
 Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `hydrate_hits` (search_range / search_execute pending).
 `SearchResult { id: Int; distance: Float32 }`.
@@ -146,6 +159,8 @@ put/overwrite/remove.
   semantically (IEEE +-0.0 / NaN stay consistent with `field_value_eq`).
 - `payload_store_index_range(field, lo, hi) -> Vec[Int]` -- numeric rows of
   the field window (Int promotes to Float32); results come in value order.
+- `payload_store_index_count_eq` / `_count_range` -- allocation-free match
+  counts for the planner estimates (same semantics as the id-list walks).
 NOTE (compiler XVC-C-06): Float32 enum payloads can read as 0 in affected
 builds; lane gates avoid FloatVal assertions until fixed.
 

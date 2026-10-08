@@ -103,8 +103,9 @@ src/
 |
 |-- query/
 |   |-- search_request.xi SearchRequest (query, top_k, metric, filter) [DONE]
+|   |-- filter_plan.xi   selectivity estimates + pre/post plan choice [EXTRACTED]
 |   |-- topk_heap.xi      bounded top-K heap (invariant: <= k)         [DONE]
-|   `-- search_service.xi search_knn / search_knn_filtered (exact)    [EXTRACTED]
+|   `-- search_service.xi search_knn / search_knn_filtered (planned)   [EXTRACTED]
 |
 |-- durability/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
@@ -122,7 +123,9 @@ Higher layers depend on lower layers; there are no upward dependencies:
 ```
 engine (facade) -> engine.core + core.shim (signature types) + value types
 engine.core -> { core.shim, query.search_service -> storage.vector_store /
-                 payload.filter_eval, storage.vector_store, durability.*,
+                 payload.filter_eval / query.filter_plan,
+                 query.filter_plan -> payload.index (counts),
+                 storage.vector_store, durability.*,
                  payload.*, types.* }
 index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric}   (no query dependency)
@@ -207,8 +210,12 @@ api.search
         2. route (search_execute): AnnIndexKind selects the physical index
              Flat/Ivf -> search_service.search_knn  (exact scan, O(n))
              Hnsw     -> index.hnsw.hnsw_search      (approximate, greedy)
-        3. filter (Phase 3): evaluate FilterExpr against each candidate payload
-           BEFORE distance (pre-filter exact scan; selectivity planner later)
+        3. filter (Phase 3): filter_plan chooses the plan --
+             scan -> evaluate FilterExpr per candidate BEFORE distance
+             post -> rank all (step 2 unfiltered), keep the matching subset;
+                     if it does not fill k, fall back to the scan
+           (post only for index-answerable filters with a known exact count
+            >= k and a majority of the store; query/filter_plan.xi)
         4. rerank: bounded top-K heap keeps <= k best by distance
         5. (Phase 3) hydrate: attach payloads when with_payload = true
         6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)
