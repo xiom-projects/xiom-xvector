@@ -83,8 +83,9 @@ fn search_knn_filtered_scan(idx: &VectorIndex, payloads: &PayloadStore, query: &
   return results;
 }
 
-// Matching subset of a result list, order preserved.
-fn filter_results_by_payload(items: &Vec[SearchResult], payloads: &PayloadStore, filter: &FilterExpr) -> Vec[SearchResult] {
+// Matching subset of a result list, order preserved (shared by the flat
+// post-filter plan and the engine's HNSW+filter path).
+pub fn filter_results_by_payload(items: &Vec[SearchResult], payloads: &PayloadStore, filter: &FilterExpr) -> Vec[SearchResult] {
   var out = Vec[SearchResult].new();
   var i: Int = 0;
   while i < items.len() {

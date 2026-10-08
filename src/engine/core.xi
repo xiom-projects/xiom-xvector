@@ -209,6 +209,29 @@ pub fn engine_get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
   return payload_store_get(&eng.payloads, point);
 }
 
+// Filtered search on an Hnsw collection: ANN fetch (ef_search wide), keep
+// the matching subset (order preserved), and fall back to the exact flat
+// filtered scan when the ANN pass under-fills -- selective filters stay
+// exact and k-filled at the cost of one scan. Approximation semantics match
+// the unfiltered ANN path.
+fn hnsw_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Vec[SearchResult] {
+  var fetch: Int = eng.ann.ef_search;
+  if fetch < k { fetch = k; }
+  var neighbors = hnsw_search(&eng.graph, query, fetch, fetch, eng.metric);
+  var raw = neighbors_to_results(&neighbors);
+  var matched = filter_results_by_payload(&raw, &eng.payloads, filter);
+  if matched.len() >= k {
+    var out = Vec[SearchResult].new();
+    var i: Int = 0;
+    while i < k {
+      out.push(SearchResult{ id: matched[i].id, distance: matched[i].distance });
+      i = i + 1;
+    }
+    return out;
+  }
+  return search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
+}
+
 // Filtered exact top-k: dimension/top_k validation, then the exact flat
 // filtered scan (the planner picks the pre/post plan). ANN + filter is
 // future work, so this path is always exact even on an Hnsw collection.
@@ -221,6 +244,10 @@ pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter
   }
   if !is_valid_top_k(k) {
     return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var hits = hnsw_search_filtered(eng, query, k, filter);
+    return Ok(SearchHits{ items: hits });
   }
   var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
   return Ok(SearchHits{ items: hits });
@@ -245,8 +272,10 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     return Err(CoreError.InvalidInput("metric mismatch"));
   }
   if search_request_has_filter(req) {
-    // Filtered search always uses the exact flat scan (ANN + filter is
-    // future work); the flat store is always maintained.
+    if eng.index_kind == AnnIndexKind.Hnsw {
+      var hits0 = hnsw_search_filtered(eng, &req.query, req.top_k, &req.filter[0]);
+      return Ok(HydratedHits{ items: hydrate_hits(&hits0, &eng.payloads, req.with_payload) });
+    }
     var hits = search_knn_filtered(&eng.store, &eng.payloads, &req.query, req.top_k, eng.metric, &req.filter[0]);
     return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
   }
