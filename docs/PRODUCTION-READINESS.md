@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post multi-layer HNSW)
-- **Overall:** **61 %** (weighted; see method)
+- **As of:** 2026-10-08 (post HNSW tombstone deletes)
+- **Overall:** **62 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -25,7 +25,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 55 | buildable | ef_construction build, deletes, id map, engine wiring, persistence |
+| C | ANN index (HNSW hardening) | 14 | 62 | buildable | ef_construction build, id map, engine wiring, persistence, edge repair |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x92 + 0.14x55 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **60.54 -> 61 %**.
+**Overall today:** 0.08x95 + 0.10x92 + 0.14x62 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **61.52 -> 62 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -67,18 +67,19 @@ Done: flat exact KNN, k-bounded sorted results, filtered exact search
 public shape, error paths.
 Remaining: range-search surface, batch search.
 
-### C. ANN index -- 55 %
+### C. ANN index -- 62 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
 adjacency rows, deterministic geometric levels, greedy descent + layer-0
-beam honouring `ef`, metric-agnostic, user-id results; level-assignment
-low-bit bug found and fixed by the harness), recall harness vs the flat
-oracle (n=200: recall@10 300/300 at ef=64, 300/300 at ef=8, cosine
-100/100, top level 4; n=800: 200/200 at ef=64, avg visited 288/800; gate
-`probe_hnsw_recall`), AnnParams validation.
-Remaining: beam construction honouring `ef_construction` + diversified
-pruning, deletes/tombstones + edge repair, id -> position map, engine
-`search_execute`/index-kind wiring, memory accounting, graph persistence,
-harness latency metrics.
+beam honouring `ef`, metric-agnostic, user-id results), tombstone deletes
+(never returned, routers kept, revive on re-insert, `hnsw_live_count`),
+recall harness vs the flat oracle (n=200: 300/300 at ef=64 and ef=8,
+cosine 100/100, top level 4; n=800: 200/200, avg visited 288/800;
+after-delete recall 300/300 stray42=0; gate `probe_hnsw_recall`),
+AnnParams validation.
+Remaining: engine `search_execute`/index-kind wiring, beam construction
+honouring `ef_construction` + diversified pruning, edge repair +
+rebuild/memory reclaim, id -> position map, graph persistence, harness
+latency metrics.
 
 ### D. Persistence & durability -- 55 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -217,6 +218,13 @@ lane.
   avg visited 288/800; n=200 300/300 at ef=64 AND ef=8; cosine 100/100;
   stress 6/6 fresh builds). C 45 -> 55; overall 60.54 -> 61 %. Evidence:
   suite 168/168 x2 (Win+WSL), all 11 probes x2 (Win) + WSL spot.
+- **2026-10-08 (fourteenth pass):** Phase 4 -- HNSW tombstone deletes
+  (`hnsw_delete` marks routers that are never returned; idempotent;
+  `hnsw_live_count`; re-insert updates the vector in place and revives) --
+  the prerequisite for engine wiring. Harness extended: after-delete recall
+  300/300 stray42=0, revive -> live 200, delete-all -> live 0 and empty
+  search; stress 6/6 fresh builds. C 55 -> 62; overall 61.52 -> 62 %.
+  Evidence: suite 168/168 x2 (Win+WSL), all 11 probes x2 (Win) + WSL spot.
 
 ## Update rule
 
