@@ -79,3 +79,23 @@ and will re-test `xv-from-utf8-vec-ref` at the next archive.
 Context: the lane builds a durable vector database; its distance kernel was
 exactly the XVC-C-05 shape, and its test harness was exactly the XVC-C-01
 shape (both worked around, see SESSION.md).
+
+**Addendum 4 (2026-10-08, evening): XVC-C-08 -- new silent-wrong-result shape on v0.64.1.**
+
+While landing `SearchRequest`-driven search with `with_payload` hydration, a
+new shape surfaced: **a trailing scalar after a Vec-bearing field in a
+`Vec[Struct]` element can read as uninitialized garbage** (`Bool` -> true,
+`Int` -> nonzero) depending on the compilation unit. The same source
+(`hydrate_hits` in `src/query/search_service.xi`) is correct in its own module
+(`tests/probes/probe_search_request.xi` green 8/8 fresh builds) but
+miscompiles in the big conformance-suite unit (hydration flags read true) and
+in a standalone reduction. Deterministic repro + variant matrix:
+`docs/repro/xv-trailing-field-vec/` (`probe.xi` exit 1 `BAD detach count`;
+`variants.xi` exit 5 -- V5/V7/V10/V11/V12/V14 red, V1-V4/V6/V8 scalar/plain
+shapes green, V13 flag-declared-first green in-bundle -- **but the same
+reorder in the suite unit produced an access violation 0xC0000005**, so
+layout workarounds are context-sensitive in both directions). Lane
+mitigation: hydration flags are gated only in the real-module probe; the
+suite mirror documents the defect and drops trailing-flag assertions. This is
+a silent wrong-metadata defect (a hydrated result can claim a payload it does
+not have) -- please triage alongside XVC-C-05/C-06 at the next archive.

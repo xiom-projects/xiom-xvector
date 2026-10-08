@@ -96,18 +96,22 @@ Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector 
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to `types.metric` today.
 
-## `xiom.vector.query.search_request`
-`SearchRequest { query: Vector; top_k: Int; metric: DistanceMetric; filter: Vec[FilterExpr]; with_payload: Bool }`. `search_request_new` `requires: top_k > 0`, `search_request_set_filter`, `search_request_has_filter`, `search_request_top_k`.
+## `xiom.vector.query.search_request` (rewritten against real types)
+`SearchRequest { query: Vector; top_k: Int; metric: DistanceMetric; filter: Vec[FilterExpr]; with_payload: Bool }` -- the wire shape for request-driven search (the pre-extraction file carried inline mirrors; now it imports the extracted types).
+- `search_request_new(query, top_k, metric)` `requires: top_k > 0`; `with_payload` defaults false.
+- `search_request_set_filter(req, expr)` -- single-clause replace (`[]` = no filter); `search_request_has_filter`, `search_request_top_k`.
+- `search_request_set_with_payload(req, on)` -- toggle hydration.
 
 ## `xiom.vector.query.topk_heap`
 `TopKHeap { capacity; items: Vec[Neighbor] }`. `topk_new(capacity)` `requires: capacity > 0` `ensures: items.len() == 0`; `topk_push` `ensures: items.len() <= capacity`; `topk_len`, `topk_is_full`, `topk_worst`.
 
 ## `xiom.vector.query.search_service` (extracted module)
-Implemented today: `SearchResult`/`SearchHits` + `search_knn` + `search_knn_filtered` (search_range / search_execute pending).
+Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `hydrate_hits` (search_range / search_execute pending).
 `SearchResult { id: Int; distance: Float32 }`.
 - `search_knn(idx, query, k, metric)` `requires: k > 0, idx.dim == query.dimension` `ensures: result.len() <= k`.
 - `search_range(idx, query, radius, metric)` `requires: radius > 0.0, idx.dim == query.dimension`.
 - `search_execute(idx, graph, query, k, metric, kind)` -- routes by `AnnIndexKind` (Flat/Ivf -> exact scan, Hnsw -> graph), lowers `Neighbor -> SearchResult`, `ensures: result.len() <= k`.
+- `hydrate_hits(items, payloads, with_payload) -> Vec[SearchHit]` -- attaches metadata when requested (`has_payload=false` + empty payload otherwise); `SearchHit { id; distance; payload; has_payload }`, wrapped as `HydratedHits { items }` for the request path (XVC-C-04 shape). NOTE (compiler XVC-C-08): the trailing `has_payload` field after the Vec-bearing `payload` field can read as garbage in affected compilation units; hydration flags are gated in the real-module probe only.
 
 ## `xiom.vector.collection.schema`
 `enum NormalizationMode { Raw, L2Normalized }`; `PayloadFieldSpec { name; indexed }`; `CollectionSchema { dimension; metric; normalization; payload_fields }`. `schema_new(dim, metric)` `requires: is_valid_dimension(dim)` `ensures: result.dimension == dim`; `schema_set_normalization`, `schema_add_field`, `schema_dimension`.
@@ -194,13 +198,15 @@ collection, the WAL, and the payload store.
 - `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + metric.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0`, `SearchHits { items: Vec[SearchResult] }`. The struct wrapper is required by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element fields on v0.64.0).
 - `engine_delete`, `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered`, `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
+- `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain, then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
 - `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
 `create_collection`, `upsert`, `search`, `delete_point`, `get_point`,
-`set_payload`, `get_payload`, `search_filtered` -- thin delegations.
+`set_payload`, `get_payload`, `search_filtered`, `search_with_request` --
+thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 
