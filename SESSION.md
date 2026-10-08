@@ -81,6 +81,15 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
     engine, torn-record skip).
   - Suite: SECTION 15 (9 tests) -> **165/165 x2**; readiness tracker
     `docs/PRODUCTION-READINESS.md` created (weighted scorecard; ~53 % today).
+- **Module extraction milestone (third continuation):** the payload/filter
+  layer is now the first REAL module of the post-AUDIT tree --
+  `src/payload/payload.xi` (FieldValue/Payload + codec + PayloadStore),
+  `src/payload/filter_ast.xi` (FilterExpr + constructors),
+  `src/payload/filter_eval.xi` (typed eval + payload_store_matches).
+  `engine.xi` imports them and no longer carries the code; probes that use
+  payload symbols import the submodules directly. All probes x2 + suite
+  165/165 x2 green after the extraction. Next extraction targets: vector
+  codec/WAL, then store/engine facade.
 - **Green evidence (exact commands):**
   - `scripts\run-suite.ps1 -Runs 2` -> `165/165 passed` twice, exit 0,
     stderr 0; same on WSL: `bash scripts/run-suite.sh 2 180`.
@@ -109,10 +118,11 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   WAL blocked; byte append (`append_file_bytes`) and fd write path missing;
   `crc32_ieee`/`crc32c` available and adopted for framing.
 - **Next action (priority order):**
-  1. Extract the payload/filter + codec code as the first real module of the
-     layered tree (cross-file imports verified; engine.xi stays the facade),
-     then continue extraction layer by layer; this is also the porter
-     preparation for `xiom.vectors` / `xiom.wal`.
+  1. Continue the extraction, layer by layer: vector codec + metrics/types
+     (`src/types`, `src/storage`), then WAL + recovery, then store/engine
+     facade + API; keep engine.xi importable as the stable facade and
+     re-verify all probes + suite after each layer (porter preparation for
+     `xiom.vectors` / `xiom.wal`).
   2. Phase 3 refinements: sorted key index (O(log n) lookup), pre/post-filter
      planner, `SearchRequest`-driven search + `with_payload` hydration.
   3. Watch compiler lane for XVC-C-01..07; re-run the repro bundles at the
