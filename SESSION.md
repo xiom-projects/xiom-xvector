@@ -8,20 +8,20 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (15 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (16 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
 payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
-engine HNSW wiring).
+engine HNSW wiring -> HNSW tombstone compaction).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `744c8e6` (feat: engine HNSW wiring),
-then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `81bccbb` (feat: HNSW tombstone
+compaction), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -31,7 +31,7 @@ then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `744c8e6` + this wrap commit | this repo |
+| xvector | `81bccbb` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -99,6 +99,11 @@ then this wrap commit. Identity `Lefteris Notas
   `probe_engine_hnsw`: two engines (flat oracle vs Hnsw) over 150 points,
   engine recall 200/200, delete/revive, filtered exact, Flat switch
   bit-identical, invalid params Err, recover + re-apply; stress 6/6.
+- **HNSW compaction:** `hnsw_compact(g, metric)` rebuilds from live nodes
+  only (tombstones dropped, edges rebuilt, slots reclaimed); engine
+  `compact_index` (Flat -> `Ok(0)`, returns reclaimed). Gates: compact-all
+  -> empty graph; 50 deletes -> size/live 150 with recall 200/200 and
+  stray_deleted=0; engine-level reclaim 1 + post-compact recall holds.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -151,9 +156,9 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **HNSW round 5 (Phase 4):** beam construction honouring `ef_construction`
-   + diversified pruning; edge repair + rebuild/memory reclaim (tombstone
-   compaction); id -> position map; graph persistence; harness latency
+1. **HNSW round 5 (Phase 4, remaining):** beam construction honouring
+   `ef_construction` + diversified pruning; id -> position map; graph
+   persistence (codec first, file-backed with stdlib I/O); harness latency
    metrics. Optional E stretch: multi-key / index-driven candidate
    iteration. Then concurrency/soak (G phase). Gates today:
    `probe_hnsw_recall`, `probe_engine_hnsw` (both stress 6/6).
@@ -290,21 +295,22 @@ greedy descent + beam honouring ef; tombstone deletes; gate probe_hnsw_recall:
 n=200 300/300, n=800 200/200, delete checks vs the flat oracle).
 Engine HNSW wiring (set_index Flat/Hnsw, upsert graph upkeep, engine_search
 routing with ef=ann.ef_search, filtered stays exact; gate
-probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply).
+probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
+hnsw_compact tombstone compaction + engine compact_index).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
 docs/repro/xv-trailing-field-vec; gate such reads only in real-module
 probes).
 
-NEXT TASK (priority 1): HNSW round 5 (Phase 4) -- beam construction
-honouring ef_construction + diversified pruning; edge repair +
-rebuild/memory reclaim (tombstone compaction); id -> position map; graph
-persistence; harness latency metrics. Optional E stretch: multi-key /
-index-driven candidate iteration. Add suite + probe gates for each step,
-keep the numeric gates per build. Standby: M2 file-backed WAL when stdlib
-lands fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08);
-unwind candidates (C-04 SearchHits wrapper, C-01 direct dispatch).
+NEXT TASK (priority 1): HNSW round 5 (remaining) -- beam construction
+honouring ef_construction + diversified pruning; id -> position map; graph
+persistence (codec first, file-backed with stdlib I/O); harness latency
+metrics. Optional E stretch: multi-key / index-driven candidate iteration.
+Add suite + probe gates for each step, keep the numeric gates per build.
+Standby: M2 file-backed WAL when stdlib lands
+fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08); unwind
+candidates (C-04 SearchHits wrapper, C-01 direct dispatch).
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module

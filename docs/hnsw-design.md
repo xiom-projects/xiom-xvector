@@ -116,8 +116,10 @@ vector); the node keeps its edges and keeps routing traffic, but
 already-deleted id returns `false`. `hnsw_live_count` reports the
 non-deleted node count. Re-inserting an id updates the vector in place and
 revives the node (edges are kept; re-linking on update is a hardening TODO).
-There is no edge repair or memory reclaim yet -- a rebuild compacts
-tombstones (future work).
+`hnsw_compact(g, metric)` rebuilds the graph from the live nodes only (same
+`m`/`ml`, insertion order preserved): tombstones are dropped, edges are
+rebuilt around the survivors, and their slots are reclaimed. The engine
+wrapper is `compact_index` (Flat -> 0 reclaimed).
 
 ## Contracts
 
@@ -138,6 +140,7 @@ tombstones (future work).
 | n=200 cosine | 64 | 100/100 | metric-agnostic smoke |
 | n=800 | 64 | 200/200 | avg visited 288/800, top level 4 |
 | n=200, id 42 deleted | 64 | 300/300 | stray42=0, live 199 (flat oracle also removed 42) |
+| n=200, 50 ids deleted + compacted | 64 | 200/200 | size/live 150, stray_deleted=0; engine-level `compact_index` reclaims 1 with post-compact recall holding |
 
 Gates: recall >= 0.85 (ef=64), >= 0.50 (ef=8), >= 0.60 (cosine), >= 0.80
 (n=800). Delete checks: tombstone semantics, idempotent delete, never
@@ -153,7 +156,7 @@ empty search. Full run ~0.9s.
 | Search | greedy descent + beam honouring `ef` | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
-| Deletes | **tombstones** (routers kept, never returned; revive on re-insert) | edge repair, background rebuild/memory reclaim |
+| Deletes | **tombstones + `hnsw_compact`** (rebuild from live nodes, reclaim) | background/automatic compaction policy |
 | Persistence | in-memory only | serialized into sealed segments |
 | Engine wiring | module + harness only | `search_execute` Hnsw route / collection index kind |
 
