@@ -613,11 +613,22 @@ pub fn hnsw_encode(g: &HNSWGraph) -> Vec[Int] {
   return out;
 }
 
+// Push `n` zero adjacency slots (decoder pad step; kept as its own function
+// -- inlining the loop into hnsw_decode segfaulted at larger m, XVC-C-10).
+fn pad_adj_slots(g: &mut HNSWGraph, n: Int) {
+  var i: Int = 0;
+  while i < n {
+    g.adj.push(0);
+    i = i + 1;
+  }
+}
+
 pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
   if words.len() < 7 { return None; }
   if words[0] != 2 { return None; }
   var m: Int = words[1];
   if m <= 0 { return None; }
+  if m > 512 { return None; }   // sanctioned max graph degree (AnnParams)
   var ml = float.bits_to_float(words[2]) as Float32;
   if !(ml > 0.0) { return None; }
   var ef: Int = words[3];
@@ -626,6 +637,7 @@ pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
   var entry: Int = words[5];
   var count: Int = words[6];
   if count < 0 { return None; }
+  if count > words.len() { return None; }   // each node needs >= 1 word
   var g = hnsw_new(m, ml);
   hnsw_set_ef_construction(&mut g, ef);
   var expected_dim: Int = -1;
@@ -679,11 +691,7 @@ pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
             s = s + 1;
           }
           pos = pos + dg;
-          var pad: Int = dg;
-          while pad < m {
-            g.adj.push(0);
-            pad = pad + 1;
-          }
+          pad_adj_slots(&mut g, m - dg);
           l = l + 1;
         }
       }
