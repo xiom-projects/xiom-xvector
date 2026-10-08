@@ -202,6 +202,13 @@ pub fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
 }
 
 // ---- Payload store: point id -> Payload (linear scan, swap-remove) ----
+// Plus a sorted key index over the stored fields (Phase 3 refinement): rows
+// are kept sorted by (field, kind, num, text, id) in PARALLEL vectors --
+// deliberately not a Vec[Struct], because a struct element with Str- or
+// Vec-bearing fields is the shape compiler finding XVC-C-08 misreads.
+// Lookups: exists/count/Eq use binary search (Eq scans the field window for
+// float values, where IEEE +-0.0 / NaN need semantic comparison); Range
+// scans the field's numeric rows.
 pub type PayloadEntry = {
   id: Int;
   payload: Payload;
@@ -209,15 +216,40 @@ pub type PayloadEntry = {
 
 pub type PayloadStore = {
   entries: Vec[PayloadEntry];
+  index_field: Vec[Str];
+  index_kind: Vec[Int];
+  index_num: Vec[Int];
+  index_text: Vec[Str];
+  index_id: Vec[Int];
 }
 
 pub fn payload_store_new() -> PayloadStore {
   var entries = Vec[PayloadEntry].new();
-  return PayloadStore{ entries: entries };
+  var index_field = Vec[Str].new();
+  var index_kind = Vec[Int].new();
+  var index_num = Vec[Int].new();
+  var index_text = Vec[Str].new();
+  var index_id = Vec[Int].new();
+  return PayloadStore{
+    entries: entries,
+    index_field: index_field,
+    index_kind: index_kind,
+    index_num: index_num,
+    index_text: index_text,
+    index_id: index_id,
+  };
 }
 
-// Insert or replace the payload for `id`.
+// Insert or replace the payload for `id` (index rows follow the payload).
 pub fn payload_store_put(s: &mut PayloadStore, id: Int, payload: Payload) {
+  payload_index_remove_ids(s, id);
+  var f: Int = 0;
+  while f < payload.fields.len() {
+    var fv = payload.fields[f].value;
+    var fk = payload.fields[f].key;
+    payload_index_insert(s, fk, field_index_kind(&fv), field_index_num(&fv), field_index_text(&fv), id);
+    f = f + 1;
+  }
   var i: Int = 0;
   while i < s.entries.len() {
     if s.entries[i].id == id {
@@ -246,6 +278,7 @@ pub fn payload_store_remove(s: &mut PayloadStore, id: Int) -> Bool {
     i = i + 1;
   }
   if pos == -1 { return false; }
+  payload_index_remove_ids(s, id);
   var last: Int = s.entries.len() - 1;
   s.entries[pos] = s.entries[last];
   s.entries.pop();
@@ -254,4 +287,243 @@ pub fn payload_store_remove(s: &mut PayloadStore, id: Int) -> Bool {
 
 pub fn payload_store_len(s: &PayloadStore) -> Int {
   return s.entries.len();
+}
+
+// ============================================================================
+// Sorted key index (Phase 3 refinement)
+// ============================================================================
+// Row semantics: kind 1 = int, 2 = float (num = Float64 bits of the Float32),
+// 3 = text (text = value bytes), 4 = bool (num = 0|1). Rows are unique per
+// (id, field); a payload overwrite or a remove deletes that id's rows first.
+
+fn field_index_kind(v: &FieldValue) -> Int {
+  match v {
+    IntVal(_) => { return 1; }
+    FloatVal(_) => { return 2; }
+    TextVal(_) => { return 3; }
+    BoolVal(_) => { return 4; }
+  }
+}
+
+fn field_index_num(v: &FieldValue) -> Int {
+  match v {
+    IntVal(x) => { return x; }
+    FloatVal(f) => { return float.float_bits(f as Float64); }
+    BoolVal(b) => { if b { return 1; } else { return 0; } }
+    TextVal(_) => { return 0; }
+  }
+}
+
+fn field_index_text(v: &FieldValue) -> Str {
+  match v {
+    TextVal(t) => { return t; }
+    _ => { return ""; }
+  }
+}
+
+// Lexicographic byte order for field names / text values (no Str `<` in the
+// language; bytes come from slice.str_bytes).
+fn str_less(a: Str, b: Str) -> Bool {
+  var ab = slice.str_bytes(a);
+  var bb = slice.str_bytes(b);
+  var n: Int = ab.len();
+  if bb.len() < n { n = bb.len(); }
+  var i: Int = 0;
+  while i < n {
+    if ab[i] != bb[i] { return (ab[i] as Int) < (bb[i] as Int); }
+    i = i + 1;
+  }
+  return ab.len() < bb.len();
+}
+
+// First row with index_field >= field.
+fn payload_index_field_start(s: &PayloadStore, field: Str) -> Int {
+  var lo: Int = 0;
+  var hi: Int = s.index_id.len();
+  while lo < hi {
+    var mid: Int = (lo + hi) / 2;
+    if str_less(s.index_field[mid], field) { lo = mid + 1; } else { hi = mid; }
+  }
+  return lo;
+}
+
+// row(mid) tuple (field, kind, num, text) < query tuple?
+fn payload_index_tuple_before(s: &PayloadStore, mid: Int, field: Str, kind: Int, num: Int, text: Str) -> Bool {
+  var rf = s.index_field[mid];
+  if rf == field {
+    var rk = s.index_kind[mid];
+    if rk == kind {
+      var rn = s.index_num[mid];
+      if rn == num {
+        var rt = s.index_text[mid];
+        if rt == text { return false; }
+        return str_less(rt, text);
+      }
+      return rn < num;
+    }
+    return rk < kind;
+  }
+  return str_less(rf, field);
+}
+
+// First row at or after the exact (field, kind, num, text) tuple.
+fn payload_index_tuple_start(s: &PayloadStore, field: Str, kind: Int, num: Int, text: Str) -> Int {
+  var lo: Int = 0;
+  var hi: Int = s.index_id.len();
+  while lo < hi {
+    var mid: Int = (lo + hi) / 2;
+    if payload_index_tuple_before(s, mid, field, kind, num, text) { lo = mid + 1; } else { hi = mid; }
+  }
+  return lo;
+}
+
+// row(mid) < (field, kind, num, text, id)?
+fn payload_index_row_before(s: &PayloadStore, mid: Int, field: Str, kind: Int, num: Int, text: Str, id: Int) -> Bool {
+  var rf = s.index_field[mid];
+  if rf == field {
+    var rk = s.index_kind[mid];
+    if rk == kind {
+      var rn = s.index_num[mid];
+      if rn == num {
+        var rt = s.index_text[mid];
+        if rt == text { return s.index_id[mid] < id; }
+        return str_less(rt, text);
+      }
+      return rn < num;
+    }
+    return rk < kind;
+  }
+  return str_less(rf, field);
+}
+
+// Sorted insert position for the row.
+fn payload_index_find_pos(s: &PayloadStore, field: Str, kind: Int, num: Int, text: Str, id: Int) -> Int {
+  var lo: Int = 0;
+  var hi: Int = s.index_id.len();
+  while lo < hi {
+    var mid: Int = (lo + hi) / 2;
+    if payload_index_row_before(s, mid, field, kind, num, text, id) { lo = mid + 1; } else { hi = mid; }
+  }
+  return lo;
+}
+
+fn payload_index_insert(s: &mut PayloadStore, field: Str, kind: Int, num: Int, text: Str, id: Int) {
+  var pos: Int = payload_index_find_pos(s, field, kind, num, text, id);
+  s.index_field.push("");
+  s.index_kind.push(0);
+  s.index_num.push(0);
+  s.index_text.push("");
+  s.index_id.push(id);
+  var j: Int = s.index_id.len() - 1;
+  while j > pos {
+    s.index_field[j] = s.index_field[j - 1];
+    s.index_kind[j] = s.index_kind[j - 1];
+    s.index_num[j] = s.index_num[j - 1];
+    s.index_text[j] = s.index_text[j - 1];
+    s.index_id[j] = s.index_id[j - 1];
+    j = j - 1;
+  }
+  s.index_field[pos] = field;
+  s.index_kind[pos] = kind;
+  s.index_num[pos] = num;
+  s.index_text[pos] = text;
+  s.index_id[pos] = id;
+}
+
+fn payload_index_remove_ids(s: &mut PayloadStore, id: Int) {
+  var i: Int = 0;
+  while i < s.index_id.len() {
+    if s.index_id[i] == id {
+      var last: Int = s.index_id.len() - 1;
+      var j: Int = i;
+      while j < last {
+        s.index_field[j] = s.index_field[j + 1];
+        s.index_kind[j] = s.index_kind[j + 1];
+        s.index_num[j] = s.index_num[j + 1];
+        s.index_text[j] = s.index_text[j + 1];
+        s.index_id[j] = s.index_id[j + 1];
+        j = j + 1;
+      }
+      s.index_field.pop();
+      s.index_kind.pop();
+      s.index_num.pop();
+      s.index_text.pop();
+      s.index_id.pop();
+    } else {
+      i = i + 1;
+    }
+  }
+}
+
+// Total indexed rows (sum of fields over all stored payloads).
+pub fn payload_store_index_len(s: &PayloadStore) -> Int {
+  return s.index_id.len();
+}
+
+pub fn payload_store_index_exists(s: &PayloadStore, field: Str) -> Bool {
+  var pos: Int = payload_index_field_start(s, field);
+  if pos < s.index_id.len() && s.index_field[pos] == field { return true; }
+  return false;
+}
+
+// Rows for one field = payloads carrying it (Existence/selectivity stat).
+pub fn payload_store_index_field_count(s: &PayloadStore, field: Str) -> Int {
+  var pos: Int = payload_index_field_start(s, field);
+  var n: Int = 0;
+  while pos < s.index_id.len() && s.index_field[pos] == field {
+    n = n + 1;
+    pos = pos + 1;
+  }
+  return n;
+}
+
+// Ids whose field equals `value` (semantic equality, like field_value_eq).
+// Int/bool/text use an exact tuple search; floats scan the field window and
+// compare numerically (IEEE +-0.0 / NaN stay consistent with field_value_eq).
+pub fn payload_store_index_eq(s: &PayloadStore, field: Str, value: FieldValue) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var kind: Int = field_index_kind(&value);
+  if kind == 2 {
+    var pos: Int = payload_index_field_start(s, field);
+    while pos < s.index_id.len() && s.index_field[pos] == field {
+      if s.index_kind[pos] == 2 {
+        var fv = float.bits_to_float(s.index_num[pos]) as Float32;
+        var cand = FieldValue.FloatVal(fv);
+        if field_value_eq(&cand, &value) { out.push(s.index_id[pos]); }
+      }
+      pos = pos + 1;
+    }
+    return out;
+  }
+  var num: Int = field_index_num(&value);
+  var text: Str = field_index_text(&value);
+  var p: Int = payload_index_tuple_start(s, field, kind, num, text);
+  while p < s.index_id.len()
+    && s.index_field[p] == field
+    && s.index_kind[p] == kind
+    && s.index_num[p] == num
+    && s.index_text[p] == text {
+    out.push(s.index_id[p]);
+    p = p + 1;
+  }
+  return out;
+}
+
+// Ids whose field is numeric and within [lo, hi] (Int promotes to Float32,
+// matching filter_range semantics).
+pub fn payload_store_index_range(s: &PayloadStore, field: Str, lo: Float32, hi: Float32) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var pos: Int = payload_index_field_start(s, field);
+  while pos < s.index_id.len() && s.index_field[pos] == field {
+    var k = s.index_kind[pos];
+    if k == 1 {
+      var v = s.index_num[pos] as Float32;
+      if v >= lo && v <= hi { out.push(s.index_id[pos]); }
+    } elif k == 2 {
+      var v2 = float.bits_to_float(s.index_num[pos]) as Float32;
+      if v2 >= lo && v2 <= hi { out.push(s.index_id[pos]); }
+    }
+    pos = pos + 1;
+  }
+  return out;
 }
