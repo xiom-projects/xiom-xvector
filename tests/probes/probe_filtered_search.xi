@@ -9,6 +9,8 @@
 module probe_filtered_search
 
 use xiom.vector.engine;
+use xiom.vector.payload.payload;
+use xiom.vector.payload.filter_ast;
 use xiom.io;
 use xiom.num.float;
 

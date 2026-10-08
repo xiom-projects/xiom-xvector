@@ -1,6 +1,8 @@
 module probe_debug_filter
 
 use xiom.vector.engine;
+use xiom.vector.payload.payload;
+use xiom.vector.payload.filter_ast;
 use xiom.io;
 
 fn b2s(b: Bool) -> Str { if b { return "true"; } return "false"; }
