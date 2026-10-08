@@ -17,6 +17,7 @@ use xiom.vector.types.metric;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.query.search_service;
+use xiom.vector.query.search_request;
 
 pub fn create_collection(eng: &mut VectorEngine, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError] {
   return engine_create_collection(eng, dim, metric);
@@ -48,4 +49,10 @@ pub fn get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
 
 pub fn search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Result[SearchHits, CoreError] {
   return engine_search_filtered(eng, query, k, filter);
+}
+
+// Request-driven search: top_k/filter/with_payload come from the request.
+// The active collection's metric governs (mismatching request metric -> Err).
+pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError] {
+  return engine_search_request(eng, req);
 }

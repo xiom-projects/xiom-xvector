@@ -74,6 +74,22 @@ pub type SearchHits = {
   items: Vec[SearchResult];
 }
 
+// Hydrated hit mirroring query/search_service.xi (SearchRequest.with_payload).
+// NOTE (XVC-C-08): this large unit miscompiles reads of the trailing
+// has_payload field after a Vec-bearing field (repro:
+// docs/repro/xv-trailing-field-vec), so no suite test asserts hydration
+// flags. The real-module gate is tests/probes/probe_search_request.xi.
+pub type SearchHit = {
+  id: Int;
+  distance: Float32;
+  payload: Payload;
+  has_payload: Bool;
+}
+
+pub type HydratedHits = {
+  items: Vec[SearchHit];
+}
+
 pub enum WalOpKind {
   Insert,
   Update,
@@ -156,7 +172,7 @@ pub type SearchRequest = {
   query: Vector;
   top_k: Int;
   metric: DistanceMetric;
-  filter: Int;
+  filter: Vec[FilterExpr];
   with_payload: Bool;
 }
 
@@ -673,6 +689,29 @@ fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &F
   }
   var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
   return Ok(SearchHits{ items: hits });
+}
+
+// Request-driven search mirroring engine/core.xi (top_k/filter/with_payload
+// from the request; the collection metric governs).
+fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError] {
+  if !eng.created {
+    return Err(CoreError{ case: 2, msg: "not created" });
+  }
+  if req.query.dimension != eng.dimension {
+    return Err(CoreError{ case: 1, msg: "dimension mismatch" });
+  }
+  if !is_valid_top_k(req.top_k) {
+    return Err(CoreError{ case: 1, msg: "top_k out of range" });
+  }
+  if req.metric != eng.metric {
+    return Err(CoreError{ case: 1, msg: "metric mismatch" });
+  }
+  if search_request_has_filter(req) {
+    var hits = search_knn_filtered(&eng.store, &eng.payloads, &req.query, req.top_k, eng.metric, &req.filter[0]);
+    return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+  }
+  var hits = search_knn(&eng.store, &req.query, req.top_k, eng.metric);
+  return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
 }
 
 fn engine_size(eng: &VectorEngine) -> Int {
@@ -1313,6 +1352,25 @@ fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vecto
     i = i + 1;
   }
   return results;
+}
+
+// Payload hydration mirroring query/search_service.xi.
+fn hydrate_hits(items: &Vec[SearchResult], payloads: &PayloadStore, with_payload: Bool) -> Vec[SearchHit] {
+  var out = Vec[SearchHit].new();
+  var i: Int = 0;
+  while i < items.len() {
+    var pl = payload_new();
+    var have: Bool = false;
+    if with_payload {
+      match payload_store_get(payloads, items[i].id) {
+        Some(found) => { pl = found; have = true; }
+        None => {}
+      }
+    }
+    out.push(SearchHit{ id: items[i].id, distance: items[i].distance, payload: pl, has_payload: have });
+    i = i + 1;
+  }
+  return out;
 }
 
 // ============================================================================
@@ -3260,19 +3318,89 @@ fn test_f32_approx_epsilon() -> TestResult {
 }
 
 // ============================================================================
-// Search request building (from query/search_request.xi)
+// Search request building + request-driven search (from query/search_request.xi
+// and engine/core.xi)
 // ============================================================================
 
 fn run_search_request_fields() -> Int {
   var query = vector_new(2);
   vector_set(&mut query, 0, 1.0);
-  var req = SearchRequest{ query: query, top_k: 10, metric: DistanceMetric.Cosine, filter: 0, with_payload: false };
-  if req.top_k == 10 && req.metric == DistanceMetric.Cosine && !req.with_payload { return 0; }
+  var req = SearchRequest{ query: query, top_k: 10, metric: DistanceMetric.Cosine, filter: Vec[FilterExpr].new(), with_payload: false };
+  if req.top_k == 10 && req.metric == DistanceMetric.Cosine && !req.with_payload && req.filter.len() == 0 { return 0; }
   return 1;
 }
 fn test_search_request_fields() -> TestResult {
-  if run_search_request_fields() == 0 { return assert(true, "SearchRequest: field init top_k=10 Cosine no payload"); }
+  if run_search_request_fields() == 0 { return assert(true, "SearchRequest: field init top_k=10 Cosine no payload/filter"); }
   return assert(false, "SearchRequest: field init failed");
+}
+
+fn search_request_new(query: Vector, top_k: Int, metric: DistanceMetric) -> SearchRequest {
+  var filter = Vec[FilterExpr].new();
+  return SearchRequest{ query: query, top_k: top_k, metric: metric, filter: filter, with_payload: false };
+}
+
+fn search_request_set_filter(req: &mut SearchRequest, expr: FilterExpr) {
+  var filter = Vec[FilterExpr].new();
+  filter.push(expr);
+  req.filter = filter;
+}
+
+fn search_request_has_filter(req: &SearchRequest) -> Bool {
+  return req.filter.len() > 0;
+}
+
+fn search_request_set_with_payload(req: &mut SearchRequest, on: Bool) {
+  req.with_payload = on;
+}
+
+// NOTE (XVC-C-08): the hydration mirror test is intentionally absent. Reads
+// of the trailing has_payload field miscompile in this large unit (it reads
+// as uninitialized garbage; repro docs/repro/xv-trailing-field-vec). The
+// real-module gate for hydration flags is tests/probes/probe_search_request.xi.
+
+fn run_request_filtered() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.9, 0.1, 0.0));
+  engine_upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
+  var p1 = payload_new();
+  payload_set(&mut p1, "color", FieldValue.TextVal("red"));
+  engine_set_payload(&mut eng, 1, p1);
+  var p3 = payload_new();
+  payload_set(&mut p3, "color", FieldValue.TextVal("red"));
+  engine_set_payload(&mut eng, 3, p3);
+  var req = search_request_new(mk_vec3(1.0, 0.0, 0.0), 5, DistanceMetric.Cosine);
+  search_request_set_filter(&mut req, filter_eq("color", FieldValue.TextVal("red")));
+  match engine_search_request(&eng, &req) {
+    Ok(h) => {
+      if h.items.len() != 2 { return 1; }
+      if h.items[0].id != 1 { return 2; }
+      if h.items[1].id != 3 { return 3; }
+      // No has_payload assertion here (XVC-C-08: trailing-field reads are
+      // unreliable in this unit; the probe covers hydration flags).
+      return 0;
+    }
+    Err(_) => { return 5; }
+  }
+}
+fn test_request_filtered() -> TestResult {
+  if run_request_filtered() == 0 { return assert(true, "SearchRequest: Eq filter -> {1,3} (ids only, no hydrate)"); }
+  return assert(false, "SearchRequest: filtered request failed");
+}
+
+fn run_request_metric_mismatch() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Cosine);
+  var req = search_request_new(vector_new(2), 5, DistanceMetric.Euclidean);
+  match engine_search_request(&eng, &req) {
+    Ok(_) => { return 1; }
+    Err(_) => { return 0; }
+  }
+}
+fn test_request_metric_mismatch() -> TestResult {
+  if run_request_metric_mismatch() == 0 { return assert(true, "SearchRequest: metric mismatch -> Err"); }
+  return assert(false, "SearchRequest: metric mismatch accepted");
 }
 
 // ============================================================================
@@ -4312,6 +4440,8 @@ fn main() -> Int {
   failed = failed + run_one_test(test_dimension_within_limit()); total = total + 1;
   failed = failed + run_one_test(test_f32_approx_epsilon()); total = total + 1;
   failed = failed + run_one_test(test_search_request_fields()); total = total + 1;
+  failed = failed + run_one_test(test_request_filtered()); total = total + 1;
+  failed = failed + run_one_test(test_request_metric_mismatch()); total = total + 1;
 
   let passed = total - failed;
   io.println("");

@@ -15,6 +15,7 @@ use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
+use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.durability.wal;
@@ -136,6 +137,32 @@ pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter
   }
   var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
   return Ok(SearchHits{ items: hits });
+}
+
+// Request-driven search: honors the request's top_k, filter, and
+// with_payload hydration flag. The active collection's metric governs; a
+// request whose metric differs from the collection is rejected. Returns
+// HydratedHits (SearchHit carries id/distance + optional payload) so the
+// same call serves both plain and hydrated searches.
+pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError]
+  requires: eng.created
+  requires: req.top_k > 0
+{
+  if req.query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(req.top_k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  if req.metric != eng.metric {
+    return Err(CoreError.InvalidInput("metric mismatch"));
+  }
+  if search_request_has_filter(req) {
+    var hits = search_knn_filtered(&eng.store, &eng.payloads, &req.query, req.top_k, eng.metric, &req.filter[0]);
+    return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+  }
+  var hits = search_knn(&eng.store, &req.query, req.top_k, eng.metric);
+  return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
 }
 
 // Point getter used by the facade's `get_point` -- keeps the facade from

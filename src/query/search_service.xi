@@ -81,3 +81,43 @@ pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &V
   }
   return results;
 }
+
+// ---- Payload hydration (SearchRequest.with_payload) ----
+// A hydrated hit: the plain result plus its metadata. `has_payload` is false
+// when hydration was not requested OR the point has no payload (`payload` is
+// then an empty Payload). Kept separate from SearchResult so the plain search
+// path and its XVC-C-04 wrapper stay untouched.
+pub type SearchHit = {
+  id: Int;
+  distance: Float32;
+  payload: Payload;
+  has_payload: Bool;
+}
+
+// C-04 wrapper for hydrated hits (same rationale as SearchHits): a
+// Result/Option whose payload is directly a Vec[non-scalar] loses element
+// fields at the caller.
+pub type HydratedHits = {
+  items: Vec[SearchHit];
+}
+
+// Attach payloads to a result list when `with_payload`; otherwise every hit
+// carries the empty payload and has_payload=false. Payloads are copied out
+// of the store into the hit (no borrowed references escape).
+pub fn hydrate_hits(items: &Vec[SearchResult], payloads: &PayloadStore, with_payload: Bool) -> Vec[SearchHit] {
+  var out = Vec[SearchHit].new();
+  var i: Int = 0;
+  while i < items.len() {
+    var pl = payload_new();
+    var have: Bool = false;
+    if with_payload {
+      match payload_store_get(payloads, items[i].id) {
+        Some(found) => { pl = found; have = true; }
+        None => {}
+      }
+    }
+    out.push(SearchHit{ id: items[i].id, distance: items[i].distance, payload: pl, has_payload: have });
+    i = i + 1;
+  }
+  return out;
+}
