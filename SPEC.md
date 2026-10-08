@@ -32,20 +32,23 @@ packages/xiom-vector/
 
 ---
 
-## `xiom.vector.types.dense_vector`
+## `xiom.vector.types.dense_vector` (extracted module)
+Implemented today: `Vector`, `new/set/get`, `vector_dot`, `vector_magnitude` (normalize/add/sub/scale pending).
 `Vector { data: Vec[Float32]; dimension: UInt }` -- the fundamental value type.
 - `Vector.new(dimension)` `requires: dimension > 0` `ensures: result.data.len() == dimension`
 - `Vector.set(index, value)` / `Vector.get(index)` `requires: index < dimension`
 - `vector_dot`, `vector_magnitude`, `vector_normalize`, `vector_add`, `vector_sub`, `vector_scale`, `vector_dimension`
 - Binary ops `requires: a.dimension == b.dimension`.
 
-## `xiom.vector.types.metric`
+## `xiom.vector.types.metric` (extracted module)
+Implemented today: `DistanceMetric` + the three distances + `vector_distance` (metric_name pending).
 `enum DistanceMetric { Cosine, DotProduct, Euclidean }`.
 - `dot_product_distance` -> `-Sigma(aibi)`; `cosine_distance` -> `1 - costheta` (zero vectors -> 1.0); `euclidean_distance` -> `sqrtSigma(ai-bi)2`.
 - `vector_distance(a, b, metric)` dispatches (`requires: a.dimension == b.dimension`).
 - `metric_name(m) -> Str`.
 
-## `xiom.vector.types.neighbor`
+## `xiom.vector.types.neighbor` (extracted module)
+Implemented today: `Neighbor` + `neighbor_new` (neighbor_closer pending).
 `Neighbor { id: UInt64; distance: Float32 }` -- low-level result edge used inside indexes/graph adjacency. `neighbor_new`, `neighbor_closer`.
 
 ## `xiom.vector.types.dimension`
@@ -58,7 +61,8 @@ packages/xiom-vector/
 ## `xiom.vector.ids`
 Reuses `CollectionId`/`VectorId`/`SegmentId` from `xiom.core.ids`. Adds `PointId { value: Int }` (user id) with `point_id`, `point_id_value`, `point_id_eq`, and `point_to_vector_id` / `vector_to_point_id` bridges.
 
-## `xiom.vector.storage.vector_store`
+## `xiom.vector.storage.vector_store` (extracted module)
+Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector WAL codec.
 `VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; dim: Int }` -- flat columnar store.
 - `index_new(dim)` `requires: dim > 0`
 - `index_add(idx, id, vec)` `requires: idx.dim == vec.dimension` (returns false on duplicate id)
@@ -97,7 +101,8 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 ## `xiom.vector.query.topk_heap`
 `TopKHeap { capacity; items: Vec[Neighbor] }`. `topk_new(capacity)` `requires: capacity > 0` `ensures: items.len() == 0`; `topk_push` `ensures: items.len() <= capacity`; `topk_len`, `topk_is_full`, `topk_worst`.
 
-## `xiom.vector.query.search_service`
+## `xiom.vector.query.search_service` (extracted module)
+Implemented today: `SearchResult`/`SearchHits` + `search_knn` + `search_knn_filtered` (search_range / search_execute pending).
 `SearchResult { id: Int; distance: Float32 }`.
 - `search_knn(idx, query, k, metric)` `requires: k > 0, idx.dim == query.dimension` `ensures: result.len() <= k`.
 - `search_range(idx, query, radius, metric)` `requires: radius > 0.0, idx.dim == query.dimension`.
