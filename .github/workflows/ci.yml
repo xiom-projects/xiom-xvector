@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# Pre-release CI gate. Requires self-hosted runners with the XIOM toolchain
+# (compiler on PATH / %LOCALAPPDATA%\xiom.new) registered with the labels
+# `xiom` plus `windows` / `linux`. The repo stays private until the owner
+# greenlights a public release; this workflow is a draft that activates once
+# the runners exist. Actions are pinned to commit SHAs.
+
+name: ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate-windows:
+    runs-on: [self-hosted, xiom, windows]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Pre-release battery (suite x2 + 16 probes x2)
+        shell: pwsh
+        run: ./scripts/ci.ps1
+
+  gate-wsl:
+    runs-on: [self-hosted, xiom, linux]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Pre-release battery (suite x2 + 16 probes x2)
+        shell: bash
+        run: ./scripts/ci.sh
