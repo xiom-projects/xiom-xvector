@@ -272,6 +272,228 @@ pub fn vector_distance(a: &Vector, b: &Vector, metric: DistanceMetric) -> Float3
   }
 }
 
+// ---- Payload + metadata filtering (Phase 3) ----
+// Tagged scalar carried by a payload field.
+pub enum FieldValue {
+  IntVal(v: Int),
+  FloatVal(v: Float32),
+  TextVal(v: Str),
+  BoolVal(v: Bool),
+}
+
+pub type PayloadField = {
+  key: Str;
+  value: FieldValue;
+}
+
+pub type Payload = {
+  fields: Vec[PayloadField];
+}
+
+pub fn payload_new() -> Payload {
+  var fields = Vec[PayloadField].new();
+  return Payload{ fields: fields };
+}
+
+// Set or OVERWRITE a field (linear scan; a sorted key index is a later
+// Phase 3 deliverable).
+pub fn payload_set(p: &mut Payload, key: Str, value: FieldValue) {
+  var i: Int = 0;
+  while i < p.fields.len() {
+    if p.fields[i].key == key {
+      p.fields[i].value = value;
+      return;
+    }
+    i = i + 1;
+  }
+  p.fields.push(PayloadField{ key: key, value: value });
+}
+
+pub fn payload_has(p: &Payload, key: Str) -> Bool {
+  var i: Int = 0;
+  while i < p.fields.len() {
+    if p.fields[i].key == key { return true; }
+    i = i + 1;
+  }
+  return false;
+}
+
+pub fn payload_get(p: &Payload, key: Str) -> Option[FieldValue] {
+  var i: Int = 0;
+  while i < p.fields.len() {
+    if p.fields[i].key == key { return Some(p.fields[i].value); }
+    i = i + 1;
+  }
+  return None;
+}
+
+pub fn payload_len(p: &Payload) -> Int {
+  return p.fields.len();
+}
+
+pub fn field_value_kind(v: &FieldValue) -> Str {
+  match v {
+    IntVal(_) => "int",
+    FloatVal(_) => "float",
+    TextVal(_) => "text",
+    BoolVal(_) => "bool",
+  }
+}
+
+// Exact equality within one type; cross-type comparisons are false.
+pub fn field_value_eq(a: &FieldValue, b: &FieldValue) -> Bool {
+  match a {
+    IntVal(av) => {
+      match b { IntVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    FloatVal(av) => {
+      match b { FloatVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    TextVal(av) => {
+      match b { TextVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    BoolVal(av) => {
+      match b { BoolVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+  }
+}
+
+// Numeric view for Range: Int promotes to Float32, non-numeric -> None.
+pub fn field_value_as_float(v: &FieldValue) -> Option[Float32] {
+  match v {
+    FloatVal(f) => { return Some(f); }
+    IntVal(i) => { return Some(i as Float32); }
+    _ => { return None; }
+  }
+}
+
+pub enum FilterExpr {
+  Eq(field: Str, value: FieldValue),
+  Range(field: Str, lo: Float32, hi: Float32),
+  Exists(field: Str),
+  In(field: Str, values: Vec[FieldValue]),
+  And(clauses: Vec[FilterExpr]),
+  Or(clauses: Vec[FilterExpr]),
+  Not(clauses: Vec[FilterExpr]),
+}
+
+pub fn filter_eq(field: Str, value: FieldValue) -> FilterExpr {
+  return FilterExpr.Eq(field, value);
+}
+
+pub fn filter_range(field: Str, lo: Float32, hi: Float32) -> FilterExpr {
+  return FilterExpr.Range(field, lo, hi);
+}
+
+pub fn filter_exists(field: Str) -> FilterExpr {
+  return FilterExpr.Exists(field);
+}
+
+pub fn filter_in(field: Str, values: Vec[FieldValue]) -> FilterExpr {
+  return FilterExpr.In(field, values);
+}
+
+pub fn filter_and(clauses: Vec[FilterExpr]) -> FilterExpr {
+  return FilterExpr.And(clauses);
+}
+
+pub fn filter_or(clauses: Vec[FilterExpr]) -> FilterExpr {
+  return FilterExpr.Or(clauses);
+}
+
+pub fn filter_not(clause: FilterExpr) -> FilterExpr {
+  var clauses = Vec[FilterExpr].new();
+  clauses.push(clause);
+  return FilterExpr.Not(clauses);
+}
+
+// Evaluate a filter against a point payload. Value predicates on a missing
+// field are false; boolean combinators keep their structure with the empty
+// semantics: And([]) = true, Or([]) = false, Not([]) = true.
+pub fn filter_matches(expr: &FilterExpr, p: &Payload) -> Bool {
+  match expr {
+    Eq(field, value) => {
+      match payload_get(p, field) {
+        Some(fv) => { return field_value_eq(&fv, &value); }
+        None => { return false; }
+      }
+    }
+    Range(field, lo, hi) => {
+      match payload_get(p, field) {
+        Some(fv) => {
+          match field_value_as_float(&fv) {
+            Some(f) => { return f >= lo && f <= hi; }
+            None => { return false; }
+          }
+        }
+        None => { return false; }
+      }
+    }
+    Exists(field) => { return payload_has(p, field); }
+    In(field, values) => {
+      match payload_get(p, field) {
+        Some(fv) => {
+          var i: Int = 0;
+          while i < values.len() {
+            if field_value_eq(&fv, &values[i]) { return true; }
+            i = i + 1;
+          }
+          return false;
+        }
+        None => { return false; }
+      }
+    }
+    And(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if !filter_matches(&clauses[i], p) { return false; }
+        i = i + 1;
+      }
+      return true;
+    }
+    Or(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if filter_matches(&clauses[i], p) { return true; }
+        i = i + 1;
+      }
+      return false;
+    }
+    Not(clauses) => {
+      if clauses.len() == 0 { return true; }
+      return !filter_matches(&clauses[0], p);
+    }
+  }
+}
+
+// Same boolean structure as filter_matches but for a point with NO payload:
+// every value predicate is false; combinators compose (And([]) = true etc.).
+fn filter_matches_empty(expr: &FilterExpr) -> Bool {
+  match expr {
+    And(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if !filter_matches_empty(&clauses[i]) { return false; }
+        i = i + 1;
+      }
+      return true;
+    }
+    Or(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if filter_matches_empty(&clauses[i]) { return true; }
+        i = i + 1;
+      }
+      return false;
+    }
+    Not(clauses) => {
+      if clauses.len() == 0 { return true; }
+      return !filter_matches_empty(&clauses[0]);
+    }
+    _ => { return false; }
+  }
+}
+
 // ---- Neighbor (from neighbor.xi) ----
 pub type Neighbor = {
   id: UInt64;
@@ -349,6 +571,74 @@ pub fn index_size(idx: &VectorIndex) -> Int {
   return idx.ids.len();
 }
 
+// ---- Payload store: point id -> Payload (linear scan, swap-remove) ----
+pub type PayloadEntry = {
+  id: Int;
+  payload: Payload;
+}
+
+pub type PayloadStore = {
+  entries: Vec[PayloadEntry];
+}
+
+pub fn payload_store_new() -> PayloadStore {
+  var entries = Vec[PayloadEntry].new();
+  return PayloadStore{ entries: entries };
+}
+
+// Insert or replace the payload for `id`.
+pub fn payload_store_put(s: &mut PayloadStore, id: Int, payload: Payload) {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id {
+      s.entries[i].payload = payload;
+      return;
+    }
+    i = i + 1;
+  }
+  s.entries.push(PayloadEntry{ id: id, payload: payload });
+}
+
+pub fn payload_store_get(s: &PayloadStore, id: Int) -> Option[Payload] {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id { return Some(s.entries[i].payload); }
+    i = i + 1;
+  }
+  return None;
+}
+
+pub fn payload_store_remove(s: &mut PayloadStore, id: Int) -> Bool {
+  var pos: Int = -1;
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id { pos = i; }
+    i = i + 1;
+  }
+  if pos == -1 { return false; }
+  var last: Int = s.entries.len() - 1;
+  s.entries[pos] = s.entries[last];
+  s.entries.pop();
+  return true;
+}
+
+pub fn payload_store_len(s: &PayloadStore) -> Int {
+  return s.entries.len();
+}
+
+// Filter check for a point id: uses its payload when present, otherwise the
+// empty-payload semantics (value predicates false).
+pub fn payload_store_matches(s: &PayloadStore, id: Int, expr: &FilterExpr) -> Bool {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id {
+      return filter_matches(expr, &s.entries[i].payload);
+    }
+    i = i + 1;
+  }
+  return filter_matches_empty(expr);
+}
+
 // ---- Durable vector codec: WAL payload = [dim, bits0, bits1, ...] ----
 // Float32 -> Float64 -> IEEE-754 bits (exact: every Float32 is exactly
 // representable in Float64; `float_bits` lowers to a true LLVM bitcast
@@ -396,6 +686,22 @@ pub type SearchHits = {
   items: Vec[SearchResult];
 }
 
+// Push a hit into a distance-sorted bounded list (shared by the exact and
+// filtered scans): insert sorted, then trim to k.
+fn results_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, k: Int) {
+  results.push(item);
+  var pos: Int = results.len() - 1;
+  while pos > 0 && results[pos - 1].distance > results[pos].distance {
+    var tmp = results[pos];
+    results[pos] = results[pos - 1];
+    results[pos - 1] = tmp;
+    pos = pos - 1;
+  }
+  if results.len() > k {
+    results.pop();
+  }
+}
+
 pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMetric) -> Vec[SearchResult]
   requires: k > 0
   requires: idx.dim == query.dimension
@@ -406,17 +712,27 @@ pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMet
   var total: Int = idx.ids.len();
   while i < total {
     var dist = vector_distance(&idx.vectors[i], query, metric);
-    var result = SearchResult{ id: idx.ids[i], distance: dist };
-    results.push(result);
-    var pos: Int = results.len() - 1;
-    while pos > 0 && results[pos - 1].distance > results[pos].distance {
-      var tmp = results[pos];
-      results[pos] = results[pos - 1];
-      results[pos - 1] = tmp;
-      pos = pos - 1;
-    }
-    if results.len() > k {
-      results.pop();
+    results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);
+    i = i + 1;
+  }
+  return results;
+}
+
+// Filtered exact scan: evaluate the filter per candidate BEFORE the distance
+// compute (a pre-filter plan for the exact engine; a selectivity-based
+// pre/post planner is a later Phase 3 deliverable).
+pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
+  requires: k > 0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= k
+{
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  var total: Int = idx.ids.len();
+  while i < total {
+    if payload_store_matches(payloads, idx.ids[i], filter) {
+      var dist = vector_distance(&idx.vectors[i], query, metric);
+      results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);
     }
     i = i + 1;
   }
@@ -468,6 +784,8 @@ pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
 // Rebuild an engine from its WAL: replay the log into a fresh store, then
 // write a compacted checkpoint log (so the recovered engine is itself
 // recoverable). LSNs stay monotonic; dimension/metric are restored.
+// NOTE: payloads are not yet WAL-encoded, so recovery drops metadata until
+// the payload-durability step of Phase 2/3 lands.
 pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
@@ -490,6 +808,7 @@ pub type VectorEngine = {
   upserts: Counter;
   deletes: Counter;
   next_collection: Int;
+  payloads: PayloadStore;
 }
 
 pub fn engine_new() -> VectorEngine {
@@ -502,6 +821,7 @@ pub fn engine_new() -> VectorEngine {
     upserts: counter_new("vector.upserts"),
     deletes: counter_new("vector.deletes"),
     next_collection: 1,
+    payloads: payload_store_new(),
   };
 }
 
@@ -515,6 +835,7 @@ pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: Distan
   eng.dimension = dim;
   eng.metric = metric;
   eng.created = true;
+  eng.payloads = payload_store_new();
   var id = collection_id(eng.next_collection);
   eng.next_collection = eng.next_collection + 1;
   return Ok(id);
@@ -552,8 +873,42 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
 {
   log_delete(&mut eng.wal, 1, point);
   var ok = index_remove(&mut eng.store, point);
+  payload_store_remove(&mut eng.payloads, point);   // no orphan metadata
   counter_inc(&mut eng.deletes);
   return Ok(ok);
+}
+
+// Attach/replace metadata for an existing point. Returns Ok(false) when the
+// point does not exist (payloads never outlive their point).
+pub fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  match index_get(&eng.store, point) {
+    Some(_) => {
+      payload_store_put(&mut eng.payloads, point, payload);
+      return Ok(true);
+    }
+    None => { return Ok(false); }
+  }
+}
+
+pub fn engine_get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
+  return payload_store_get(&eng.payloads, point);
+}
+
+// Filtered exact top-k: dimension/top_k validation, then a filtered scan.
+pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Result[SearchHits, CoreError]
+  requires: eng.created
+  requires: k > 0
+{
+  if query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
+  return Ok(SearchHits{ items: hits });
 }
 
 pub fn engine_size(eng: &VectorEngine) -> Int {
@@ -583,4 +938,16 @@ pub fn delete_point(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErro
 
 pub fn get_point(eng: &VectorEngine, point: Int) -> Option[Vector] {
   return index_get(&eng.store, point);
+}
+
+pub fn set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) -> Result[Bool, CoreError] {
+  return engine_set_payload(eng, point, payload);
+}
+
+pub fn get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
+  return engine_get_payload(eng, point);
+}
+
+pub fn search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Result[SearchHits, CoreError] {
+  return engine_search_filtered(eng, query, k, filter);
 }
