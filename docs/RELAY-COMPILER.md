@@ -38,6 +38,17 @@ unit-hash/emission-order dependency in the int/float lowering decision);
 (2) re-test all five bundles at the next archive so XVECTOR can re-pin and
 report per-row deltas. No XVECTOR-side changes are needed to reproduce.
 
+**Addendum (2026-10-08, later same day): XVC-C-06.**
+While implementing payload filtering, a sixth finding joined the family:
+**Float32 enum payloads can read as 0 in a given compilation unit/build**
+(tag intact). Evidence: in the suite unit a directly constructed
+`FieldValue.FloatVal(10.0)` extracted as `0.0`; the engine-import probe
+`tests/probes/probe_filtered_search.xi` failed FloatVal Range checks in 2 of 3
+builds (`diag FloatVal(2.5) roundtrip bits=0`), IntVal/TextVal/Bool stable.
+Same per-build flip behaviour as XVC-C-05. Repro + recipe:
+`docs/repro/xv-f32-payload-zero/README.md`. Lane workaround: FloatVal is
+diagnostic-only in gates until fixed.
+
 Context: the lane builds a durable vector database; its distance kernel is
 exactly the XVC-C-05 shape, and its test harness was exactly the XVC-C-01
 shape (both worked around, see SESSION.md).
