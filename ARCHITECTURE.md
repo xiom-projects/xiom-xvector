@@ -50,15 +50,17 @@ src/
 |                     SegmentId + PointId<->VectorId bridges
 |-- engine.xi       module xiom.vector.engine
 |                     public facade ONLY -- create_collection, set_index,
-|                     upsert, search, delete_point, get_point, set_payload,
-|                     get_payload, search_filtered, search_with_request;
-|                     thin delegation to engine.core (no shims here)     [EXTRACTED]
+|                     compact_index, upsert, search, delete_point,
+|                     get_point, set_payload, get_payload,
+|                     search_filtered, search_with_request; thin
+|                     delegation to engine.core (no shims here)          [EXTRACTED]
 |-- engine/
 |   `-- core.xi      module xiom.vector.engine.core
 |                     VectorEngine + engine_* orchestration -- engine_new,
 |                     engine_create_collection, engine_set_index,
-|                     engine_upsert, engine_search (routes Flat/Hnsw),
-|                     engine_delete, engine_set_payload, engine_get_payload,
+|                     engine_compact_index, engine_upsert, engine_search
+|                     (routes Flat/Hnsw), engine_delete,
+|                     engine_set_payload, engine_get_payload,
 |                     engine_search_filtered, engine_search_request,
 |                     engine_get_point, engine_size, engine_durable_lsn,
 |                     engine_recover (REAL dispatch to store + graph + WAL

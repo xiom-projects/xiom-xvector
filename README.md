@@ -77,6 +77,7 @@ src/
 |----------|-------------|
 | `create_collection(eng, dim, metric)` | Create the active collection; fixes dimension + metric |
 | `set_index(eng, kind, params)` | Select the ANN index: `Flat` (default) or `Hnsw` (validates params, builds the graph from the store) |
+| `compact_index(eng)` | Rebuild the ANN graph from live nodes (reclaims tombstones; returns the reclaimed count) |
 | `upsert(eng, point, vec)` | WAL-durable insert/update of a point (payload-encoded vector in the record) |
 | `search(eng, query, k)` | Exact top-k nearest neighbours; returns `Result[SearchHits, CoreError]` (`SearchHits { items: Vec[SearchResult] }`) |
 | `delete_point(eng, point)` | Remove a point |

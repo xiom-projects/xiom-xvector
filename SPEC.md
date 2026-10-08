@@ -96,6 +96,7 @@ fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
 - `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- greedy descent above layer 0, then a best-first beam (breadth = `max(k, ef)`); `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
 - `hnsw_search_visited` (visited-node count, latency proxy), `hnsw_size`, `hnsw_level_of`, `hnsw_layer_capacity`, `hnsw_find_node_pos` (linear; id -> position map pending).
 - `hnsw_insert_ref(graph, id, vec_ref, metric)` -- copy-insert for callers that must keep their vector (one engine upsert feeds store + graph).
+- `hnsw_compact(graph, metric) -> HNSWGraph` -- fresh graph from the live nodes only (same `m`/`ml`, insertion order preserved): tombstone compaction + edge rebuild; engine wrapper `compact_index`.
 - `hnsw_delete(graph, id) -> Bool` -- tombstone: the node keeps routing traffic but is never returned (idempotent; false for unknown/already-deleted). `hnsw_live_count` reports non-deleted nodes. Re-inserting an id updates the vector in place and revives the node (edges kept; re-linking pending).
 - Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 300/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 288/800); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty.
 
@@ -229,6 +230,7 @@ owns the active collection, the WAL, the payload store, and (when
 `index_kind = Hnsw`) the ANN graph mirroring the store.
 - `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` (resets to Flat).
 - `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. In-memory only: re-apply after `engine_recover` (metadata persistence is future work).
+- `engine_compact_index(eng) -> Result[Int, CoreError]` `requires: eng.created` -- rebuilds the HNSW graph from live nodes (Flat -> `Ok(0)`); returns the reclaimed count.
 - `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
 - `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (always the exact flat scan; ANN+filter is future work), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
@@ -238,9 +240,9 @@ owns the active collection, the WAL, the payload store, and (when
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
-`create_collection`, `set_index`, `upsert`, `search`, `delete_point`,
-`get_point`, `set_payload`, `get_payload`, `search_filtered`,
-`search_with_request` -- thin delegations.
+`create_collection`, `set_index`, `compact_index`, `upsert`, `search`,
+`delete_point`, `get_point`, `set_payload`, `get_payload`,
+`search_filtered`, `search_with_request` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 
