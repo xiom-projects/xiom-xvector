@@ -31,9 +31,6 @@ xiom install xiom-vector
 ## Quick Start
 ```xiom
 use xiom.vector.engine;
-use xiom.vector.api.vector_api;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
 
 fn main() -> Int {
   var eng = engine_new();
@@ -45,7 +42,7 @@ fn main() -> Int {
 
   var q = Vector.new(3);
   q.set(0, 0.9); q.set(1, 0.1); q.set(2, 0.0);
-  var hits = search(&eng, &q, 5);
+  var hits = search(&eng, &q, 5);   // Result[SearchHits, CoreError]
   return 0;
 }
 ```
@@ -69,16 +66,19 @@ src/
 `-- api/                      vector_api (public facade)
 ```
 
-## Public API (`xiom.vector.api.vector_api`)
+## Public API (`xiom.vector.engine`)
 | Function | Description |
 |----------|-------------|
 | `create_collection(eng, dim, metric)` | Create the active collection; fixes dimension + metric |
-| `upsert(eng, point, vec)` | WAL-durable insert/update of a point |
-| `search(eng, query, k)` | Exact top-k nearest neighbours |
+| `upsert(eng, point, vec)` | WAL-durable insert/update of a point (payload-encoded vector in the record) |
+| `search(eng, query, k)` | Exact top-k nearest neighbours; returns `Result[SearchHits, CoreError]` (`SearchHits { items: Vec[SearchResult] }`) |
 | `delete_point(eng, point)` | Remove a point |
 | `get_point(eng, point)` | Fetch a stored vector by id |
+| `engine_recover(wal, dim, metric)` | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
-All fallible calls return `Result[T, CoreError]`.
+All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
+wrapper is required by compiler finding XVC-C-04
+(`Result[Vec[non-scalar]]` payloads lose element fields on v0.64.0).
 
 ## Production Readiness
 | Capability | Status |
@@ -89,11 +89,11 @@ All fallible calls return `Result[T, CoreError]`.
 | In-memory HNSW graph (insert + greedy search) | [OK] Done |
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
-| WAL-before-ack write path | [YELLOW] In progress (in-memory core WAL; fsync + payload = Phase 2) |
+| WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; `fsync` blocked on the stdlib fd-syscall gap) |
 | Collections / schema / validator | [YELLOW] In progress (single active collection) |
 | Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
 | Payload + metadata filtering | [ORANGE] Scaffold (AST + fail-open eval) |
-| Durable recovery / manifest | [ORANGE] Scaffold |
+| Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint done in-memory; durable manifest pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md).
