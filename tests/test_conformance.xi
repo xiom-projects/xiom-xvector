@@ -112,6 +112,7 @@ pub type VectorEngine = {
   upserts: Counter;
   deletes: Counter;
   next_collection: Int;
+  payloads: PayloadStore;
 }
 
 pub enum VectorError {
@@ -172,6 +173,15 @@ pub type PayloadField = {
 
 pub type Payload = {
   fields: Vec[PayloadField];
+}
+
+pub type PayloadEntry = {
+  id: Int;
+  payload: Payload;
+}
+
+pub type PayloadStore = {
+  entries: Vec[PayloadEntry];
 }
 
 pub enum FilterExpr {
@@ -576,6 +586,7 @@ fn engine_new() -> VectorEngine {
     upserts: counter_new("vector.upserts"),
     deletes: counter_new("vector.deletes"),
     next_collection: 1,
+    payloads: payload_store_new(),
   };
 }
 
@@ -589,6 +600,7 @@ fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: DistanceMe
   eng.dimension = dim;
   eng.metric = metric;
   eng.created = true;
+  eng.payloads = payload_store_new();
   var id = collection_id(eng.next_collection);
   eng.next_collection = eng.next_collection + 1;
   return Some(id);
@@ -619,8 +631,35 @@ fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHit
 fn engine_delete(eng: &mut VectorEngine, point: Int) -> Bool {
   wal_writer_append(&mut eng.wal, WalOpKind.Delete, point, 1);
   var ok = index_remove(&mut eng.store, point);
+  payload_store_remove(&mut eng.payloads, point);
   counter_inc(&mut eng.deletes);
   return ok;
+}
+
+// ---- Payload metadata + filtered search (mirrors engine.xi) ----
+fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) -> Result[Bool, CoreError] {
+  match index_get(&eng.store, point) {
+    Some(_) => {
+      payload_store_put(&mut eng.payloads, point, payload);
+      return Ok(true);
+    }
+    None => { return Ok(false); }
+  }
+}
+
+fn engine_get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
+  return payload_store_get(&eng.payloads, point);
+}
+
+fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &FilterExpr) -> Result[SearchHits, CoreError] {
+  if query.dimension != eng.dimension {
+    return Err(CoreError{ case: 1, msg: "dimension mismatch" });
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError{ case: 1, msg: "top_k out of range" });
+  }
+  var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
+  return Ok(SearchHits{ items: hits });
 }
 
 fn engine_size(eng: &VectorEngine) -> Int {
@@ -840,6 +879,14 @@ fn payload_new() -> Payload {
 }
 
 fn payload_set(p: &mut Payload, key: Str, value: FieldValue) {
+  var i: Int = 0;
+  while i < p.fields.len() {
+    if p.fields[i].key == key {
+      p.fields[i].value = value;
+      return;
+    }
+    i = i + 1;
+  }
   p.fields.push(PayloadField{ key: key, value: value });
 }
 
@@ -852,6 +899,15 @@ fn payload_has(p: &Payload, key: Str) -> Bool {
     i = i + 1;
   }
   return false;
+}
+
+fn payload_get(p: &Payload, key: Str) -> Option[FieldValue] {
+  var i: Int = 0;
+  while i < p.fields.len() {
+    if p.fields[i].key == key { return Some(p.fields[i].value); }
+    i = i + 1;
+  }
+  return None;
 }
 
 fn payload_len(p: &Payload) -> Int {
@@ -867,6 +923,37 @@ fn field_value_kind(v: &FieldValue) -> Str {
   }
 }
 
+fn field_value_eq(a: &FieldValue, b: &FieldValue) -> Bool {
+  match a {
+    IntVal(av) => {
+      match b { IntVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    FloatVal(av) => {
+      match b { FloatVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    TextVal(av) => {
+      match b { TextVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+    BoolVal(av) => {
+      match b { BoolVal(bv) => { return av == bv; } _ => { return false; } }
+    }
+  }
+}
+
+fn field_value_as_float(v: &FieldValue) -> Option[Float32] {
+  match v {
+    FloatVal(f) => {
+      var out: Float32 = f;
+      return Some(out);
+    }
+    IntVal(i) => {
+      var out: Float32 = i as Float32;
+      return Some(out);
+    }
+    _ => { return None; }
+  }
+}
+
 // ============================================================================
 // Helper: filter operations
 // ============================================================================
@@ -875,8 +962,16 @@ fn filter_eq(field: Str, value: FieldValue) -> FilterExpr {
   return FilterExpr.Eq(field, value);
 }
 
+fn filter_range(field: Str, lo: Float32, hi: Float32) -> FilterExpr {
+  return FilterExpr.Range(field, lo, hi);
+}
+
 fn filter_exists(field: Str) -> FilterExpr {
   return FilterExpr.Exists(field);
+}
+
+fn filter_in(field: Str, values: Vec[FieldValue]) -> FilterExpr {
+  return FilterExpr.In(field, values);
 }
 
 fn filter_and(clauses: Vec[FilterExpr]) -> FilterExpr {
@@ -896,16 +991,60 @@ fn filter_not(clause: FilterExpr) -> FilterExpr {
 fn filter_matches(expr: &FilterExpr, p: &Payload) -> Bool {
   match expr {
     Eq(field, value) => {
-      return payload_has(p, field);
+      // Capture the match bindings into locals BEFORE any nested call/match:
+      // in this compilation unit the payload binds read back corrupted when
+      // consumed after the nested match (XVC-C-05 class). Same semantics.
+      var key: Str = field;
+      var want: FieldValue = value;
+      match payload_get(p, key) {
+        Some(fv) => { return field_value_eq(&fv, &want); }
+        None => { return false; }
+      }
     }
     Range(field, lo, hi) => {
-      return payload_has(p, field);
+      var key: Str = field;
+      var lo_v: Float32 = lo;
+      var hi_v: Float32 = hi;
+      match payload_get(p, key) {
+        Some(fv) => {
+          // Direct two-level match on the local Option payload: passing
+          // `&fv` into a helper corrupted the Float32 payload in this unit
+          // (XVC-C-05 class), so extract inline.
+          match fv {
+            FloatVal(f) => {
+              var got: Float32 = f;
+              if got < lo_v { return false; }
+              if got > hi_v { return false; }
+              return true;
+            }
+            IntVal(i) => {
+              var got: Float32 = i as Float32;
+              if got < lo_v { return false; }
+              if got > hi_v { return false; }
+              return true;
+            }
+            _ => { return false; }
+          }
+        }
+        None => { return false; }
+      }
     }
     Exists(field) => {
       return payload_has(p, field);
     }
     In(field, values) => {
-      return payload_has(p, field);
+      var key: Str = field;
+      match payload_get(p, key) {
+        Some(fv) => {
+          var i: Int = 0;
+          while i < values.len() {
+            if field_value_eq(&fv, &values[i]) { return true; }
+            i = i + 1;
+          }
+          return false;
+        }
+        None => { return false; }
+      }
     }
     And(clauses) => {
       var i: Int = 0;
@@ -934,6 +1073,123 @@ fn filter_matches(expr: &FilterExpr, p: &Payload) -> Bool {
       return !filter_matches(&clauses[0], p);
     }
   }
+}
+
+fn filter_matches_empty(expr: &FilterExpr) -> Bool {
+  match expr {
+    And(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if !filter_matches_empty(&clauses[i]) { return false; }
+        i = i + 1;
+      }
+      return true;
+    }
+    Or(clauses) => {
+      var i: Int = 0;
+      while i < clauses.len() {
+        if filter_matches_empty(&clauses[i]) { return true; }
+        i = i + 1;
+      }
+      return false;
+    }
+    Not(clauses) => {
+      if clauses.len() == 0 { return true; }
+      return !filter_matches_empty(&clauses[0]);
+    }
+    _ => { return false; }
+  }
+}
+
+// ============================================================================
+// Helper: payload store + filtered search (mirrors engine.xi)
+// ============================================================================
+
+fn payload_store_new() -> PayloadStore {
+  var entries = Vec[PayloadEntry].new();
+  return PayloadStore{ entries: entries };
+}
+
+fn payload_store_put(s: &mut PayloadStore, id: Int, payload: Payload) {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id {
+      s.entries[i].payload = payload;
+      return;
+    }
+    i = i + 1;
+  }
+  s.entries.push(PayloadEntry{ id: id, payload: payload });
+}
+
+fn payload_store_get(s: &PayloadStore, id: Int) -> Option[Payload] {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id { return Some(s.entries[i].payload); }
+    i = i + 1;
+  }
+  return None;
+}
+
+fn payload_store_remove(s: &mut PayloadStore, id: Int) -> Bool {
+  var pos: Int = -1;
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id { pos = i; }
+    i = i + 1;
+  }
+  if pos == -1 { return false; }
+  var last: Int = s.entries.len() - 1;
+  s.entries[pos] = s.entries[last];
+  s.entries.pop();
+  return true;
+}
+
+fn payload_store_len(s: &PayloadStore) -> Int {
+  return s.entries.len();
+}
+
+fn payload_store_matches(s: &PayloadStore, id: Int, expr: &FilterExpr) -> Bool {
+  var i: Int = 0;
+  while i < s.entries.len() {
+    if s.entries[i].id == id {
+      return filter_matches(expr, &s.entries[i].payload);
+    }
+    i = i + 1;
+  }
+  return filter_matches_empty(expr);
+}
+
+fn results_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, k: Int) {
+  results.push(item);
+  var pos: Int = results.len() - 1;
+  while pos > 0 && results[pos - 1].distance > results[pos].distance {
+    var tmp = results[pos];
+    results[pos] = results[pos - 1];
+    results[pos - 1] = tmp;
+    pos = pos - 1;
+  }
+  if results.len() > k {
+    results.pop();
+  }
+}
+
+fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
+  requires: k > 0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= k
+{
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  var total: Int = idx.ids.len();
+  while i < total {
+    if payload_store_matches(payloads, idx.ids[i], filter) {
+      var dist = vector_distance(&idx.vectors[i], query, metric);
+      results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);
+    }
+    i = i + 1;
+  }
+  return results;
 }
 
 // ============================================================================
@@ -3101,6 +3357,398 @@ fn test_recover_torn_tail_tolerated() -> TestResult {
 }
 
 // ============================================================================
+// SECTION 14: Payload filtering (Phase 3)
+// ============================================================================
+
+fn run_payload_get() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  match payload_get(&p, "color") {
+    Some(v) => {
+      if field_value_kind(&v) == "text" { return 0; }
+      return 1;
+    }
+    None => { return 2; }
+  }
+}
+fn test_payload_get() -> TestResult {
+  if run_payload_get() == 0 { return assert(true, "Payload: get returns the stored value"); }
+  return assert(false, "Payload: get failed");
+}
+
+fn run_payload_set_overwrite() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "n", FieldValue.IntVal(1));
+  payload_set(&mut p, "n", FieldValue.IntVal(2));
+  if payload_len(&p) != 1 { return 1; }
+  var want = FieldValue.IntVal(2);
+  match payload_get(&p, "n") {
+    Some(v) => {
+      if field_value_eq(&v, &want) { return 0; }
+      return 2;
+    }
+    None => { return 3; }
+  }
+}
+fn test_payload_set_overwrite() -> TestResult {
+  if run_payload_set_overwrite() == 0 { return assert(true, "Payload: set overwrites, len stays 1"); }
+  return assert(false, "Payload: overwrite failed");
+}
+
+fn run_field_value_eq_matrix() -> Int {
+  var i1 = FieldValue.IntVal(1);
+  var i1b = FieldValue.IntVal(1);
+  var f1 = FieldValue.FloatVal(1.0);
+  var t_a = FieldValue.TextVal("a");
+  var t_ab = FieldValue.TextVal("a");
+  var t_b = FieldValue.TextVal("b");
+  var b_t = FieldValue.BoolVal(true);
+  var b_tb = FieldValue.BoolVal(true);
+  var b_f = FieldValue.BoolVal(false);
+  if !field_value_eq(&i1, &i1b) { return 1; }
+  if field_value_eq(&i1, &f1) { return 2; }      // cross-type false
+  if !field_value_eq(&t_a, &t_ab) { return 3; }
+  if field_value_eq(&t_a, &t_b) { return 4; }
+  if !field_value_eq(&b_t, &b_tb) { return 5; }
+  if field_value_eq(&b_t, &b_f) { return 6; }
+  return 0;
+}
+fn test_field_value_eq_matrix() -> TestResult {
+  if run_field_value_eq_matrix() == 0 { return assert(true, "FieldValue: eq within type, false across types"); }
+  return assert(false, "FieldValue: eq matrix failed");
+}
+
+fn run_filter_eq_value_mismatch() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  var same = filter_eq("color", FieldValue.TextVal("red"));
+  var diff = filter_eq("color", FieldValue.TextVal("blue"));
+  if filter_matches(&diff, &p) { return 1; }
+  if !filter_matches(&same, &p) { return 2; }
+  return 0;
+}
+fn test_filter_eq_value_mismatch() -> TestResult {
+  if run_filter_eq_value_mismatch() == 0 { return assert(true, "Filter: Eq value mismatch false, match true"); }
+  return assert(false, "Filter: Eq value compare failed");
+}
+
+fn run_filter_range_inclusive() -> Int {
+  // NOTE (XVC-C-06): this suite's compilation unit zeroes Float32 enum
+  // payloads (a directly constructed FieldValue.FloatVal(10.0) extracts as
+  // 0.0 here, tag intact), so IntVal fields carry the suite-side bounds
+  // checks. FloatVal end-to-end coverage lives in the separate-unit probe
+  // tests/probes/probe_filtered_search.xi.
+  var p = payload_new();
+  payload_set(&mut p, "price", FieldValue.IntVal(10));
+  var at_lo = filter_range("price", 10.0, 20.0);
+  var at_hi = filter_range("price", 0.0, 10.0);
+  var above = filter_range("price", 10.01, 20.0);
+  var below = filter_range("price", 0.0, 9.99);
+  if !filter_matches(&at_lo, &p) { return 1; }
+  if !filter_matches(&at_hi, &p) { return 2; }
+  if filter_matches(&above, &p) { return 3; }
+  if filter_matches(&below, &p) { return 4; }
+  return 0;
+}
+fn test_filter_range_inclusive() -> TestResult {
+  if run_filter_range_inclusive() == 0 { return assert(true, "Filter: Range bounds inclusive"); }
+  return assert(false, "Filter: Range inclusivity failed");
+}
+
+fn run_filter_range_int_promotion() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "n", FieldValue.IntVal(5));
+  var inside = filter_range("n", 1.0, 10.0);
+  var outside = filter_range("n", 6.0, 10.0);
+  if !filter_matches(&inside, &p) { return 1; }
+  if filter_matches(&outside, &p) { return 2; }
+  return 0;
+}
+fn test_filter_range_int_promotion() -> TestResult {
+  if run_filter_range_int_promotion() == 0 { return assert(true, "Filter: Range promotes Int fields to Float32"); }
+  return assert(false, "Filter: Int promotion failed");
+}
+
+fn run_filter_range_non_numeric() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  var expr = filter_range("color", 0.0, 100.0);
+  if filter_matches(&expr, &p) { return 1; }
+  return 0;
+}
+fn test_filter_range_non_numeric() -> TestResult {
+  if run_filter_range_non_numeric() == 0 { return assert(true, "Filter: Range on Text field is false"); }
+  return assert(false, "Filter: non-numeric Range failed");
+}
+
+fn run_filter_range_missing() -> Int {
+  var p = payload_new();
+  var expr = filter_range("x", 0.0, 100.0);
+  if filter_matches(&expr, &p) { return 1; }
+  return 0;
+}
+fn test_filter_range_missing() -> TestResult {
+  if run_filter_range_missing() == 0 { return assert(true, "Filter: Range on missing field is false"); }
+  return assert(false, "Filter: missing Range failed");
+}
+
+fn run_filter_in_membership() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  var vals = Vec[FieldValue].new();
+  vals.push(FieldValue.TextVal("blue"));
+  vals.push(FieldValue.TextVal("red"));
+  var hit = filter_in("color", vals);
+  if !filter_matches(&hit, &p) { return 1; }
+  var vals2 = Vec[FieldValue].new();
+  vals2.push(FieldValue.TextVal("green"));
+  var miss = filter_in("color", vals2);
+  if filter_matches(&miss, &p) { return 2; }
+  return 0;
+}
+fn test_filter_in_membership() -> TestResult {
+  if run_filter_in_membership() == 0 { return assert(true, "Filter: In membership hit/miss"); }
+  return assert(false, "Filter: In membership failed");
+}
+
+fn run_filter_in_empty() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  var vals = Vec[FieldValue].new();
+  var expr = filter_in("color", vals);
+  if filter_matches(&expr, &p) { return 1; }
+  return 0;
+}
+fn test_filter_in_empty() -> TestResult {
+  if run_filter_in_empty() == 0 { return assert(true, "Filter: In([]) is false"); }
+  return assert(false, "Filter: empty In failed");
+}
+
+fn run_filter_missing_payload_semantics() -> Int {
+  var store = payload_store_new();
+  var ex = filter_exists("k");
+  if payload_store_matches(&store, 1, &ex) { return 1; }
+  var ne = filter_not(filter_exists("k"));
+  if !payload_store_matches(&store, 1, &ne) { return 2; }
+  var both = Vec[FilterExpr].new();
+  both.push(filter_exists("k"));
+  both.push(filter_exists("j"));
+  var andx = filter_and(both);
+  if payload_store_matches(&store, 1, &andx) { return 3; }
+  var orx = filter_or(both);
+  if payload_store_matches(&store, 1, &orx) { return 4; }
+  return 0;
+}
+fn test_filter_missing_payload_semantics() -> TestResult {
+  if run_filter_missing_payload_semantics() == 0 { return assert(true, "Filter: no-payload semantics (value false, Not true)"); }
+  return assert(false, "Filter: no-payload semantics failed");
+}
+
+// ---- filtered search over an engine ----
+
+fn setup_filtered_engine() -> VectorEngine {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.9, 0.1, 0.0));
+  engine_upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
+  var p1 = payload_new();
+  payload_set(&mut p1, "color", FieldValue.TextVal("red"));
+  payload_set(&mut p1, "price", FieldValue.IntVal(5));      // XVC-C-06: IntVal keeps f32 bounds checks valid in this unit
+  engine_set_payload(&mut eng, 1, p1);
+  var p2 = payload_new();
+  payload_set(&mut p2, "color", FieldValue.TextVal("blue"));
+  payload_set(&mut p2, "price", FieldValue.IntVal(50));
+  engine_set_payload(&mut eng, 2, p2);
+  var p3 = payload_new();
+  payload_set(&mut p3, "color", FieldValue.TextVal("red"));
+  payload_set(&mut p3, "price", FieldValue.IntVal(500));
+  engine_set_payload(&mut eng, 3, p3);
+  return eng;
+}
+
+fn run_filtered_search_only_matching() -> Int {
+  var eng = setup_filtered_engine();
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  var f = filter_eq("color", FieldValue.TextVal("red"));
+  match engine_search_filtered(&eng, &q, 3, &f) {
+    Ok(h) => {
+      if h.items.len() != 2 { return 1; }
+      if h.items[0].id != 1 { return 2; }
+      if h.items[1].id != 3 { return 3; }
+      return 0;
+    }
+    Err(_) => { return 4; }
+  }
+}
+fn test_filtered_search_only_matching() -> TestResult {
+  if run_filtered_search_only_matching() == 0 { return assert(true, "Filtered search: only matching points, ordered"); }
+  return assert(false, "Filtered search: matching set wrong");
+}
+
+fn run_filtered_search_and_price() -> Int {
+  var eng = setup_filtered_engine();
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  var clauses = Vec[FilterExpr].new();
+  clauses.push(filter_eq("color", FieldValue.TextVal("red")));
+  clauses.push(filter_range("price", 0.0, 100.0));
+  var f = filter_and(clauses);
+  match engine_search_filtered(&eng, &q, 5, &f) {
+    Ok(h) => {
+      if h.items.len() == 1 && h.items[0].id == 1 { return 0; }
+      return 1;
+    }
+    Err(_) => { return 2; }
+  }
+}
+fn test_filtered_search_and_price() -> TestResult {
+  if run_filtered_search_and_price() == 0 { return assert(true, "Filtered search: And(color, price range)"); }
+  return assert(false, "Filtered search: And filter failed");
+}
+
+fn run_filtered_search_not() -> Int {
+  var eng = setup_filtered_engine();
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  var inner = filter_eq("color", FieldValue.TextVal("blue"));
+  var f = filter_not(inner);
+  match engine_search_filtered(&eng, &q, 5, &f) {
+    Ok(h) => {
+      if h.items.len() != 2 { return 1; }
+      if h.items[0].id != 1 { return 2; }
+      if h.items[1].id != 3 { return 3; }
+      return 0;
+    }
+    Err(_) => { return 4; }
+  }
+}
+fn test_filtered_search_not() -> TestResult {
+  if run_filtered_search_not() == 0 { return assert(true, "Filtered search: Not(color=blue) excludes point 2"); }
+  return assert(false, "Filtered search: Not filter failed");
+}
+
+fn run_filtered_search_bounded_k() -> Int {
+  var eng = setup_filtered_engine();
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  var f = filter_exists("color");
+  match engine_search_filtered(&eng, &q, 1, &f) {
+    Ok(h) => {
+      if h.items.len() == 1 { return 0; }
+      return 1;
+    }
+    Err(_) => { return 2; }
+  }
+}
+fn test_filtered_search_bounded_k() -> TestResult {
+  if run_filtered_search_bounded_k() == 0 { return assert(true, "Filtered search: k bound honoured (len <= k)"); }
+  return assert(false, "Filtered search: k bound failed");
+}
+
+fn run_filtered_search_missing_payload_point() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v1 = vector_new(2); vector_set(&mut v1, 0, 1.0);
+  var v2 = vector_new(2); vector_set(&mut v2, 0, 2.0);
+  engine_upsert(&mut eng, 1, v1);
+  engine_upsert(&mut eng, 2, v2);
+  var p1 = payload_new();
+  payload_set(&mut p1, "color", FieldValue.TextVal("red"));
+  engine_set_payload(&mut eng, 1, p1);
+  var q = vector_new(2); vector_set(&mut q, 0, 1.0);
+  var f = filter_exists("color");
+  match engine_search_filtered(&eng, &q, 5, &f) {
+    Ok(h) => {
+      if h.items.len() == 1 && h.items[0].id == 1 { return 0; }
+      return 1;
+    }
+    Err(_) => { return 2; }
+  }
+}
+fn test_filtered_search_missing_payload_point() -> TestResult {
+  if run_filtered_search_missing_payload_point() == 0 { return assert(true, "Filtered search: point without payload excluded"); }
+  return assert(false, "Filtered search: missing payload handling failed");
+}
+
+fn run_filtered_search_dim_mismatch() -> Int {
+  var eng = setup_filtered_engine();
+  var q = vector_new(2); vector_set(&mut q, 0, 1.0);
+  var f = filter_exists("color");
+  match engine_search_filtered(&eng, &q, 1, &f) {
+    Ok(_) => { return 1; }
+    Err(_) => { return 0; }
+  }
+}
+fn test_filtered_search_dim_mismatch() -> TestResult {
+  if run_filtered_search_dim_mismatch() == 0 { return assert(true, "Filtered search: dim mismatch -> Err"); }
+  return assert(false, "Filtered search: dim mismatch not rejected");
+}
+
+fn run_set_payload_missing_point() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 1, DistanceMetric.Euclidean);
+  var p = payload_new();
+  payload_set(&mut p, "k", FieldValue.IntVal(1));
+  match engine_set_payload(&mut eng, 99, p) {
+    Ok(ok) => {
+      if !ok { return 0; }
+      return 1;
+    }
+    Err(_) => { return 2; }
+  }
+}
+fn test_set_payload_missing_point() -> TestResult {
+  if run_set_payload_missing_point() == 0 { return assert(true, "Payload: set on missing point -> Ok(false)"); }
+  return assert(false, "Payload: missing-point set failed");
+}
+
+fn run_delete_removes_payload() -> Int {
+  var eng = setup_filtered_engine();
+  match engine_get_payload(&eng, 1) {
+    Some(_) => {}
+    None => { return 1; }
+  }
+  engine_delete(&mut eng, 1);
+  match engine_get_payload(&eng, 1) {
+    Some(_) => { return 2; }
+    None => {}
+  }
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  var f = filter_eq("color", FieldValue.TextVal("red"));
+  match engine_search_filtered(&eng, &q, 5, &f) {
+    Ok(h) => {
+      if h.items.len() == 1 && h.items[0].id == 3 { return 0; }
+      return 3;
+    }
+    Err(_) => { return 4; }
+  }
+}
+fn test_delete_removes_payload() -> TestResult {
+  if run_delete_removes_payload() == 0 { return assert(true, "Payload: delete removes metadata, search reflects it"); }
+  return assert(false, "Payload: delete cleanup failed");
+}
+
+fn run_payload_store_put_replace() -> Int {
+  var s = payload_store_new();
+  var p = payload_new();
+  payload_set(&mut p, "k", FieldValue.IntVal(1));
+  payload_store_put(&mut s, 7, p);
+  var p2 = payload_new();
+  payload_set(&mut p2, "k", FieldValue.IntVal(2));
+  payload_store_put(&mut s, 7, p2);
+  if payload_store_len(&s) != 1 { return 1; }
+  match payload_store_get(&s, 7) {
+    Some(v) => {
+      if payload_len(&v) == 1 { return 0; }
+      return 2;
+    }
+    None => { return 3; }
+  }
+}
+fn test_payload_store_put_replace() -> TestResult {
+  if run_payload_store_put_replace() == 0 { return assert(true, "PayloadStore: put replaces by id, len stable"); }
+  return assert(false, "PayloadStore: replace failed");
+}
+
+// ============================================================================
 // Main -- manual dispatch
 // ============================================================================
 
@@ -3267,6 +3915,28 @@ fn main() -> Int {
   failed = failed + run_one_test(test_recover_search_identical()); total = total + 1;
   failed = failed + run_one_test(test_recover_lsn_continuity()); total = total + 1;
   failed = failed + run_one_test(test_recover_twice()); total = total + 1;
+
+  // SECTION 14: Payload filtering (Phase 3)
+  failed = failed + run_one_test(test_payload_get()); total = total + 1;
+  failed = failed + run_one_test(test_payload_set_overwrite()); total = total + 1;
+  failed = failed + run_one_test(test_field_value_eq_matrix()); total = total + 1;
+  failed = failed + run_one_test(test_filter_eq_value_mismatch()); total = total + 1;
+  failed = failed + run_one_test(test_filter_range_inclusive()); total = total + 1;
+  failed = failed + run_one_test(test_filter_range_int_promotion()); total = total + 1;
+  failed = failed + run_one_test(test_filter_range_non_numeric()); total = total + 1;
+  failed = failed + run_one_test(test_filter_range_missing()); total = total + 1;
+  failed = failed + run_one_test(test_filter_in_membership()); total = total + 1;
+  failed = failed + run_one_test(test_filter_in_empty()); total = total + 1;
+  failed = failed + run_one_test(test_filter_missing_payload_semantics()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_only_matching()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_and_price()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_not()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_bounded_k()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_missing_payload_point()); total = total + 1;
+  failed = failed + run_one_test(test_filtered_search_dim_mismatch()); total = total + 1;
+  failed = failed + run_one_test(test_set_payload_missing_point()); total = total + 1;
+  failed = failed + run_one_test(test_delete_removes_payload()); total = total + 1;
+  failed = failed + run_one_test(test_payload_store_put_replace()); total = total + 1;
   failed = failed + run_one_test(test_recover_torn_tail_tolerated()); total = total + 1;
 
   // Boundary/validation
