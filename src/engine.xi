@@ -5,6 +5,7 @@ module xiom.vector.engine
 
 use xiom.math;
 use xiom.num.float;
+use xiom.string.slice;
 
 // ============================================================================
 // XIOM-Vector: Consolidated Engine -- Vector + Distances + Index + WAL + API
@@ -95,16 +96,22 @@ pub fn wal_writer_resume(next_lsn: Int) -> WalWriter {
 }
 
 // Compacted checkpoint log: re-encode every live point of `idx` as an Insert
-// record with fresh LSNs continuing after `w`. The returned log alone
-// reconstructs the store, so a reopened engine can itself be reopened. This
-// is the recovery-time compaction step; a durable manifest (Phase 2) will
-// later persist it instead of rebuilding on every open.
-pub fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex) -> WalWriter {
+// record and every payload as an Update record, with fresh LSNs continuing
+// after `w`. The returned log alone reconstructs the store + metadata, so a
+// reopened engine can itself be reopened. This is the recovery-time
+// compaction step; a durable manifest (Phase 2) will later persist it
+// instead of rebuilding on every open.
+pub fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex, payloads: &PayloadStore) -> WalWriter {
   var out = wal_writer_resume(w.next_lsn);
   var i: Int = 0;
   while i < idx.ids.len() {
     wal_writer_append_payload(&mut out, WalOpKind.Insert, idx.ids[i], 1, vector_encode(&idx.vectors[i]));
     i = i + 1;
+  }
+  var j: Int = 0;
+  while j < payloads.entries.len() {
+    wal_writer_append_payload(&mut out, WalOpKind.Update, payloads.entries[j].id, 1, payload_encode(&payloads.entries[j].payload));
+    j = j + 1;
   }
   return out;
 }
@@ -365,6 +372,103 @@ pub fn field_value_as_float(v: &FieldValue) -> Option[Float32] {
     IntVal(i) => { return Some(i as Float32); }
     _ => { return None; }
   }
+}
+
+// ---- Payload WAL codec (durable metadata) ----
+// Word layout: [version=1, field_count,
+//   (key_len, key_bytes...), kind, value_words...
+// kind 1=int (v), 2=float (f64 bit pattern of the f32), 3=text (len, bytes),
+// 4=bool (0|1)]. Decode is strict; malformed -> None (torn-record tolerance).
+fn push_str_words(out: &mut Vec[Int], s: Str) {
+  var bytes = slice.str_bytes(s);
+  out.push(bytes.len());
+  var i: Int = 0;
+  while i < bytes.len() {
+    out.push(bytes[i] as Int);
+    i = i + 1;
+  }
+}
+
+pub fn payload_encode(p: &Payload) -> Vec[Int] {
+  var out = Vec[Int].new();
+  out.push(1);
+  out.push(p.fields.len());
+  var i: Int = 0;
+  while i < p.fields.len() {
+    push_str_words(&mut out, p.fields[i].key);
+    var fv = p.fields[i].value;
+    match fv {
+      IntVal(v) => { out.push(1); out.push(v); }
+      FloatVal(f) => { out.push(2); out.push(float.float_bits(f as Float64)); }
+      TextVal(t) => { out.push(3); push_str_words(&mut out, t); }
+      BoolVal(b) => {
+        out.push(4);
+        if b { out.push(1); } else { out.push(0); }
+      }
+    }
+    i = i + 1;
+  }
+  return out;
+}
+
+pub fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
+  if words.len() < 2 { return None; }
+  if words[0] != 1 { return None; }
+  var count = words[1];
+  if count < 0 { return None; }
+  var out = payload_new();
+  var pos: Int = 2;
+  var i: Int = 0;
+  while i < count {
+    if pos >= words.len() { return None; }
+    var klen = words[pos];
+    pos = pos + 1;
+    if klen < 0 || pos + klen > words.len() { return None; }
+    var kb = Vec[UInt8].new();
+    var j: Int = 0;
+    while j < klen {
+      kb.push(words[pos + j] as UInt8);
+      j = j + 1;
+    }
+    pos = pos + klen;
+    var key = Str::from_utf8(kb);
+    if pos >= words.len() { return None; }
+    var kind = words[pos];
+    pos = pos + 1;
+    if kind == 1 {
+      if pos >= words.len() { return None; }
+      var iv = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.IntVal(iv));
+    } elif kind == 2 {
+      if pos >= words.len() { return None; }
+      var bits = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.FloatVal(float.bits_to_float(bits) as Float32));
+    } elif kind == 3 {
+      if pos >= words.len() { return None; }
+      var tlen = words[pos];
+      pos = pos + 1;
+      if tlen < 0 || pos + tlen > words.len() { return None; }
+      var tb = Vec[UInt8].new();
+      var k: Int = 0;
+      while k < tlen {
+        tb.push(words[pos + k] as UInt8);
+        k = k + 1;
+      }
+      pos = pos + tlen;
+      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(tb)));
+    } elif kind == 4 {
+      if pos >= words.len() { return None; }
+      var bv = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.BoolVal(bv != 0));
+    } else {
+      return None;
+    }
+    i = i + 1;
+  }
+  return Some(out);
 }
 
 pub enum FilterExpr {
@@ -750,14 +854,26 @@ pub fn log_delete(w: &mut WalWriter, collection: Int, point: Int) -> Int {
   return wal_writer_append(w, WalOpKind.Delete, point, collection);
 }
 
-// ---- Recovery: replay a WAL into a fresh store ("reopen" path) ----
-// Insert records are decoded from their payload and re-applied; Delete
-// records remove the point. Malformed payloads are skipped (torn-tail
-// tolerance). Records of any other kind are ignored for now.
-pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+// Metadata update record: key = point id, payload = encoded Payload
+// (payload_encode). WalOpKind.Update is the metadata record kind.
+pub fn log_payload_set(w: &mut WalWriter, collection: Int, point: Int, words: Vec[Int]) -> Int {
+  return wal_writer_append_payload(w, WalOpKind.Update, point, collection, words);
+}
+
+// ---- Recovery: replay a WAL into a fresh store + payload store ----
+// Replay in LSN order: Insert -> store, Delete -> store+payload removal,
+// Update -> payload set/overwrite. Malformed record payloads are skipped
+// (torn-tail tolerance). Records of any other kind are ignored for now.
+pub type RecoveredState = {
+  store: VectorIndex;
+  payloads: PayloadStore;
+}
+
+pub fn recover_state(w: &WalWriter, dim: Int) -> RecoveredState
   requires: dim > 0
 {
   var idx = index_new(dim);
+  var pls = payload_store_new();
   var i: Int = 0;
   while i < w.records.len() {
     var op = w.records[i].op;
@@ -773,28 +889,42 @@ pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
       }
       Delete => {
         index_remove(&mut idx, key);
+        payload_store_remove(&mut pls, key);
+      }
+      Update => {
+        match payload_decode(&w.records[i].payload) {
+          Some(p) => { payload_store_put(&mut pls, key, p); }
+          None => {}
+        }
       }
       _ => {}
     }
     i = i + 1;
   }
-  return idx;
+  return RecoveredState{ store: idx, payloads: pls };
 }
 
-// Rebuild an engine from its WAL: replay the log into a fresh store, then
-// write a compacted checkpoint log (so the recovered engine is itself
-// recoverable). LSNs stay monotonic; dimension/metric are restored.
-// NOTE: payloads are not yet WAL-encoded, so recovery drops metadata until
-// the payload-durability step of Phase 2/3 lands.
+pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+  requires: dim > 0
+{
+  var st = recover_state(w, dim);
+  return st.store;
+}
+
+// Rebuild an engine from its WAL: replay the log into a fresh store + payload
+// store, then write a compacted checkpoint log (so the recovered engine is
+// itself recoverable). LSNs stay monotonic; dimension/metric are restored.
 pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
   var eng = engine_new();
-  eng.store = recover_store(w, dim);
+  var st = recover_state(w, dim);
+  eng.store = st.store;
+  eng.payloads = st.payloads;
   eng.dimension = dim;
   eng.metric = metric;
   eng.created = true;
-  eng.wal = wal_writer_checkpoint_from(w, &eng.store);
+  eng.wal = wal_writer_checkpoint_from(w, &eng.store, &eng.payloads);
   return eng;
 }
 
@@ -878,13 +1008,17 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
   return Ok(ok);
 }
 
-// Attach/replace metadata for an existing point. Returns Ok(false) when the
-// point does not exist (payloads never outlive their point).
+// Attach/replace metadata for an existing point (WAL-before-ack: the encoded
+// payload record is appended before the in-memory store is touched).
+// Returns Ok(false) when the point does not exist (payloads never outlive
+// their point).
 pub fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) -> Result[Bool, CoreError]
   requires: eng.created
 {
   match index_get(&eng.store, point) {
     Some(_) => {
+      var words = payload_encode(&payload);
+      log_payload_set(&mut eng.wal, 1, point, words);
       payload_store_put(&mut eng.payloads, point, payload);
       return Ok(true);
     }
