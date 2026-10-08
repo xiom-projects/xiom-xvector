@@ -2,19 +2,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 module xiom.vector.query.search_request
-// Local inline types.
 
-pub type Vector = { data: Vec[Float32]; dimension: Int; }
-pub enum DistanceMetric { Cosine, DotProduct, Euclidean }
-pub enum FilterExpr {
-  Eq(field: Str, value: Str),
-  Range(field: Str, lo: Str, hi: Str),
-  Exists(field: Str),
-  In(field: Str, values: Vec[Str]),
-  And(terms: Vec[FilterExpr]),
-  Or(terms: Vec[FilterExpr]),
-  Not(terms: Vec[FilterExpr]),
-}
+// SearchRequest: the wire shape for request-driven search. Holds the query
+// vector, top_k, the request's metric (validated against the active
+// collection by engine_search_request), an optional filter clause, and the
+// with_payload hydration flag. Rewritten against the real extracted types
+// (the pre-extraction file carried inline mirrors).
+
+use xiom.vector.types.dense_vector;
+use xiom.vector.types.metric;
+use xiom.vector.payload.filter_ast;
 
 pub type SearchRequest = {
   query: Vector;
@@ -37,6 +34,7 @@ pub fn search_request_new(query: Vector, top_k: Int, metric: DistanceMetric) -> 
   };
 }
 
+// Replace the request's filter with a single clause ([] = no filter).
 pub fn search_request_set_filter(req: &mut SearchRequest, expr: FilterExpr) {
   var filter = Vec[FilterExpr].new();
   filter.push(expr);
@@ -49,4 +47,9 @@ pub fn search_request_has_filter(req: &SearchRequest) -> Bool {
 
 pub fn search_request_top_k(req: &SearchRequest) -> Int {
   return req.top_k;
+}
+
+// Toggle payload hydration on the request.
+pub fn search_request_set_with_payload(req: &mut SearchRequest, on: Bool) {
+  req.with_payload = on;
 }
