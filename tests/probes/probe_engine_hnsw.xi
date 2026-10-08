@@ -255,7 +255,68 @@ fn main() -> Int {
   var fr = eng_search_filtered(&flat, &fq, 3, &f);
   var fa = eng_search_filtered(&ann, &fq, 3, &f);
   fails = check(fr.len() == 1 && fr[0].id == 3 && results_equal(&fr, &fa),
-    "filtered search exact on Hnsw collection ({3})", fails);
+    "selective filter (1 match) falls back to the exact scan ({3})", fails);
+
+  // --- HNSW+filter: majority filter takes the ANN path and fills k ---
+  i = 1;
+  while i <= 150 {
+    var pm1 = payload_new();
+    var pm2 = payload_new();
+    if i <= 120 {
+      payload_set(&mut pm1, "m", FieldValue.TextVal("yes"));
+      payload_set(&mut pm2, "m", FieldValue.TextVal("yes"));
+    } else {
+      payload_set(&mut pm1, "m", FieldValue.TextVal("no"));
+      payload_set(&mut pm2, "m", FieldValue.TextVal("no"));
+    }
+    set_payload(&mut flat, i, pm1);
+    set_payload(&mut ann, i, pm2);
+    i = i + 1;
+  }
+  var fm = filter_eq("m", FieldValue.TextVal("yes"));
+  var hits_m: Int = 0;
+  var filled: Int = 0;
+  var qm: Int = 0;
+  while qm < 8 {
+    var cm = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut cm);
+    var qvm = vec_from_coords(&cm);
+    var om = eng_search_filtered(&flat, &qvm, k, &fm);
+    var am = eng_search_filtered(&ann, &qvm, k, &fm);
+    hits_m = hits_m + hit_count(&om, &am, k);
+    if am.len() == k { filled = filled + 1; }
+    qm = qm + 1;
+  }
+  io.println("    diag HNSW+filter majority: recall " + int_to_str(hits_m) + "/" + int_to_str(8 * k)
+    + "  filled " + int_to_str(filled) + "/8");
+  fails = check(filled == 8 && hits_m * 100 >= 8 * k * 80,
+    "Hnsw majority filter: k-filled every query, recall >= 0.80", fails);
+
+  // --- selective filter (< k true matches) always falls back ---
+  i = 1;
+  while i <= 3 {
+    var ps1 = payload_new();
+    payload_set(&mut ps1, "sel", FieldValue.BoolVal(true));
+    var ps2 = payload_new();
+    payload_set(&mut ps2, "sel", FieldValue.BoolVal(true));
+    set_payload(&mut flat, i, ps1);
+    set_payload(&mut ann, i, ps2);
+    i = i + 1;
+  }
+  var fsel = filter_eq("sel", FieldValue.BoolVal(true));
+  var cs = Vec[Float32].new();
+  state = rand_coords(state, dim, &mut cs);
+  var qs = vec_from_coords(&cs);
+  var fs_flat = eng_search_filtered(&flat, &qs, k, &fsel);
+  var fs_ann = eng_search_filtered(&ann, &qs, k, &fsel);
+  fails = check(fs_flat.len() == 3 && results_equal(&fs_flat, &fs_ann),
+    "selective filter (<k matches): fallback bit-identical to exact scan", fails);
+
+  // --- zero-match filter ---
+  var fz = filter_eq("nope", FieldValue.IntVal(1));
+  var fz_flat = eng_search_filtered(&flat, &qs, k, &fz);
+  var fz_ann = eng_search_filtered(&ann, &qs, k, &fz);
+  fails = check(fz_flat.len() == 0 && fz_ann.len() == 0, "zero-match filter -> empty on both", fails);
 
   // --- switching back to Flat restores exactness ---
   match set_index(&mut ann, AnnIndexKind.Flat, ann_params_default()) {
