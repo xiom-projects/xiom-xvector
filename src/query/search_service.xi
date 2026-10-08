@@ -97,6 +97,30 @@ pub fn filter_results_by_payload(items: &Vec[SearchResult], payloads: &PayloadSt
   return out;
 }
 
+// Index-driven filtered scan: enumerate the exact candidate ids from the
+// sorted payload index (Eq/Range), resolve each through the store's O(log n)
+// id -> slot map and compute distances only for matches.
+fn search_knn_filtered_index(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
+  requires: k > 0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= k
+{
+  var ids = filter_plan_candidates(payloads, filter);
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  while i < ids.len() {
+    match index_get(idx, ids[i]) {
+      Some(v) => {
+        var dist = vector_distance(&v, query, metric);
+        results_push_bounded(&mut results, SearchResult{ id: ids[i], distance: dist }, k);
+      }
+      None => {}
+    }
+    i = i + 1;
+  }
+  return results;
+}
+
 // Selectivity-planned filtered exact top-k. Post-filter plan (chosen by
 // filter_plan.choose_filter_plan only for index-answerable filters whose
 // exact match count is >= k and a majority of the store): rank the whole
@@ -104,8 +128,9 @@ pub fn filter_results_by_payload(items: &Vec[SearchResult], payloads: &PayloadSt
 // provably exact -- any matching point outside the global top-k is farther
 // than every point in it -- otherwise (uneven distance ties, or estimates
 // that overstate the boundary situation) fall back to the pre-filter scan.
-// Equal-distance ties may select different ids across plans; distances and
-// the k-bound are unaffected.
+// The index plan enumerates the exact candidate ids instead. Equal-distance
+// ties may select different ids across plans; distances and the k-bound are
+// unaffected.
 pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
   requires: k > 0
   requires: idx.dim == query.dimension
@@ -116,6 +141,10 @@ pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &V
     var raw = search_knn(idx, query, k, metric);
     var out = filter_results_by_payload(&raw, payloads, filter);
     if out.len() == k { return out; }
+  } else {
+    if plan == filter_plan_index() {
+      return search_knn_filtered_index(idx, payloads, query, k, metric, filter);
+    }
   }
   return search_knn_filtered_scan(idx, payloads, query, k, metric, filter);
 }

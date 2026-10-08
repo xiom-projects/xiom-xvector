@@ -477,6 +477,17 @@ pub fn payload_store_index_field_count(s: &PayloadStore, field: Str) -> Int {
   return n;
 }
 
+// Ids carrying `field` (any value), in index row order.
+pub fn payload_store_index_field_ids(s: &PayloadStore, field: Str) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var pos: Int = payload_index_field_start(s, field);
+  while pos < s.index_id.len() && s.index_field[pos] == field {
+    out.push(s.index_id[pos]);
+    pos = pos + 1;
+  }
+  return out;
+}
+
 // Ids whose field equals `value` (semantic equality, like field_value_eq).
 // Int/bool/text use an exact tuple search; floats scan the field window and
 // compare numerically (IEEE +-0.0 / NaN stay consistent with field_value_eq).

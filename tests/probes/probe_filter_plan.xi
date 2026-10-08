@@ -137,13 +137,14 @@ fn main() -> Int {
   fails = check(choose_filter_plan(&eng.payloads, &f_exists, 12, 3) == filter_plan_post()
     && choose_filter_plan(&eng.payloads, &f_a, 12, 3) == filter_plan_post(),
     "plan: majority exists/eq-a -> post", fails);
-  fails = check(choose_filter_plan(&eng.payloads, &f_b, 12, 3) == filter_plan_scan()
+  fails = check(choose_filter_plan(&eng.payloads, &f_b, 12, 3) == filter_plan_index()
     && choose_filter_plan(&eng.payloads, &f_a, 12, 20) == filter_plan_scan(),
-    "plan: est<k (eq-b k3, eq-a k20) -> scan", fails);
+    "plan: eq-b (1/12) -> index; eq-a k20 -> scan", fails);
   fails = check(choose_filter_plan(&eng.payloads, &f_range, 12, 3) == filter_plan_scan()
-    && choose_filter_plan(&eng.payloads, &f_and, 12, 3) == filter_plan_scan()
     && choose_filter_plan(&eng.payloads, &f_in, 12, 3) == filter_plan_scan(),
-    "plan: minority/unknown -> scan", fails);
+    "plan: range minority / In unknown -> scan", fails);
+  fails = check(choose_filter_plan(&eng.payloads, &f_and, 12, 3) == filter_plan_post(),
+    "plan: And([]) match-all (upper=total) -> post", fails);
 
   // --- equivalence with the scan reference (facade path) ---
   var k: Int = 3;
@@ -166,7 +167,7 @@ fn main() -> Int {
     Ok(h) => {
       var ref = reference_filtered(&eng.store, &eng.payloads, &query, k, DistanceMetric.Euclidean, &f_b);
       fails = check(results_equal(&h.items, &ref) && h.items.len() == 1 && h.items[0].id == 11,
-        "scan path: Eq minority == scan -> {11}", fails);
+        "index plan: Eq minority (bucket b) -> {11}", fails);
     }
     Err(_) => { fails = check(false, "search Eq-b -> Ok", fails); }
   }
@@ -218,6 +219,34 @@ fn main() -> Int {
         "Eq no match: count 0, empty result", fails);
     }
     Err(_) => { fails = check(false, "search zero -> Ok", fails); }
+  }
+
+  // --- upper bounds for compound shapes ---
+  fails = check(filter_matching_upper(&eng.payloads, &f_and3, 12) == 3
+    && filter_matching_upper(&eng.payloads, &f_or, 12) == 1
+    && filter_matching_upper(&eng.payloads, &f_not, 12) == 2
+    && filter_matching_upper(&eng.payloads, &f_in, 12) == -1,
+    "upper bounds: And(common,rank)=3 Or(b,c)=1 Not=2 In=-1", fails);
+
+  // --- index plan: exact candidates, bit-identical to the scan reference ---
+  var p2r = payload_new();
+  payload_set(&mut p2r, "rare", FieldValue.BoolVal(true));
+  set_payload(&mut eng, 2, p2r);
+  var p5r = payload_new();
+  payload_set(&mut p5r, "rare", FieldValue.BoolVal(true));
+  set_payload(&mut eng, 5, p5r);
+  var f_rare = filter_exists("rare");
+  fails = check(filter_matching_count(&eng.payloads, &f_rare) == 2
+    && choose_filter_plan(&eng.payloads, &f_rare, 12, 3) == filter_plan_index(),
+    "index plan: Exists rare (2/12) -> index", fails);
+  match search_filtered(&eng, &query, k, &f_rare) {
+    Ok(h) => {
+      var ref = reference_filtered(&eng.store, &eng.payloads, &query, k, DistanceMetric.Euclidean, &f_rare);
+      fails = check(results_equal(&h.items, &ref) && h.items.len() == 2
+        && h.items[0].id == 2 && h.items[1].id == 5,
+        "index plan: candidates {2,5} bit-identical to reference", fails);
+    }
+    Err(_) => { fails = check(false, "index-plan search -> Ok", fails); }
   }
 
   // --- post plan fallback: majority matches, but the nearest k do not ---
