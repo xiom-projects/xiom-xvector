@@ -5,6 +5,7 @@ module xiom.vector.tests.test_conformance
 
 use xiom.io;
 use xiom.num.float;
+use xiom.string.slice;
 use xiom.test;
 
 fn int_to_str(n: Int) -> Str {
@@ -182,6 +183,11 @@ pub type PayloadEntry = {
 
 pub type PayloadStore = {
   entries: Vec[PayloadEntry];
+}
+
+pub type RecoveredState = {
+  store: VectorIndex;
+  payloads: PayloadStore;
 }
 
 pub enum FilterExpr {
@@ -558,12 +564,17 @@ fn wal_writer_resume(next_lsn: Int) -> WalWriter {
   return WalWriter{ records: records, next_lsn: next_lsn, synced_lsn: next_lsn - 1 };
 }
 
-fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex) -> WalWriter {
+fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex, payloads: &PayloadStore) -> WalWriter {
   var out = wal_writer_resume(w.next_lsn);
   var i: Int = 0;
   while i < idx.ids.len() {
     wal_writer_append_payload(&mut out, WalOpKind.Insert, idx.ids[i], 1, vector_encode(&idx.vectors[i]));
     i = i + 1;
+  }
+  var j: Int = 0;
+  while j < payloads.entries.len() {
+    wal_writer_append_payload(&mut out, WalOpKind.Update, payloads.entries[j].id, 1, payload_encode(&payloads.entries[j].payload));
+    j = j + 1;
   }
   return out;
 }
@@ -640,6 +651,8 @@ fn engine_delete(eng: &mut VectorEngine, point: Int) -> Bool {
 fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) -> Result[Bool, CoreError] {
   match index_get(&eng.store, point) {
     Some(_) => {
+      var words = payload_encode(&payload);
+      wal_writer_append_payload(&mut eng.wal, WalOpKind.Update, point, 1, words);
       payload_store_put(&mut eng.payloads, point, payload);
       return Ok(true);
     }
@@ -670,11 +683,12 @@ fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
 }
 
-// ---- Recovery replay (mirrors engine.xi) ----
-fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+// ---- Recovery replay: store + payloads (mirrors engine.xi) ----
+fn recover_state(w: &WalWriter, dim: Int) -> RecoveredState
   requires: dim > 0
 {
   var idx = index_new(dim);
+  var pls = payload_store_new();
   var i: Int = 0;
   while i < w.records.len() {
     var op = w.records[i].op;
@@ -690,23 +704,39 @@ fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
       }
       Delete => {
         index_remove(&mut idx, key);
+        payload_store_remove(&mut pls, key);
+      }
+      Update => {
+        match payload_decode(&w.records[i].payload) {
+          Some(p) => { payload_store_put(&mut pls, key, p); }
+          None => {}
+        }
       }
       _ => {}
     }
     i = i + 1;
   }
-  return idx;
+  return RecoveredState{ store: idx, payloads: pls };
+}
+
+fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+  requires: dim > 0
+{
+  var st = recover_state(w, dim);
+  return st.store;
 }
 
 fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
   var eng = engine_new();
-  eng.store = recover_store(w, dim);
+  var st = recover_state(w, dim);
+  eng.store = st.store;
+  eng.payloads = st.payloads;
   eng.dimension = dim;
   eng.metric = metric;
   eng.created = true;
-  eng.wal = wal_writer_checkpoint_from(w, &eng.store);
+  eng.wal = wal_writer_checkpoint_from(w, &eng.store, &eng.payloads);
   return eng;
 }
 
@@ -952,6 +982,99 @@ fn field_value_as_float(v: &FieldValue) -> Option[Float32] {
     }
     _ => { return None; }
   }
+}
+
+// ---- Payload WAL codec (mirrors engine.xi; keep the two in sync) ----
+fn push_str_words(out: &mut Vec[Int], s: Str) {
+  var bytes = slice.str_bytes(s);
+  out.push(bytes.len());
+  var i: Int = 0;
+  while i < bytes.len() {
+    out.push(bytes[i] as Int);
+    i = i + 1;
+  }
+}
+
+fn payload_encode(p: &Payload) -> Vec[Int] {
+  var out = Vec[Int].new();
+  out.push(1);
+  out.push(p.fields.len());
+  var i: Int = 0;
+  while i < p.fields.len() {
+    push_str_words(&mut out, p.fields[i].key);
+    var fv = p.fields[i].value;
+    match fv {
+      IntVal(v) => { out.push(1); out.push(v); }
+      FloatVal(f) => { out.push(2); out.push(float.float_bits(f as Float64)); }
+      TextVal(t) => { out.push(3); push_str_words(&mut out, t); }
+      BoolVal(b) => {
+        out.push(4);
+        if b { out.push(1); } else { out.push(0); }
+      }
+    }
+    i = i + 1;
+  }
+  return out;
+}
+
+fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
+  if words.len() < 2 { return None; }
+  if words[0] != 1 { return None; }
+  var count = words[1];
+  if count < 0 { return None; }
+  var out = payload_new();
+  var pos: Int = 2;
+  var i: Int = 0;
+  while i < count {
+    if pos >= words.len() { return None; }
+    var klen = words[pos];
+    pos = pos + 1;
+    if klen < 0 || pos + klen > words.len() { return None; }
+    var kb = Vec[UInt8].new();
+    var j: Int = 0;
+    while j < klen {
+      kb.push(words[pos + j] as UInt8);
+      j = j + 1;
+    }
+    pos = pos + klen;
+    var key = Str::from_utf8(kb);
+    if pos >= words.len() { return None; }
+    var kind = words[pos];
+    pos = pos + 1;
+    if kind == 1 {
+      if pos >= words.len() { return None; }
+      var iv = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.IntVal(iv));
+    } elif kind == 2 {
+      if pos >= words.len() { return None; }
+      var bits = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.FloatVal(float.bits_to_float(bits) as Float32));
+    } elif kind == 3 {
+      if pos >= words.len() { return None; }
+      var tlen = words[pos];
+      pos = pos + 1;
+      if tlen < 0 || pos + tlen > words.len() { return None; }
+      var tb = Vec[UInt8].new();
+      var k: Int = 0;
+      while k < tlen {
+        tb.push(words[pos + k] as UInt8);
+        k = k + 1;
+      }
+      pos = pos + tlen;
+      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(tb)));
+    } elif kind == 4 {
+      if pos >= words.len() { return None; }
+      var bv = words[pos];
+      pos = pos + 1;
+      payload_set(&mut out, key, FieldValue.BoolVal(bv != 0));
+    } else {
+      return None;
+    }
+    i = i + 1;
+  }
+  return Some(out);
 }
 
 // ============================================================================
@@ -3749,6 +3872,208 @@ fn test_payload_store_put_replace() -> TestResult {
 }
 
 // ============================================================================
+// SECTION 15: Durable payloads (WAL codec + recovery)
+// ============================================================================
+
+fn run_payload_encode_empty() -> Int {
+  var p = payload_new();
+  var words = payload_encode(&p);
+  if words.len() != 2 { return 1; }
+  match payload_decode(&words) {
+    Some(q) => {
+      if payload_len(&q) == 0 { return 0; }
+      return 2;
+    }
+    None => { return 3; }
+  }
+}
+fn test_payload_encode_empty() -> TestResult {
+  if run_payload_encode_empty() == 0 { return assert(true, "Payload codec: empty payload roundtrip"); }
+  return assert(false, "Payload codec: empty roundtrip failed");
+}
+
+fn run_payload_encode_roundtrip() -> Int {
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("crimson red"));
+  payload_set(&mut p, "stock", FieldValue.IntVal(-3));
+  payload_set(&mut p, "active", FieldValue.BoolVal(false));
+  var words = payload_encode(&p);
+  match payload_decode(&words) {
+    Some(q) => {
+      if payload_len(&q) != 3 { return 1; }
+      var wc = FieldValue.TextVal("crimson red");
+      var ws = FieldValue.IntVal(-3);
+      var wa = FieldValue.BoolVal(false);
+      match payload_get(&q, "color") { Some(v) => { if !field_value_eq(&v, &wc) { return 2; } } None => { return 3; } }
+      match payload_get(&q, "stock") { Some(v) => { if !field_value_eq(&v, &ws) { return 4; } } None => { return 5; } }
+      match payload_get(&q, "active") { Some(v) => { if !field_value_eq(&v, &wa) { return 6; } } None => { return 7; } }
+      return 0;
+    }
+    None => { return 8; }
+  }
+}
+fn test_payload_encode_roundtrip() -> TestResult {
+  if run_payload_encode_roundtrip() == 0 { return assert(true, "Payload codec: text/int(-3)/bool roundtrip"); }
+  return assert(false, "Payload codec: roundtrip failed");
+}
+
+fn run_payload_decode_malformed() -> Int {
+  var empty = Vec[Int].new();
+  match payload_decode(&empty) { Some(_) => { return 1; } None => {} }
+  var badver = Vec[Int].new(); badver.push(0); badver.push(1);
+  match payload_decode(&badver) { Some(_) => { return 2; } None => {} }
+  var badkind = Vec[Int].new();
+  badkind.push(1); badkind.push(1); badkind.push(1); badkind.push(65); badkind.push(9);
+  match payload_decode(&badkind) { Some(_) => { return 3; } None => {} }
+  var trunk = Vec[Int].new();
+  trunk.push(1); trunk.push(1); trunk.push(5); trunk.push(65);
+  match payload_decode(&trunk) { Some(_) => { return 4; } None => {} }
+  var truncval = Vec[Int].new();
+  truncval.push(1); truncval.push(1); truncval.push(1); truncval.push(65); truncval.push(1);
+  match payload_decode(&truncval) { Some(_) => { return 5; } None => {} }
+  return 0;
+}
+fn test_payload_decode_malformed() -> TestResult {
+  if run_payload_decode_malformed() == 0 { return assert(true, "Payload codec: malformed -> None (5 shapes)"); }
+  return assert(false, "Payload codec: malformed accepted");
+}
+
+fn run_payload_wal_before_ack() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v = vector_new(2); vector_set(&mut v, 0, 1.0);
+  engine_upsert(&mut eng, 1, v);
+  if engine_durable_lsn(&eng) != 1 { return 1; }
+  var p = payload_new();
+  payload_set(&mut p, "k", FieldValue.IntVal(1));
+  engine_set_payload(&mut eng, 1, p);
+  if engine_durable_lsn(&eng) != 2 { return 2; }
+  return 0;
+}
+fn test_payload_wal_before_ack() -> TestResult {
+  if run_payload_wal_before_ack() == 0 { return assert(true, "Payload: set_payload appends a WAL record (LSN+1)"); }
+  return assert(false, "Payload: WAL-before-ack failed");
+}
+
+fn run_recover_payloads() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v = vector_new(2); vector_set(&mut v, 0, 1.0);
+  engine_upsert(&mut eng, 1, v);
+  var p = payload_new();
+  payload_set(&mut p, "color", FieldValue.TextVal("red"));
+  engine_set_payload(&mut eng, 1, p);
+  var r = engine_recover(&eng.wal, 2, DistanceMetric.Euclidean);
+  var ok: Bool = false;
+  match engine_get_payload(&r, 1) {
+    Some(q) => {
+      var w = FieldValue.TextVal("red");
+      match payload_get(&q, "color") { Some(vv) => { ok = field_value_eq(&vv, &w); } None => {} }
+    }
+    None => {}
+  }
+  if ok { return 0; }
+  return 1;
+}
+fn test_recover_payloads() -> TestResult {
+  if run_recover_payloads() == 0 { return assert(true, "Recovery: payload restored from WAL"); }
+  return assert(false, "Recovery: payload restore failed");
+}
+
+fn run_recover_state_both() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v1 = vector_new(2); vector_set(&mut v1, 0, 1.0);
+  var v2 = vector_new(2); vector_set(&mut v2, 0, 2.0);
+  engine_upsert(&mut eng, 1, v1);
+  engine_upsert(&mut eng, 2, v2);
+  var p1 = payload_new();
+  payload_set(&mut p1, "k", FieldValue.IntVal(1));
+  engine_set_payload(&mut eng, 1, p1);
+  var p2 = payload_new();
+  payload_set(&mut p2, "k", FieldValue.IntVal(2));
+  engine_set_payload(&mut eng, 2, p2);
+  var st = recover_state(&eng.wal, 2);
+  if index_size(&st.store) != 2 { return 1; }
+  if payload_store_len(&st.payloads) != 2 { return 2; }
+  return 0;
+}
+fn test_recover_state_both() -> TestResult {
+  if run_recover_state_both() == 0 { return assert(true, "Recovery: recover_state returns store + payloads"); }
+  return assert(false, "Recovery: recover_state failed");
+}
+
+fn run_recover_payloads_chained() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v = vector_new(2); vector_set(&mut v, 0, 1.0);
+  engine_upsert(&mut eng, 1, v);
+  var p1 = payload_new();
+  payload_set(&mut p1, "color", FieldValue.TextVal("red"));
+  engine_set_payload(&mut eng, 1, p1);
+  var r1 = engine_recover(&eng.wal, 2, DistanceMetric.Euclidean);
+  var p2 = payload_new();
+  payload_set(&mut p2, "color", FieldValue.TextVal("green"));
+  engine_set_payload(&mut r1, 1, p2);
+  var r2 = engine_recover(&r1.wal, 2, DistanceMetric.Euclidean);
+  var ok: Bool = false;
+  match engine_get_payload(&r2, 1) {
+    Some(q) => {
+      var w = FieldValue.TextVal("green");
+      match payload_get(&q, "color") { Some(vv) => { ok = field_value_eq(&vv, &w); } None => {} }
+    }
+    None => {}
+  }
+  if ok { return 0; }
+  return 1;
+}
+fn test_recover_payloads_chained() -> TestResult {
+  if run_recover_payloads_chained() == 0 { return assert(true, "Recovery: chained reopen keeps latest payload"); }
+  return assert(false, "Recovery: chained payload failed");
+}
+
+fn run_recover_delete_clears_payload() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v = vector_new(2); vector_set(&mut v, 0, 1.0);
+  engine_upsert(&mut eng, 1, v);
+  var p = payload_new();
+  payload_set(&mut p, "k", FieldValue.IntVal(1));
+  engine_set_payload(&mut eng, 1, p);
+  var r1 = engine_recover(&eng.wal, 2, DistanceMetric.Euclidean);
+  engine_delete(&mut r1, 1);
+  var r2 = engine_recover(&r1.wal, 2, DistanceMetric.Euclidean);
+  var gone: Bool = true;
+  match engine_get_payload(&r2, 1) { Some(_) => { gone = false; } None => {} }
+  if gone && engine_size(&r2) == 0 { return 0; }
+  return 1;
+}
+fn test_recover_delete_clears_payload() -> TestResult {
+  if run_recover_delete_clears_payload() == 0 { return assert(true, "Recovery: delete clears payload through reopen"); }
+  return assert(false, "Recovery: delete payload cleanup failed");
+}
+
+fn run_recover_torn_payload_record() -> Int {
+  var w = wal_writer_new();
+  var v = vector_new(2); vector_set(&mut v, 0, 1.0);
+  wal_writer_append_payload(&mut w, WalOpKind.Insert, 1, 1, vector_encode(&v));
+  var torn = Vec[Int].new();
+  torn.push(0); torn.push(1);   // bad version -> decode None
+  wal_writer_append_payload(&mut w, WalOpKind.Update, 1, 1, torn);
+  var good = payload_new();
+  payload_set(&mut good, "k", FieldValue.IntVal(5));
+  wal_writer_append_payload(&mut w, WalOpKind.Update, 1, 1, payload_encode(&good));
+  var st = recover_state(&w, 2);
+  if index_size(&st.store) != 1 { return 1; }
+  if payload_store_len(&st.payloads) != 1 { return 2; }
+  return 0;
+}
+fn test_recover_torn_payload_record() -> TestResult {
+  if run_recover_torn_payload_record() == 0 { return assert(true, "Recovery: torn payload record skipped, later one applied"); }
+  return assert(false, "Recovery: torn payload handling failed");
+}
+
+// ============================================================================
 // Main -- manual dispatch
 // ============================================================================
 
@@ -3937,6 +4262,17 @@ fn main() -> Int {
   failed = failed + run_one_test(test_set_payload_missing_point()); total = total + 1;
   failed = failed + run_one_test(test_delete_removes_payload()); total = total + 1;
   failed = failed + run_one_test(test_payload_store_put_replace()); total = total + 1;
+
+  // SECTION 15: Durable payloads (WAL codec + recovery)
+  failed = failed + run_one_test(test_payload_encode_empty()); total = total + 1;
+  failed = failed + run_one_test(test_payload_encode_roundtrip()); total = total + 1;
+  failed = failed + run_one_test(test_payload_decode_malformed()); total = total + 1;
+  failed = failed + run_one_test(test_payload_wal_before_ack()); total = total + 1;
+  failed = failed + run_one_test(test_recover_payloads()); total = total + 1;
+  failed = failed + run_one_test(test_recover_state_both()); total = total + 1;
+  failed = failed + run_one_test(test_recover_payloads_chained()); total = total + 1;
+  failed = failed + run_one_test(test_recover_delete_clears_payload()); total = total + 1;
+  failed = failed + run_one_test(test_recover_torn_payload_record()); total = total + 1;
   failed = failed + run_one_test(test_recover_torn_tail_tolerated()); total = total + 1;
 
   // Boundary/validation
