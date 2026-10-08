@@ -27,13 +27,19 @@ pub fn index_new(dim: Int) -> VectorIndex
   };
 }
 
+// Insert a point, or UPDATE it in place when the id already exists (upsert
+// semantics -- the engine's `upsert` documents insert/update, and the HNSW
+// graph updates in place, so the store must match). Returns true when the
+// store holds the id afterwards. (Earlier revisions rejected duplicates and
+// silently kept the old vector, diverging from the graph.)
 pub fn index_add(idx: &mut VectorIndex, id: Int, vec: Vector) -> Bool
   requires: idx.dim == vec.dimension
 {
   var i: Int = 0;
   while i < idx.ids.len() {
     if idx.ids[i] == id {
-      return false;
+      idx.vectors[i] = vec;
+      return true;
     }
     i = i + 1;
   }
