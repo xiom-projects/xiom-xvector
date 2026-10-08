@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post Phase 3 payload filtering + payload durability)
-- **Overall:** **53 %** (weighted; see method)
+- **As of:** 2026-10-08 (post final extraction wave -- porter-ready module tree)
+- **Overall:** **55 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -32,10 +32,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
-| J | Ecosystem & release engineering | 8 | 35 | scaffold | CI, version stamp, porter extraction (three waves extracted), release |
+| J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
 **Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x90 +
-0.08x60 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x35 = **54.38 -> 54 %**.
+0.08x60 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **54.78 -> 55 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -57,7 +57,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 
 ### A. Core data model & vector math -- 95 %
 Done: Vector/VectorIndex types, 3 distance metrics, magnitude/normalize,
-top-K bounded heap, exact f32<->bits codec, 165-check suite.
+top-K bounded heap, exact f32<->bits codec, 166-check suite.
 Remaining: reference cross-check (numpy-style oracle) under fuzz; NaN/Inf
 documented policy in distance kernels.
 
@@ -104,18 +104,22 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 65 %
-Done: 165-check conformance suite (x2 Windows + WSL), 6 probes, build-time
+### I. Testing & verification -- 72 %
+Done: 166-check conformance suite (x2 Windows + WSL), 7 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates.
 Remaining: soak (long-running upsert/search), fuzz (codec + filters),
 kill-recovery acceptance script, reference oracle cross-check, CI wiring.
 
-### J. Ecosystem & release engineering -- 20 %
+### J. Ecosystem & release engineering -- 40 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan for
-`xiom.vectors`/`xiom.wal`/`xiom.ann`, version/hash recording.
+`xiom.vectors`/`xiom.wal`/`xiom.ann`, version/hash recording, and the final
+extraction wave: the acyclic porter-ready tree (`core/shim` <- `engine/core`
+<- `engine` facade; payload/types/storage/query/durability modules already
+real).
 Remaining: CI matrix (SHA-pinned actions), build-info/version stamp,
 GitHub release convention, rulesets on greenlight, staging E2E (parked until
-the owner greenlights public release).
+the owner greenlights public release), porter extraction with the packages
+lane.
 
 ## Milestones
 
@@ -153,6 +157,13 @@ the owner greenlights public release).
 - **2026-10-08 (handoff):** re-verified full green on compiler v0.64.1 +
   stdlib **0.64.2** (`4dd8844`): suite 166/166 x2 (Win+WSL), probes green;
   fsync/fd-write still stubbed on 0.64.2 (M2 unchanged). No score change.
+- **2026-10-08 (eighth pass):** final extraction wave -- `src/core/shim.xi`
+  (CoreError/Counter/ids/predicates) + `src/engine/core.xi` (VectorEngine +
+  engine_*); `engine.xi` is the facade only (acyclic: shim <- core <-
+  facade). Consumers import `xiom.vector.engine.core` for engine_* symbols.
+  J 35 -> 40; overall 55 %. Evidence: engine-import probe x2; suite 166/166
+  x2 (Win+WSL); all 7 probes x2 (Win); WSL spot (import + vector_store)
+  bit-identical.
 
 ## Update rule
 
