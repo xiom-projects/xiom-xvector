@@ -13,6 +13,9 @@ use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
+use xiom.vector.durability.wal;
+use xiom.vector.durability.recovery;
+use xiom.vector.durability.write_ahead_events;
 
 // ============================================================================
 // XIOM-Vector: Consolidated Engine -- Vector + Distances + Index + WAL + API
@@ -30,97 +33,6 @@ pub enum CoreError {
   InvalidState(msg: Str),
   ChecksumMismatch,
   VersionMismatch,
-}
-
-// ---- Inline WalOpKind, WalRecord, WalWriter (from xiom.core.wal) ----
-pub enum WalOpKind {
-  Insert,
-  Update,
-  Delete,
-  SegmentSeal,
-  ManifestUpdate,
-  Checkpoint,
-  SnapshotMarker,
-}
-
-pub type WalRecord = {
-  lsn: Int;
-  op: WalOpKind;
-  key: Int;
-  value: Int;
-  payload: Vec[Int];
-  timestamp: Int;
-}
-
-pub type WalWriter = {
-  records: Vec[WalRecord];
-  next_lsn: Int;
-  synced_lsn: Int;
-}
-
-pub fn wal_writer_new() -> WalWriter {
-  var records = Vec[WalRecord].new();
-  return WalWriter{ records: records, next_lsn: 1, synced_lsn: 0 };
-}
-
-pub fn wal_writer_append(w: &mut WalWriter, op: WalOpKind, key: Int, value: Int) -> Int {
-  var assigned = w.next_lsn;
-  var payload = Vec[Int].new();
-  var rec = WalRecord{
-    lsn: assigned, op: op, key: key, value: value, payload: payload, timestamp: 0,
-  };
-  w.records.push(rec);
-  w.next_lsn = w.next_lsn + 1;
-  return assigned;
-}
-
-pub fn wal_writer_current_lsn(w: &WalWriter) -> Int {
-  return w.next_lsn - 1;
-}
-
-pub fn wal_writer_flush(w: &mut WalWriter) -> Bool {
-  w.synced_lsn = w.next_lsn - 1;
-  return true;
-}
-
-// Append a record carrying an opaque payload (used for encoded vectors).
-// key = point id, value = collection id (recovery replays by key).
-pub fn wal_writer_append_payload(w: &mut WalWriter, op: WalOpKind, key: Int, value: Int, payload: Vec[Int]) -> Int {
-  var assigned = w.next_lsn;
-  var rec = WalRecord{
-    lsn: assigned, op: op, key: key, value: value, payload: payload, timestamp: 0,
-  };
-  w.records.push(rec);
-  w.next_lsn = w.next_lsn + 1;
-  return assigned;
-}
-
-// Resume a WAL after recovery: empty record buffer, LSN continuity preserved
-// so post-recovery appends never reuse an LSN.
-pub fn wal_writer_resume(next_lsn: Int) -> WalWriter {
-  var records = Vec[WalRecord].new();
-  return WalWriter{ records: records, next_lsn: next_lsn, synced_lsn: next_lsn - 1 };
-}
-
-// Compacted checkpoint log: re-encode every live point of `idx` as an Insert
-// record and every payload as an Update record, with fresh LSNs continuing
-// after `w`. The returned log alone reconstructs the store + metadata, so a
-// reopened engine can itself be reopened. This is the recovery-time
-// compaction step; a durable manifest (Phase 2) will later persist it
-// instead of rebuilding on every open.
-pub fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex, payloads: &PayloadStore) -> WalWriter {
-  var out = wal_writer_resume(w.next_lsn);
-  var i: Int = 0;
-  while i < idx.ids.len() {
-    wal_writer_append_payload(&mut out, WalOpKind.Insert, idx.ids[i], 1, vector_encode(&idx.vectors[i]));
-    i = i + 1;
-  }
-  var j: Int = 0;
-  while j < payloads.entries.len() {
-    wal_writer_append_payload(&mut out, WalOpKind.Update, payloads.entries[j].id, 1, payload_encode(&payloads.entries[j].payload));
-    j = j + 1;
-  }
-  return out;
 }
 
 // ---- Inline Counter (from xiom.core.metrics) ----
@@ -169,74 +81,6 @@ pub fn is_valid_dimension(dim: Int) -> Bool {
 
 pub fn is_valid_top_k(k: Int) -> Bool {
   return k >= 1 && k <= 10000;
-}
-
-// ---- Write-ahead events (inline, from write_ahead_events.xi) ----
-// Record layout for vectors: key = point id, value = collection id,
-// payload = encoded vector ([dim, bits...]).
-pub fn log_upsert(w: &mut WalWriter, collection: Int, point: Int, payload: Vec[Int]) -> Int {
-  return wal_writer_append_payload(w, WalOpKind.Insert, point, collection, payload);
-}
-
-pub fn log_delete(w: &mut WalWriter, collection: Int, point: Int) -> Int {
-  return wal_writer_append(w, WalOpKind.Delete, point, collection);
-}
-
-// Metadata update record: key = point id, payload = encoded Payload
-// (payload_encode). WalOpKind.Update is the metadata record kind.
-pub fn log_payload_set(w: &mut WalWriter, collection: Int, point: Int, words: Vec[Int]) -> Int {
-  return wal_writer_append_payload(w, WalOpKind.Update, point, collection, words);
-}
-
-// ---- Recovery: replay a WAL into a fresh store + payload store ----
-// Replay in LSN order: Insert -> store, Delete -> store+payload removal,
-// Update -> payload set/overwrite. Malformed record payloads are skipped
-// (torn-tail tolerance). Records of any other kind are ignored for now.
-pub type RecoveredState = {
-  store: VectorIndex;
-  payloads: PayloadStore;
-}
-
-pub fn recover_state(w: &WalWriter, dim: Int) -> RecoveredState
-  requires: dim > 0
-{
-  var idx = index_new(dim);
-  var pls = payload_store_new();
-  var i: Int = 0;
-  while i < w.records.len() {
-    var op = w.records[i].op;
-    var key = w.records[i].key;
-    match op {
-      Insert => {
-        match vector_decode(&w.records[i].payload) {
-          Some(v) => {
-            if v.dimension == dim { index_add(&mut idx, key, v); }
-          }
-          None => {}
-        }
-      }
-      Delete => {
-        index_remove(&mut idx, key);
-        payload_store_remove(&mut pls, key);
-      }
-      Update => {
-        match payload_decode(&w.records[i].payload) {
-          Some(p) => { payload_store_put(&mut pls, key, p); }
-          None => {}
-        }
-      }
-      _ => {}
-    }
-    i = i + 1;
-  }
-  return RecoveredState{ store: idx, payloads: pls };
-}
-
-pub fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
-  requires: dim > 0
-{
-  var st = recover_state(w, dim);
-  return st.store;
 }
 
 // Rebuild an engine from its WAL: replay the log into a fresh store + payload
