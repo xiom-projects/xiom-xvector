@@ -112,13 +112,13 @@ chooses pre- vs post-filter by selectivity without changing results.
 constraints; vector search without metadata filtering is only half a query engine.
 See [`docs/metadata-filtering.md`](docs/metadata-filtering.md).
 
-**Session evidence (2026-10-08):** 29 new conformance tests (SECTION 14/15)
--> **165/165 x2** on Windows; `tests/probes/probe_filtered_search.xi` and
-`tests/probes/probe_payload_recovery.xi` green x2 (engine-import units:
+**Session evidence (2026-10-08):** 30 new conformance tests (SECTION 14/15)
+-> **166/166 x2** on Windows and WSL; `tests/probes/probe_filtered_search.xi`
+and `tests/probes/probe_payload_recovery.xi` green x2 (engine-import units:
 Range/Eq/In/And/Not/Exists, delete cleanup, k bound; WAL-before-ack for
 metadata, payload replay, chained reopen, torn record skip). Payloads are
-WAL-durable now; FloatVal payloads are diagnostic-only in gates (compiler
-XVC-C-06 zeroes f32 enum payloads in affected builds).
+WAL-durable, FloatVal included (float gates restored after the v0.64.1 fix
+of XVC-C-06; the FloatVal roundtrip pin probe guards it).
 
 ## Phase 4 -- HNSW hardening [STOP] Not started
 

@@ -117,6 +117,14 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   - `probe_engine_import` green (cross-file module import).
   - Every build is numerically re-verified (XVC-C-05 rule; the
     filtered-search probe draws red builds ~1 in 3 -- rebuild, don't trust).
+- **FloatVal workaround unwound (seventh continuation):** with XVC-C-06 fixed
+  in v0.64.1, the suite's bounds tests and both probes gate on real Float32
+  payloads again (Range fields back to `FieldValue.FloatVal`, new suite test
+  `test_payload_encode_floatval` for the WAL codec, gated roundtrips in
+  `probe_filtered_search` / `probe_payload_recovery`). Suite
+  **166/166 x2** on Windows + WSL; probes green x2. Remaining unwind
+  candidates: `SearchHits` wrapper (C-04), suite direct dispatch (C-01),
+  predicate-based negative tests (C-02).
 - **Compiler re-test on v0.64.1 (sixth continuation): 6 of 7 findings FIXED**
   (XVC-C-01 invalid IR/crash, C-02 contract exit 0, C-03 W004 noise,
   C-04 Result[Vec[non-scalar]] field loss, C-05 per-build f32->int lowering,
@@ -189,9 +197,9 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   payloads lost element fields (XVC-C-04); f32 ops lowered as integer bit
   patterns per build (XVC-C-05); FloatVal enum payloads read 0 (XVC-C-06).
   If any reappears, open a delta row instead of re-bisecting.
-  Lane workarounds stay in place as documented unwind candidates
-  (`SearchHits` wrapper, direct dispatch, predicate-based negative tests,
-  FloatVal diagnostics).
+  Lane workarounds: FloatVal gates are RESTORED (C-06 fixed); remaining
+  unwind candidates are the `SearchHits` wrapper (C-04), direct dispatch
+  (C-01), and predicate-based negative tests (C-02).
 - **XVC-C-07 still open:** pass Vec arguments **by value** to
   `Str::from_utf8` (`&Vec[UInt8]` -> invalid getelementptr).
 - **Keep numeric gates per build** as general hygiene: the suite and probes
