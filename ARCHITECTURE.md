@@ -122,16 +122,37 @@ layer lowers `Neighbor -> SearchResult`.
 api.upsert
   `-> engine_upsert
         1. validate: vec.dimension == collection.dimension   (reject early)
-        2. WAL-before-ack: durability.log_upsert -> core WAL append (LSN)
+        2. WAL-before-ack: log_upsert -> wal_writer_append_payload
+           (key = point id, value = collection id,
+            payload = [dim, Float64-bits...] via vector_encode)
         3. apply: storage.index_add into the mutable store
         4. metrics: counter_inc(upserts)
         5. ack: Ok(true) to caller
 ```
 
-Invariant: **no write is acknowledged before its WAL record exists.** Today the
-core WAL buffers in memory and `flush` is a trivially-durable no-op; Phase 2
-turns that into an `fsync` and serializes the dense vector into the record
-payload so the point can be reconstructed on recovery.
+Invariant: **no write is acknowledged before its WAL record exists.** The
+vector payload is now serialized into the record, so a point can be
+reconstructed on recovery. The WAL itself is still in memory and
+`wal_writer_flush` is an LSN marker; on v0.64.0 the stdlib exposes no fsync
+syscall (`xiom.os.fs_ffi.fsync` is a documented stub -- see
+`docs/STDLIB-WISHLIST-XVECTOR.md`), so the file-backed, fsync'd log is the
+next Phase 2 step.
+
+## 3a. Recovery path (reopen)
+
+```
+engine_recover(w, dim, metric)
+  `-> recover_store(w, dim)          replay: decode Insert payloads,
+                                     apply Delete keys, skip malformed
+      wal_writer_checkpoint_from(w, store)
+                                     compacted checkpoint log: every live
+                                     point re-encoded as an Insert with
+                                     fresh monotonic LSNs
+```
+
+The checkpoint log alone reconstructs the store, so a recovered engine is
+itself recoverable (chained reopen is covered by `test_recover_twice`); a
+durable manifest will later persist it instead of rebuilding on every open.
 
 ## 4. Search path (top-k query)
 
@@ -145,8 +166,13 @@ api.search
         3. (Phase 3) filter: evaluate FilterExpr against each candidate payload
         4. rerank: bounded top-K heap keeps <= k best by distance
         5. (Phase 3) hydrate: attach payloads when with_payload = true
-        6. return Vec[SearchResult] (result.len() <= k, guaranteed)
+        6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)
 ```
+
+`SearchHits` is a struct wrapper around the result Vec: on compiler v0.64.0 a
+`Result[Vec[non-scalar], E]` payload loses element fields at the caller
+(finding XVC-C-04), so the public shape wraps it. Unwrap when the compiler
+fix lands.
 
 Multi-segment fan-out (Phase 5) inserts a step 2a: iterate the collection's live
 segments from the manifest, search each, and merge into the same top-K heap.
@@ -189,7 +215,7 @@ The places where correctness is enforced in code (and documented in
 | Durability | WAL append/flush fault | surfaces as `CoreError.IOFailure` (retryable); write is **not** acked |
 | Storage | duplicate id on insert | `index_add` returns `false` (idempotent upsert semantics in Phase 2) |
 | Index | empty graph / cold search | returns an empty result set, never panics |
-| Recovery | truncated/corrupt WAL tail | `CoreError.Corruption` / `ChecksumMismatch`; replay stops at last valid LSN (Phase 2) |
+| Recovery | truncated/corrupt WAL tail | in-memory replay: malformed payloads are skipped (`vector_decode -> None`), later valid records still replayed; LSNs stay monotonic. File-backed torn-tail repair waits on `ftruncate` (stdlib wishlist). |
 | Segment | write to a sealed segment | `VectorError.SegmentSealed` (enforced Phase 5) |
 
 Each domain fails as an explicit `Result` value -- XIOM has no exceptions, so

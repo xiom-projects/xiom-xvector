@@ -55,18 +55,35 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
 **Goal:** Crash-safe writes -- no acknowledged write is ever lost.
 
 **Deliverables:**
-- [YELLOW] WAL-before-ack write path wired through `core.wal.wal_writer` (LSNs assigned).
-- [ORANGE] `durability.write_ahead_events` maps upsert/delete/seal onto core `WalOpKind`.
-- [STOP] Serialize dense vector bytes into `WalRecord.payload`.
-- [STOP] `fsync`/`fdatasync` on commit (blocked on core FFI, Phase 2 of xiom-core).
-- [STOP] Recovery: replay WAL to `manifest.last_lsn`, rebuild in-memory indexes.
-- [ORANGE] Durable `manifest` (`ManifestUpdate` records) -- types exist, not persisted.
+- [YELLOW] WAL-before-ack write path wired through the in-memory WAL (LSNs assigned).
+- [OK] `durability.write_ahead_events` maps upsert/delete/seal onto `WalOpKind`
+  (record layout: key = point id, value = collection id).
+- [OK] Serialize dense vector bytes into `WalRecord.payload`
+  (`vector_encode`/`vector_decode`: `[dim, Float64-bits...]`, exact via
+  `xiom.num.float`; malformed payloads -> None).
+- [STOP] `fsync`/`fdatasync` on commit -- **blocked on the stdlib fd-syscall
+  gap** (`xiom.os.fs_ffi.fsync` is a documented-Err stub; see
+  `docs/STDLIB-WISHLIST-XVECTOR.md`). `wal_writer_flush` remains an
+  in-memory LSN marker.
+- [OK] Recovery: replay the WAL into a fresh store, rebuild indexes
+  (`recover_store`), then write a compacted checkpoint log so the recovered
+  engine is itself recoverable (`wal_writer_checkpoint_from`, `engine_recover`).
+  Torn/malformed payloads are skipped; LSNs stay monotonic.
+- [ORANGE] Durable `manifest` (`ManifestUpdate` records) -- types exist, not
+  persisted (needs the same fsync/byte-append primitives).
 
 **Exit criteria:** a process kill mid-write loses no acknowledged data; recovery
 replays the WAL to `manifest.last_lsn` and reconstructs identical indexes.
 
 **Why this phase matters:** a database that can lose acknowledged writes is not a
 database; durability is the line between a cache and a store of record.
+
+**Session evidence (2026-10-08):** 8 codec/recovery conformance tests
+(`test_codec_*`, `test_recover_*`) + the critical-primitive probe
+`tests/probes/probe_vector_store.xi` (create -> upsert -> search -> reopen ->
+search-identical -> delete -> reopen-again -> LSN continuity) green x2 on
+Windows and WSL. The WAL is still in-memory; file-backed segments wait on the
+stdlib fsync/append primitives.
 
 ## Phase 3 -- Payload & metadata filtering [ORANGE] Scaffold
 
@@ -127,6 +144,10 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 
 **Deliverables:**
 - [OK] `vector_api` facade: `create_collection`, `upsert`, `search`, `delete_point`, `get_point`.
+- [OK] `search` returns `Result[SearchHits, CoreError]` where
+  `SearchHits { items: Vec[SearchResult] }` -- the struct wrapper is required
+  by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element
+  fields on v0.64.0); unwrap when fixed.
 - [STOP] Batch upsert / batch search.
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
@@ -259,7 +280,7 @@ not assumed; this phase turns a working engine into an operable one.
 
 ## Test coverage (`tests/test_conformance.xi`)
 
-**126 tests** across 12 categories exercising the full public surface:
+**136 tests** across 13 categories exercising the full public surface:
 
 | # | Category | Tests | Coverage |
 |---|----------|-------|----------|
@@ -271,18 +292,23 @@ not assumed; this phase turns a working engine into an operable one.
 | 6 | Segment management (state machine, manifest) | 13 | full lifecycle transitions, illegal moves, writable, terminal, manifest CRUD |
 | 7 | Collection (schema, validation, CRUD) | 9 | creation, normalization, fields, registration, dimension/metric validation |
 | 8 | Payload (filter AST, evaluation) | 14 | set/has/len, FieldValue kinds, Eq/Exists/And/Or/Not combinators |
-| 9 | Search (top-K heap, engine orchestration) | 14 | bounded push, sorted invariant, is_full, worst, upsert/search/delete lifecycle |
+| 9 | Search (top-K heap, engine orchestration) | 15 | bounded push, sorted invariant, is_full, worst, upsert/search/delete lifecycle, SearchHits payload shape (XVC-C-04 guard) |
 | 10 | ANN index (type dispatch) | 3 | AnnIndexKind names, variant discrimination, params on Collection |
 | 11 | Error types (VectorError) | 8 | all 6 variants: codes (1001-1006), to_str, uniqueness |
 | 12 | Durability (WAL, Counter, IdMap) | 16 | append, LSN tracking, flush, before-ack contract, counter increment, id_map CRUD |
+| 13 | Durable codec + recovery replay (Phase 2) | 10 | encode/decode roundtrip + bit exactness + malformed rejection; WAL insert/delete replay; post-reopen search identical; LSN monotonicity; chained reopen; torn payload tolerated |
 | -- | Boundary / validation | 7 | is_valid_dimension, is_valid_top_k, empty search, Float32 approx, SearchRequest fields |
 
 ### Contract status
 
-**20 contracts (requires/ensures)** applied to helper functions in the test file.
+**22 contracts (requires/ensures)** applied to helper functions in the test file.
 These mirror the contracts in `engine.xi` and the standalone modules.
+Note the XVC-C-02 caveat: on v0.64.0 a runtime `requires` violation aborts with
+exit 0, so the suite must never call a contracted function out of contract
+(the invalid-dimension test exercises the `is_valid_dimension` predicate
+instead).
 
-Functions with contracts (18 functions, 20 clauses):
+Functions with contracts (20 functions, 22 clauses):
 - `vector_new` : `requires: dim > 0`
 - `vector_set` : `requires: index >= 0 && index < v.dimension`
 - `vector_get` : `requires: index >= 0 && index < v.dimension`
@@ -301,6 +327,8 @@ Functions with contracts (18 functions, 20 clauses):
 - `topk_new` : `requires: capacity > 0`
 - `topk_push` : `requires: h.capacity > 0`
 - `dimension` : `requires: v >= 1`
+- `recover_store` : `requires: dim > 0`
+- `engine_recover` : `requires: dim > 0`
 
 ### Contract gap analysis
 
@@ -308,7 +336,7 @@ Functions in source modules that lack `requires`/`ensures` contracts:
 
 | Module | Functions missing contracts |
 |--------|---------------------------|
-| `engine.xi` | `vector_magnitude`, `neighbor_new`, `index_remove`, `index_get`, `index_size`, `wal_writer_new`, `wal_writer_append`, `wal_writer_current_lsn`, `wal_writer_flush`, `counter_new`, `counter_inc`, `engine_new`, `engine_upsert`, `engine_search`, `engine_delete`, `engine_size`, `engine_durable_lsn` |
+| `engine.xi` | `vector_magnitude`, `neighbor_new`, `index_remove`, `index_get`, `index_size`, `vector_encode`, `vector_decode`, `wal_writer_new`, `wal_writer_append`, `wal_writer_append_payload`, `wal_writer_resume`, `wal_writer_checkpoint_from`, `wal_writer_current_lsn`, `wal_writer_flush`, `log_upsert`, `log_delete`, `counter_new`, `counter_inc`, `engine_new`, `engine_upsert`, `engine_search`, `engine_delete`, `engine_size`, `engine_durable_lsn` |
 | `error.xi` | `vector_error_to_str`, `vector_error_to_core`, `vector_error_code` |
 | `ids.xi` | `point_id`, `point_id_value`, `point_id_eq`, `point_to_vector_id`, `vector_to_point_id` |
 | `ann_index.xi` | `ann_params_default`, `ann_params_valid`, `ann_index_kind_name` |

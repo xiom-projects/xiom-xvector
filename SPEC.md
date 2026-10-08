@@ -59,10 +59,18 @@ packages/xiom-vector/
 Reuses `CollectionId`/`VectorId`/`SegmentId` from `xiom.core.ids`. Adds `PointId { value: Int }` (user id) with `point_id`, `point_id_value`, `point_id_eq`, and `point_to_vector_id` / `vector_to_point_id` bridges.
 
 ## `xiom.vector.storage.vector_store`
-`VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; dim: UInt }` -- flat columnar store.
+`VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; dim: Int }` -- flat columnar store.
 - `index_new(dim)` `requires: dim > 0`
 - `index_add(idx, id, vec)` `requires: idx.dim == vec.dimension` (returns false on duplicate id)
 - `index_remove` (O(1) swap-with-last), `index_get -> Option[Vector]`, `index_size`.
+
+## Durable vector codec (WAL payload)
+- `vector_encode(v) -> Vec[Int]` -- layout `[dim, Float64-bits0, ...]` (exact:
+  every Float32 is exactly representable in Float64; `xiom.num.float.float_bits`
+  lowers to a true bitcast since v0.64.0/m194).
+- `vector_decode(payload) -> Option[Vector]` -- `None` on any malformed shape
+  (short buffer, invalid dim, length mismatch) so recovery can skip torn
+  records.
 
 ## `xiom.vector.storage.id_map`
 `IdMap` of `IdMapEntry { vector_id; segment; offset }`. `id_map_new/put/lookup/remove/len`. Maps logical id -> physical location for compaction stability.
@@ -115,17 +123,30 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 `Manifest { collection; active_segments; last_lsn }` + `manifest_new/add_segment/remove_segment/set_lsn/segment_count`.
 
 ## `xiom.vector.durability.write_ahead_events`
-`enum VectorWalEvent { UpsertEvent, DeleteEvent, SegmentSeal }`. `log_upsert/log_delete/log_segment_seal(w, ...)` map to `core.wal.wal_writer.wal_writer_append` with the matching `WalOpKind`; `event_op`.
+`enum VectorWalEvent { UpsertEvent, DeleteEvent, SegmentSeal }`. Record layout
+for vectors: **key = point id, value = collection id, payload = encoded
+vector**.
+- `wal_writer_append(w, op, key, value)` -- scalar record (delete and friends).
+- `wal_writer_append_payload(w, op, key, value, payload)` -- record with an
+  encoded vector payload.
+- `wal_writer_resume(next_lsn) -> WalWriter` -- empty buffer, LSN continuity.
+- `wal_writer_checkpoint_from(w, idx) -> WalWriter` -- compacted checkpoint
+  log: every live point re-encoded as an Insert with fresh LSNs continuing
+  after `w`; the returned log alone reconstructs the store.
+- `log_upsert(w, collection, point, payload)`, `log_delete(w, collection, point)`
+  map onto the above; `event_op`.
 
 ## `xiom.vector.engine`
 `VectorEngine { store; metric; dimension; created; wal; upserts; deletes; next_collection }`.
 - `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1`.
-- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack + store apply + metric.
-- `engine_search(eng, query, k) -> Result[Vec[SearchResult], CoreError]` `requires: eng.created, k > 0`.
-- `engine_delete`, `engine_size`, `engine_durable_lsn`.
+- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + metric.
+- `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0`, `SearchHits { items: Vec[SearchResult] }`. The struct wrapper is required by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element fields on v0.64.0).
+- `delete_point`, `engine_size`, `engine_durable_lsn`.
+- `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
+- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay + compacted checkpoint WAL; LSNs stay monotonic.
 
 ## `xiom.vector.api.vector_api`
-Public facade: `create_collection`, `upsert`, `search`, `delete_point`, `get_point`. All fallible calls return `Result[T, CoreError]`.
+Public facade: `create_collection`, `upsert`, `search` (`Result[SearchHits, CoreError]`), `delete_point`, `get_point`. All fallible calls return `Result[T, CoreError]`.
 
 ---
 
