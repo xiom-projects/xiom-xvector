@@ -49,19 +49,20 @@ src/
 |                     PointId (user id) + reuse of core CollectionId/VectorId/
 |                     SegmentId + PointId<->VectorId bridges
 |-- engine.xi       module xiom.vector.engine
-|                     public facade ONLY -- create_collection, upsert,
-|                     search, delete_point, get_point, set_payload,
+|                     public facade ONLY -- create_collection, set_index,
+|                     upsert, search, delete_point, get_point, set_payload,
 |                     get_payload, search_filtered, search_with_request;
 |                     thin delegation to engine.core (no shims here)     [EXTRACTED]
 |-- engine/
 |   `-- core.xi      module xiom.vector.engine.core
 |                     VectorEngine + engine_* orchestration -- engine_new,
-|                     engine_create_collection, engine_upsert, engine_search,
+|                     engine_create_collection, engine_set_index,
+|                     engine_upsert, engine_search (routes Flat/Hnsw),
 |                     engine_delete, engine_set_payload, engine_get_payload,
 |                     engine_search_filtered, engine_search_request,
 |                     engine_get_point, engine_size, engine_durable_lsn,
-|                     engine_recover (REAL dispatch to store + WAL + search
-|                     + payloads + recovery)                              [EXTRACTED]
+|                     engine_recover (REAL dispatch to store + graph + WAL
+|                     + search + payloads + recovery)                     [EXTRACTED]
 |
 |-- types/
 |   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude          [EXTRACTED]
@@ -126,7 +127,8 @@ engine (facade) -> engine.core + core.shim (signature types) + value types
 engine.core -> { core.shim, query.search_service -> storage.vector_store /
                  payload.filter_eval / query.filter_plan,
                  query.filter_plan -> payload.index (counts),
-                 storage.vector_store, durability.*,
+                 index.ann_index (kind/params), index.hnsw (graph upkeep +
+                 search), storage.vector_store, durability.*,
                  payload.*, types.* }
 index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric}   (no query dependency)
@@ -208,12 +210,14 @@ and the metadata record. Float32 payloads are diagnostic-only on v0.64.0
 api.search
   `-> engine_search
         1. validate: query.dimension == collection.dimension; is_valid_top_k(k)
-        2. route (search_execute): AnnIndexKind selects the physical index
+        2. route by the collection's index kind (set_index):
              Flat/Ivf -> search_service.search_knn  (exact scan, O(n))
-             Hnsw     -> index.hnsw.hnsw_search      (approximate, greedy)
-        3. filter (Phase 3): filter_plan chooses the plan --
+             Hnsw     -> index.hnsw.hnsw_search      (multi-layer greedy
+                         descent + beam, ef = ann.ef_search)
+        3. filter (Phase 3): filtered queries always take the exact flat scan
+           regardless of index kind (ANN+filter is future work) --
              scan -> evaluate FilterExpr per candidate BEFORE distance
-             post -> rank all (step 2 unfiltered), keep the matching subset;
+             post -> rank all via the flat scan, keep the matching subset;
                      if it does not fill k, fall back to the scan
            (post only for index-answerable filters with a known exact count
             >= k and a majority of the store; query/filter_plan.xi)
