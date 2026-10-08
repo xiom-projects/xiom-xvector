@@ -11,6 +11,10 @@ criteria, and why it matters -- with an honest status on every deliverable.
 
 Legend: [OK] **Done** - [YELLOW] **In progress** - [ORANGE] **Scaffold** (types + stub bodies) - [STOP] **Not started**
 
+> **Progress tracking:** `docs/PRODUCTION-READINESS.md` holds the weighted
+> percentage-to-production scorecard (updated every wrap). This file is the
+> phase plan; that file is the measurement.
+
 ---
 
 ## Phase 0 -- Exact engine (in-memory) [OK] Done
@@ -69,6 +73,10 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
   (`recover_store`), then write a compacted checkpoint log so the recovered
   engine is itself recoverable (`wal_writer_checkpoint_from`, `engine_recover`).
   Torn/malformed payloads are skipped; LSNs stay monotonic.
+- [OK] Durable metadata (Phase 3 crossover): payloads are WAL-encoded
+  (`payload_encode`/`payload_decode`, `WalOpKind.Update` records) and replayed
+  by `recover_state`; the checkpoint log carries them, so chained reopen keeps
+  metadata.
 - [ORANGE] Durable `manifest` (`ManifestUpdate` records) -- types exist, not
   persisted (needs the same fsync/byte-append primitives).
 
@@ -104,13 +112,13 @@ chooses pre- vs post-filter by selectivity without changing results.
 constraints; vector search without metadata filtering is only half a query engine.
 See [`docs/metadata-filtering.md`](docs/metadata-filtering.md).
 
-**Session evidence (2026-10-08):** 20 new conformance tests (SECTION 14) ->
-**156/156 x2** on Windows; `tests/probes/probe_filtered_search.xi` green x2
-(engine-import unit: Range/Eq/In/And/Not/Exists + delete cleanup + missing
-point + k bound). FloatVal payloads are diagnostic-only in this slice
-(compiler XVC-C-06 zeroes f32 enum payloads in affected builds); payload
-durability is a follow-up (WAL does not encode payloads yet, recovery drops
-metadata -- see `engine_recover` NOTE).
+**Session evidence (2026-10-08):** 29 new conformance tests (SECTION 14/15)
+-> **165/165 x2** on Windows; `tests/probes/probe_filtered_search.xi` and
+`tests/probes/probe_payload_recovery.xi` green x2 (engine-import units:
+Range/Eq/In/And/Not/Exists, delete cleanup, k bound; WAL-before-ack for
+metadata, payload replay, chained reopen, torn record skip). Payloads are
+WAL-durable now; FloatVal payloads are diagnostic-only in gates (compiler
+XVC-C-06 zeroes f32 enum payloads in affected builds).
 
 ## Phase 4 -- HNSW hardening [STOP] Not started
 

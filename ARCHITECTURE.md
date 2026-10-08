@@ -46,6 +46,13 @@ src/
 |                     VectorEngine orchestrator -- engine_new,
 |                     engine_create_collection, engine_upsert, engine_search,
 |                     engine_delete (REAL dispatch to store + WAL + search)
+|                     NOTE: engine.xi is currently the CONSOLIDATED working
+|                     core -- it also carries the vector codec, the payload
+|                     WAL codec, payload/filter evaluation, PayloadStore,
+|                     recovery/checkpoint, and the API facade (cross-file
+|                     imports work on v0.64.0; the subdirectories below are
+|                     the post-porter target tree, being unwound layer by
+|                     layer with engine.xi as the stable facade).
 |
 |-- types/
 |   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude/normalize/
@@ -142,17 +149,36 @@ next Phase 2 step.
 
 ```
 engine_recover(w, dim, metric)
-  `-> recover_store(w, dim)          replay: decode Insert payloads,
-                                     apply Delete keys, skip malformed
-      wal_writer_checkpoint_from(w, store)
+  `-> recover_state(w, dim)          replay in LSN order:
+                                     Insert  -> store add (vector_decode)
+                                     Delete  -> store + payload removal
+                                     Update  -> payload set (payload_decode)
+                                     malformed payloads skipped
+      wal_writer_checkpoint_from(w, store, payloads)
                                      compacted checkpoint log: every live
-                                     point re-encoded as an Insert with
-                                     fresh monotonic LSNs
+                                     point + payload re-encoded with fresh
+                                     monotonic LSNs
 ```
 
-The checkpoint log alone reconstructs the store, so a recovered engine is
-itself recoverable (chained reopen is covered by `test_recover_twice`); a
-durable manifest will later persist it instead of rebuilding on every open.
+The checkpoint log alone reconstructs the store and its metadata, so a
+recovered engine is itself recoverable (chained reopen is covered by
+`test_recover_twice` / `test_recover_payloads_chained`); a durable manifest
+will later persist it instead of rebuilding on every open.
+
+## 3b. Metadata write path (payloads)
+
+```
+api.set_payload
+  `-> engine_set_payload
+        1. validate: the point exists (Ok(false) otherwise)
+        2. WAL-before-ack: log_payload_set -> payload_encode -> Update record
+        3. apply: PayloadStore put/overwrite
+        4. ack: Ok(true)
+```
+
+Payloads never outlive their point: `engine_delete` removes both the vector
+and the metadata record. Float32 payloads are diagnostic-only on v0.64.0
+(compiler XVC-C-06).
 
 ## 4. Search path (top-k query)
 
