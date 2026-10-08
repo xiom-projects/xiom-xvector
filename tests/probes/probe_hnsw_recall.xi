@@ -379,6 +379,14 @@ fn main() -> Int {
   fails = check(stray_c == 0 && hits_c * 100 >= 20 * k * 80,
     "compacted graph: no deleted ids returned, recall >= 0.80", fails);
 
+  // --- ef_construction setter semantics ---
+  var efprobe = hnsw_new(8, 4.0);
+  hnsw_set_ef_construction(&mut efprobe, 0);
+  var ef_ignored: Bool = efprobe.ef_construction == 200;
+  hnsw_set_ef_construction(&mut efprobe, 64);
+  fails = check(ef_ignored && efprobe.ef_construction == 64,
+    "ef_construction: 0 ignored (stays 200), 64 applied", fails);
+
   // --- cold graph + dimension mismatch are safe ---
   var cold = hnsw_new(4, 4.0);
   var q1 = Vector.new(1);

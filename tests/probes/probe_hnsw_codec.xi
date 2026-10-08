@@ -65,6 +65,7 @@ fn vec_from_coords(coords: &Vec[Float32]) -> Vector {
 fn graphs_equal(a: &HNSWGraph, b: &HNSWGraph) -> Bool {
   if a.m != b.m { return false; }
   if float.float_bits(a.ml as Float64) != float.float_bits(b.ml as Float64) { return false; }
+  if a.ef_construction != b.ef_construction { return false; }
   if a.entry != b.entry { return false; }
   if a.ids.len() != b.ids.len() { return false; }
   var i: Int = 0;
@@ -124,10 +125,12 @@ fn main() -> Int {
     i = i + 1;
   }
   fails = check(hnsw_size(&g) == n, "built 100-node graph", fails);
+  hnsw_set_ef_construction(&mut g, 77);
 
   // --- clean roundtrip: structure identical + search parity ---
   var words = hnsw_encode(&g);
-  fails = check(words.len() > 0 && words[0] == 1, "encode: versioned word stream", fails);
+  fails = check(words.len() > 0 && words[0] == 2 && words[3] == 77,
+    "encode: version-2 word stream carrying ef_construction=77", fails);
   match hnsw_decode(&words) {
     Some(g2) => {
       fails = check(graphs_equal(&g, &g2), "roundtrip: ids/levels/deleted/vectors/adjacency identical", fails);
@@ -178,17 +181,20 @@ fn main() -> Int {
   var short = Vec[Int].new();
   var n1 = hnsw_decode(&short);
   var bad_ver = hnsw_encode(&eg);
-  bad_ver[0] = 2;
+  bad_ver[0] = 3;
   var n2 = hnsw_decode(&bad_ver);
   var trunc = hnsw_encode(&g);
   trunc.pop();
   var n3 = hnsw_decode(&trunc);
   var bad_cap = hnsw_encode(&eg);
-  bad_cap[3] = 99;
+  bad_cap[4] = 99;
   var n4 = hnsw_decode(&bad_cap);
   var bad_ml = hnsw_encode(&eg);
   bad_ml[2] = 0;
   var n5 = hnsw_decode(&bad_ml);
+  var bad_ef = hnsw_encode(&eg);
+  bad_ef[3] = 0;
+  var n5b = hnsw_decode(&bad_ef);
   var junk = hnsw_encode(&eg);
   junk.push(7);
   var n6 = hnsw_decode(&junk);
@@ -202,15 +208,17 @@ fn main() -> Int {
   match n4 { Some(_) => { no4 = false; } None => {} }
   var no5: Bool = true;
   match n5 { Some(_) => { no5 = false; } None => {} }
+  var no5b: Bool = true;
+  match n5b { Some(_) => { no5b = false; } None => {} }
   var no6: Bool = true;
   match n6 { Some(_) => { no6 = false; } None => {} }
-  fails = check(no1 && no2 && no3 && no4 && no5 && no6,
-    "reject: short, bad version, truncated, bad capacity, ml=0, trailing junk", fails);
+  fails = check(no1 && no2 && no3 && no4 && no5 && no5b && no6,
+    "reject: short, bad version, truncated, bad capacity, ml=0, ef=0, trailing junk", fails);
 
   // out-of-range neighbor position: node 0's first layer-0 edge.
   var tam = hnsw_encode(&g);
-  var vw0: Int = tam[9];
-  var deg_pos: Int = 10 + vw0;
+  var vw0: Int = tam[10];
+  var deg_pos: Int = 11 + vw0;
   var deg0: Int = tam[deg_pos];
   var no7: Bool = false;
   if deg0 > 0 {

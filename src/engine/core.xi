@@ -91,6 +91,7 @@ pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnP
       return Err(CoreError.InvalidInput("invalid ann params"));
     }
     eng.graph = hnsw_new(params.m, 4.0);
+    hnsw_set_ef_construction(&mut eng.graph, params.ef_construction);
     var i: Int = 0;
     while i < eng.store.ids.len() {
       var pid = eng.store.ids[i];
