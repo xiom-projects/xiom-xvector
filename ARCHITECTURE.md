@@ -98,7 +98,8 @@ src/
 |   |-- ann_index.xi      AnnIndexKind {Flat,Hnsw,Ivf} + AnnParams    [DONE]
 |   |-- flat_index.xi     exact brute-force baseline (truth oracle)   [DONE]
 |   `-- hnsw.xi           multi-layer graph (geometric levels, greedy
-|                         descent + layer-0 beam; recall harness)       [DONE]
+|                         descent + layer-0 beam; word codec; recall
+|                         harness)                                      [DONE]
 |
 |-- distance/
 |   |-- cosine.xi         cosine kernel + similarity                  [DONE]
@@ -133,7 +134,8 @@ engine.core -> { core.shim, query.search_service -> storage.vector_store /
                  search), storage.vector_store, durability.*,
                  payload.*, types.* }
 index.flat_index -> query.search_service (delegates exact scan)
-index.hnsw -> types.{dense_vector, neighbor, metric}   (no query dependency)
+index.hnsw -> types.{dense_vector, neighbor, metric} + storage.vector_store
+               (graph codec; no query dependency)
 collection/* -> types, index.ann_index, core.shim ids
 segment/* -> storage.vector_store, segment_state, core.shim ids
 payload.filter_eval -> payload.filter_ast -> payload.payload
