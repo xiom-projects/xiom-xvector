@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post latency metrics + release-prep drafts)
+- **As of:** 2026-10-08 (post upsert update-in-place fix)
 - **Overall:** **68 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -322,6 +322,13 @@ extraction with the packages lane.
   release checklist. C 95 -> 97, J 40 -> 48; overall 67.16 -> 68 %.
   Evidence: full batteries via the new scripts (suite x2 + 16 probes x2 on
   Windows and WSL).
+- **2026-10-08 (fix pass):** `index_add` now updates an existing id in
+  place -- previously an upsert of an existing id kept the OLD vector in
+  the flat store while the HNSW graph updated, so compaction reverted
+  updates and recovery kept the first insert. Regression gate in
+  `probe_vector_store` (new-vector bits visible via get_point + search,
+  recovery keeps the latest). No score change; both full batteries green
+  (suite x2 + 16 probes x2, Windows + WSL).
 
 ## Update rule
 
