@@ -31,11 +31,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 60 | buildable | SearchRequest wire, batch ops, with_payload hydrate |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 70 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
+| I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 35 | scaffold | CI, version stamp, porter extraction (three waves extracted), release |
 
 **Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x90 +
-0.08x60 + 0.10x10 + 0.05x20 + 0.09x70 + 0.08x35 = **54.20 -> 54 %**.
+0.08x60 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x35 = **54.38 -> 54 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -146,7 +146,10 @@ the owner greenlights public release).
 - **2026-10-08 (sixth pass):** compiler re-pinned to **v0.64.1**; six of
   seven XVECTOR findings fixed (XVC-C-01..06), C-07 open. Regression
   green: suite 165/165 x2 (Win+WSL), 5 probes x2, WSL matrix 9/9.
-  I 65 -> 70 (numeric gates now stable across builds); overall 54 %.
+  I 65 -> 70 (numeric gates now stable across builds).
+- **2026-10-08 (seventh pass):** FloatVal workaround unwound -- float
+  payload gates restored in suite (166 checks) + probes. I 70 -> 72;
+  overall 54 %.
 
 ## Update rule
 
