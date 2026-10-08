@@ -95,6 +95,7 @@ fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
 - `hnsw_insert(graph, id, vec, metric)` -- deterministic geometric level assignment (`ml`), per-layer exact k-NN on every layer up to the existing top, bidirectional edges with farthest-edge pruning; the entry tracks the highest-level node.
 - `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- greedy descent above layer 0, then a best-first beam (breadth = `max(k, ef)`); `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
 - `hnsw_search_visited` (visited-node count, latency proxy), `hnsw_size`, `hnsw_level_of`, `hnsw_layer_capacity`, `hnsw_find_node_pos` (linear; id -> position map pending).
+- `hnsw_insert_ref(graph, id, vec_ref, metric)` -- copy-insert for callers that must keep their vector (one engine upsert feeds store + graph).
 - `hnsw_delete(graph, id) -> Bool` -- tombstone: the node keeps routing traffic but is never returned (idempotent; false for unknown/already-deleted). `hnsw_live_count` reports non-deleted nodes. Re-inserting an id updates the vector in place and revives the node (edges kept; re-linking pending).
 - Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 300/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 288/800); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty.
 
@@ -222,22 +223,24 @@ same ten variants as `xiom.core.error`), `Counter` + `counter_new/inc`,
 `is_valid_dimension` (1...65536) / `is_valid_top_k` (1...10000).
 
 ## `xiom.vector.engine.core` (extracted module)
-`VectorEngine { store; metric; dimension; created; wal; upserts; deletes;
-next_collection; payloads }` -- the orchestrator that owns the active
-collection, the WAL, and the payload store.
-- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1`.
-- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + metric.
-- `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0`, `SearchHits { items: Vec[SearchResult] }`. The struct wrapper is required by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element fields on v0.64.0).
-- `engine_delete`, `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered`, `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
-- `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain, then hydrates when `req.with_payload`.
+`VectorEngine { store; graph; index_kind; ann; metric; dimension; created;
+wal; upserts; deletes; next_collection; payloads }` -- the orchestrator that
+owns the active collection, the WAL, the payload store, and (when
+`index_kind = Hnsw`) the ANN graph mirroring the store.
+- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` (resets to Flat).
+- `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. In-memory only: re-apply after `engine_recover` (metadata persistence is future work).
+- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
+- `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
+- `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (always the exact flat scan; ANN+filter is future work), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
+- `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind), then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
-- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic.
+- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic. The recovered engine is Flat; callers re-apply `engine_set_index`.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
-`create_collection`, `upsert`, `search`, `delete_point`, `get_point`,
-`set_payload`, `get_payload`, `search_filtered`, `search_with_request` --
-thin delegations.
+`create_collection`, `set_index`, `upsert`, `search`, `delete_point`,
+`get_point`, `set_payload`, `get_payload`, `search_filtered`,
+`search_with_request` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 

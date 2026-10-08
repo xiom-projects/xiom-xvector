@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post HNSW tombstone deletes)
-- **Overall:** **62 %** (weighted; see method)
+- **As of:** 2026-10-08 (post engine HNSW wiring)
+- **Overall:** **63 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -25,7 +25,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 62 | buildable | ef_construction build, id map, engine wiring, persistence, edge repair |
+| C | ANN index (HNSW hardening) | 14 | 75 | buildable | ef_construction build, edge repair/rebuild, id map, persistence, latency metrics |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x92 + 0.14x62 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **61.52 -> 62 %**.
+**Overall today:** 0.08x95 + 0.10x92 + 0.14x75 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **63.34 -> 63 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -67,19 +67,20 @@ Done: flat exact KNN, k-bounded sorted results, filtered exact search
 public shape, error paths.
 Remaining: range-search surface, batch search.
 
-### C. ANN index -- 62 %
+### C. ANN index -- 75 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
 adjacency rows, deterministic geometric levels, greedy descent + layer-0
 beam honouring `ef`, metric-agnostic, user-id results), tombstone deletes
-(never returned, routers kept, revive on re-insert, `hnsw_live_count`),
-recall harness vs the flat oracle (n=200: 300/300 at ef=64 and ef=8,
-cosine 100/100, top level 4; n=800: 200/200, avg visited 288/800;
-after-delete recall 300/300 stray42=0; gate `probe_hnsw_recall`),
-AnnParams validation.
-Remaining: engine `search_execute`/index-kind wiring, beam construction
-honouring `ef_construction` + diversified pruning, edge repair +
-rebuild/memory reclaim, id -> position map, graph persistence, harness
-latency metrics.
+(never returned, routers kept, revive on re-insert), **engine wiring**
+(`VectorEngine.graph/index_kind/ann`, `set_index` Flat/Hnsw, upsert/delete
+upkeep, `engine_search` routing with `ef = ann.ef_search`, filtered search
+stays exact, recover + re-apply), recall harness vs the flat oracle
+(n=200: 300/300 at ef=64 and ef=8; n=800: 200/200; after-delete 300/300
+stray42=0; engine-level recall 200/200; gates `probe_hnsw_recall`,
+`probe_engine_hnsw`), AnnParams validation.
+Remaining: beam construction honouring `ef_construction` + diversified
+pruning, edge repair + rebuild/memory reclaim (tombstone compaction),
+id -> position map, graph persistence, harness latency metrics.
 
 ### D. Persistence & durability -- 55 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -116,7 +117,7 @@ Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
 ### I. Testing & verification -- 72 %
-Done: 168-check conformance suite (x2 Windows + WSL), 11 probes, build-time
+Done: 168-check conformance suite (x2 Windows + WSL), 12 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates.
 Remaining: soak (long-running upsert/search), fuzz (codec + filters),
 kill-recovery acceptance script, reference oracle cross-check, CI wiring.
@@ -225,6 +226,16 @@ lane.
   300/300 stray42=0, revive -> live 200, delete-all -> live 0 and empty
   search; stress 6/6 fresh builds. C 55 -> 62; overall 61.52 -> 62 %.
   Evidence: suite 168/168 x2 (Win+WSL), all 11 probes x2 (Win) + WSL spot.
+- **2026-10-08 (fifteenth pass):** Phase 4 -- engine HNSW wiring
+  (`VectorEngine.graph/index_kind/ann`; `set_index` Flat/Hnsw with graph
+  rebuild from the store; upsert feeds `hnsw_insert_ref`; delete tombstones
+  the graph; `engine_search`/request plain path route through `hnsw_search`
+  with `ef = ann.ef_search`; filtered search stays the exact flat scan;
+  index choice in-memory, re-applied after `engine_recover`). New gate
+  `probe_engine_hnsw` (13 checks: engine recall 200/200, delete/revive,
+  filtered exact, Flat bit-identical, invalid params, recover + re-apply;
+  stress 6/6 fresh builds). C 62 -> 75; overall 61.52 -> 63 %. Evidence:
+  suite 168/168 x2 (Win+WSL), all 12 probes x2 (Win) + WSL spot.
 
 ## Update rule
 
