@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post upsert update-in-place fix)
+- **As of:** 2026-10-08 (post index-driven candidates; E stretch complete)
 - **Overall:** **68 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -27,15 +27,15 @@ the code merely exists. Blockers are named; blocked work still scores.
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 97 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
-| E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
+| E | Metadata & filtering | 8 | 99 | release-grade | multi-key intersection indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 80 | release-grade | kill-recovery, reference oracle, CI |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x97 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.08 -> 68 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x97 + 0.20x55 + 0.08x99 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.24 -> 68 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -99,13 +99,16 @@ Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 manifest (`ManifestUpdate` persistence), crash-kill test harness, WAL
 retention/pruning policy.
 
-### E. Metadata & filtering -- 97 %
+### E. Metadata & filtering -- 99 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
 integration, durable metadata, filtered probe, sorted key index
 (parallel-vector rows; exists/count/Eq/Range with semantic float compare;
 gate `probe_payload_index`), selectivity planner (exact counts for
-Eq/Range/Exists; pre/post choice + fallback; gate `probe_filter_plan`).
-Remaining: multi-key indexes (index-driven candidate iteration).
+Eq/Range/Exists; pre/post choice + fallback; gate `probe_filter_plan`),
+**compound upper bounds** (And/Or/Not planning) and the **index-driven
+candidate plan** (exact Eq/Range/Exists candidates resolved through the
+store's O(log n) id map).
+Remaining: multi-key intersection indexes (And-of-Eq candidate intersection).
 
 ### F. API & query surface -- 70 %
 Done: facade (create/upsert/search/delete/get + payloads + filtered search),
@@ -329,6 +332,14 @@ extraction with the packages lane.
   `probe_vector_store` (new-vector bits visible via get_point + search,
   recovery keeps the latest). No score change; both full batteries green
   (suite x2 + 16 probes x2, Windows + WSL).
+- **2026-10-08 (twenty-fifth pass):** E stretch -- store id -> slot map
+  (O(log n) get/add/remove; swap-remove updates the moved slot), compound
+  upper-bound planning (And/Or/Not), and the index-driven candidate plan
+  (exact Eq/Range/Exists candidates through the map). Planner probe
+  extended to 20 checks (plan codes, bounds, bit-identical index
+  equivalence). E 97 -> 99; overall 68.08 -> 68 %. Evidence: full
+  batteries via ci.ps1 / ci.sh (suite x2 + 16 probes x2, Windows + WSL),
+  ALL GATES GREEN.
 
 ## Update rule
 

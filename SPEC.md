@@ -64,10 +64,10 @@ Reuses `CollectionId`/`VectorId`/`SegmentId` from `xiom.core.ids`. Adds `PointId
 
 ## `xiom.vector.storage.vector_store` (extracted module)
 Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector WAL codec.
-`VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; dim: Int }` -- flat columnar store.
+`VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; id_keys: Vec[Int]; id_vals: Vec[Int]; dim: Int }` -- flat columnar store plus a sorted id -> slot map (parallel vectors, binary search; no Vec-of-struct shapes).
 - `index_new(dim)` `requires: dim > 0`
 - `index_add(idx, id, vec)` `requires: idx.dim == vec.dimension` -- insert, or **update in place** when the id exists (upsert semantics; true when the store holds the id afterwards). Earlier revisions rejected duplicates and kept the old vector, diverging from the HNSW graph; fixed 2026-10-08.
-- `index_remove` (O(1) swap-with-last), `index_get -> Option[Vector]`, `index_size`.
+- `index_remove` (swap-with-last; the moved element's map slot is updated), `index_get -> Option[Vector]`, `index_add`/`index_get`/`index_remove` are O(log n) via the map, `index_size`.
 
 ## Durable vector codec (WAL payload)
 - `vector_encode(v) -> Vec[Int]` -- layout `[dim, Float64-bits0, ...]` (exact:
@@ -118,13 +118,23 @@ Selectivity-based plan choice for filtered search.
 - `filter_matching_count(payloads, expr) -> Int` -- exact matching-point count
   from the sorted payload index for Eq/Range/Exists; `-1` for unknown shapes
   (In, And/Or/Not).
+- `filter_matching_upper(payloads, expr, total) -> Int` -- upper bound for
+  compound shapes: And = min of the known child bounds (intersection is
+  contained in every child), Or = sum when every child bound is known (clamped
+  to total), Not = `total - exact` when the child is a single predicate,
+  otherwise `-1`.
+- `filter_plan_candidates(payloads, expr) -> Vec[Int]` -- exact candidate ids
+  for Eq/Range/Exists (`[]` otherwise; the index plan is chosen only for those).
 - `choose_filter_plan(payloads, expr, total, k) -> Int` -- `1` = pre-filter
-  scan (default; unknown selectivity, count < k, or a minority match),
-  `2` = post-filter (count >= k and a majority of the store).
+  scan (default), `2` = post-filter (exact count >= k and a majority; compound
+  shapes via the upper bound, with the scan fallback), `3` = index plan
+  (exact count 0 or < total/4).
 - `search_service.search_knn_filtered` executes the choice: post ranks the
   whole store and keeps the matching subset (provably exact when the subset
-  fills k; otherwise falls back to the scan); equal-distance ties may select
-  different ids across plans -- distances and the k-bound are unaffected.
+  fills k; otherwise falls back to the scan); index resolves each candidate
+  through the store's O(log n) id -> slot map and computes distances only for
+  matches (exact); equal-distance ties may select different ids across plans --
+  distances and the k-bound are unaffected.
 
 ## `xiom.vector.query.search_service` (extracted module)
 Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `hydrate_hits` (search_range / search_execute pending).
@@ -171,6 +181,8 @@ put/overwrite/remove.
   the field window (Int promotes to Float32); results come in value order.
 - `payload_store_index_count_eq` / `_count_range` -- allocation-free match
   counts for the planner estimates (same semantics as the id-list walks).
+- `payload_store_index_field_ids(field) -> Vec[Int]` -- ids carrying the
+  field (any value), in index row order (Exists candidates).
 NOTE (compiler XVC-C-06): Float32 enum payloads can read as 0 in affected
 builds; lane gates avoid FloatVal assertions until fixed.
 
