@@ -86,16 +86,16 @@ Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector 
 ## `xiom.vector.index.flat_index`
 `FlatIndex { store: VectorIndex }` -- exact brute-force baseline / correctness oracle. `flat_index_new/add/remove/size`; `flat_index_search(idx, query, k, metric)` `ensures: result.len() <= k` (delegates to `search_service.search_knn`).
 
-## `xiom.vector.index.hnsw` (working layer-0 graph)
+## `xiom.vector.index.hnsw` (working multi-layer graph)
 Flat parallel arrays (no nested `Vec[Struct-with-Vec]` -- the AUDIT T001
-family): `HNSWGraph { ids: Vec[Int]; vectors: Vec[Vector]; adj: Vec[Int];
-deg: Vec[Int]; m: Int; ml: Float32; entry: Int }`; adjacency is row-major
-(`adj[pos*m+slot]`, live slots `0..deg[pos]`).
-- `hnsw_new(m, ml)` `requires: m > 0, ml > 0.0` (`ml` reserved for level assignment).
-- `hnsw_insert(graph, id, vec, metric)` -- exact-kNN build: brute-force the `m` nearest existing nodes, connect bidirectionally, prune a full block by replacing its farthest edge when the new one is closer. A dimension mismatch vs the first insert is ignored (the engine validates upstream).
-- `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- best-first beam, breadth = `max(k, ef)`, `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
-- `hnsw_size`, `hnsw_find_node_pos` (linear; id -> position map pending).
-- Recall harness: `tests/probes/probe_hnsw_recall.xi` (n=200, dim=8, LCG dataset): recall@10 300/300 at ef=64, 299/300 at ef=8, cosine 100/100 vs the flat oracle.
+family): `HNSWGraph { ids; vectors; levels; adj; deg; m; ml; entry }` with a
+fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
+`deg`, adjacency blocks are `row*m` row-major (live slots `0..deg[row]`).
+- `hnsw_new(m, ml)` `requires: m > 0, ml > 0.0`.
+- `hnsw_insert(graph, id, vec, metric)` -- deterministic geometric level assignment (`ml`), per-layer exact k-NN on every layer up to the existing top, bidirectional edges with farthest-edge pruning; the entry tracks the highest-level node.
+- `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- greedy descent above layer 0, then a best-first beam (breadth = `max(k, ef)`); `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
+- `hnsw_search_visited` (visited-node count, latency proxy), `hnsw_size`, `hnsw_level_of`, `hnsw_layer_capacity`, `hnsw_find_node_pos` (linear; id -> position map pending).
+- Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 300/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 288/800).
 
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to `types.metric` today.
