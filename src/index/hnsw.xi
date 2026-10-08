@@ -22,9 +22,11 @@ module xiom.vector.index.hnsw
 // each layer above 0, then a best-first beam on layer 0 with breadth =
 // max(k, ef). Results are `Vec[Neighbor]` with USER ids.
 
+use xiom.num.float;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.types.neighbor;
+use xiom.vector.storage.vector_store;
 
 // Fixed layer capacity (levels 0..7; p(level >= l) ~ ml^-l, so > 3 is rare).
 pub fn hnsw_layer_capacity() -> Int {
@@ -416,4 +418,132 @@ pub fn hnsw_search_visited(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metri
 {
   var out = Vec[Neighbor].new();
   return hnsw_search_core(g, query, k, ef, metric, &mut out);
+}
+
+// ---- Graph codec (persistence) ----
+// Deterministic word encoding (Vec[Int]) mirroring the WAL codec style:
+//   [version=1, m, ml_bits(Float64), layer_capacity, entry, node_count,
+//    per node: id, level, deleted(0|1), vector_words_len, vector words...,
+//    per layer (0..capacity): degree, neighbor positions...]
+// Vectors are encoded with storage.vector_store.vector_encode (dim + f32
+// bits). Decode is strict: malformed / truncated / out-of-range input
+// returns None (torn-record tolerance).
+pub fn hnsw_encode(g: &HNSWGraph) -> Vec[Int] {
+  var out = Vec[Int].new();
+  out.push(1);
+  out.push(g.m);
+  out.push(float.float_bits(g.ml as Float64));
+  out.push(hnsw_layer_capacity());
+  out.push(g.entry);
+  out.push(g.ids.len());
+  var i: Int = 0;
+  while i < g.ids.len() {
+    out.push(g.ids[i]);
+    out.push(g.levels[i]);
+    if g.deleted[i] { out.push(1); } else { out.push(0); }
+    var vw = vector_encode(&g.vectors[i]);
+    out.push(vw.len());
+    var w: Int = 0;
+    while w < vw.len() {
+      out.push(vw[w]);
+      w = w + 1;
+    }
+    var l: Int = 0;
+    while l < hnsw_layer_capacity() {
+      var row = adj_row(i, l);
+      out.push(g.deg[row]);
+      var s: Int = 0;
+      while s < g.deg[row] {
+        out.push(g.adj[row * g.m + s]);
+        s = s + 1;
+      }
+      l = l + 1;
+    }
+    i = i + 1;
+  }
+  return out;
+}
+
+pub fn hnsw_decode(words: &Vec[Int]) -> Option[HNSWGraph] {
+  if words.len() < 6 { return None; }
+  if words[0] != 1 { return None; }
+  var m: Int = words[1];
+  if m <= 0 { return None; }
+  var ml = float.bits_to_float(words[2]) as Float32;
+  if !(ml > 0.0) { return None; }
+  if words[3] != hnsw_layer_capacity() { return None; }
+  var entry: Int = words[4];
+  var count: Int = words[5];
+  if count < 0 { return None; }
+  var g = hnsw_new(m, ml);
+  var expected_dim: Int = -1;
+  var pos: Int = 6;
+  var i: Int = 0;
+  while i < count {
+    if pos + 3 > words.len() { return None; }
+    var id: Int = words[pos];
+    var level: Int = words[pos + 1];
+    var del: Int = words[pos + 2];
+    pos = pos + 3;
+    if level < 0 || level >= hnsw_layer_capacity() { return None; }
+    if del != 0 && del != 1 { return None; }
+    if pos >= words.len() { return None; }
+    var vw_len: Int = words[pos];
+    pos = pos + 1;
+    if vw_len <= 0 || pos + vw_len > words.len() { return None; }
+    var vw = Vec[Int].new();
+    var w: Int = 0;
+    while w < vw_len {
+      vw.push(words[pos + w]);
+      w = w + 1;
+    }
+    pos = pos + vw_len;
+    var vv = vector_decode(&vw);
+    match vv {
+      Some(v) => {
+        if expected_dim < 0 {
+          expected_dim = v.dimension;
+        } else {
+          if v.dimension != expected_dim { return None; }
+        }
+        g.ids.push(id);
+        g.vectors.push(v);
+        g.levels.push(level);
+        if del == 1 { g.deleted.push(true); } else { g.deleted.push(false); }
+        var l: Int = 0;
+        while l < hnsw_layer_capacity() {
+          if pos >= words.len() { return None; }
+          var dg: Int = words[pos];
+          pos = pos + 1;
+          if dg < 0 || dg > m { return None; }
+          if pos + dg > words.len() { return None; }
+          g.deg.push(dg);
+          var s: Int = 0;
+          while s < dg {
+            var nb: Int = words[pos + s];
+            if nb < 0 || nb >= count { return None; }
+            g.adj.push(nb);
+            s = s + 1;
+          }
+          pos = pos + dg;
+          var pad: Int = dg;
+          while pad < m {
+            g.adj.push(0);
+            pad = pad + 1;
+          }
+          l = l + 1;
+        }
+      }
+      None => { return None; }
+    }
+    i = i + 1;
+  }
+  if pos != words.len() { return None; }
+  if count == 0 {
+    g.entry = -1;
+  } else {
+    if entry < 0 || entry >= count { return None; }
+    g.entry = entry;
+  }
+  return Some(g);
 }
