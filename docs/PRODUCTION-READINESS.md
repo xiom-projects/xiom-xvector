@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post mixed-workload soak)
-- **Overall:** **67 %** (weighted; see method)
+- **As of:** 2026-10-08 (post latency metrics + release-prep drafts)
+- **Overall:** **68 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -25,17 +25,17 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 95 | release-grade | file-backed persistence, latency metrics |
+| C | ANN index (HNSW hardening) | 14 | 97 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 80 | release-grade | kill-recovery, reference oracle, CI |
-| J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
+| J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x95 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x40 = **67.16 -> 67 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x97 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.08 -> 68 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -85,9 +85,10 @@ recall harness vs the flat oracle (n=200: 300/300 at ef=64, 296/300 at
 ef=8; n=800: 200/200; after-delete 300/300; compacted 200/200; engine-level
 recall 200/200 incl. ef_construction=32; gates `probe_hnsw_recall`,
 `probe_engine_hnsw`, `probe_hnsw_codec`), AnnParams validation.
-Remaining: file-backed graph segments (stdlib I/O pending), harness latency
-metrics. Note: the WSL segfault found while wiring the map (XVC-C-09) is
-worked around and pinned as a repro for the compiler lane.
+Remaining: file-backed graph segments (stdlib I/O pending). Latency proxies
+(build work + per-ef visited/recall table) are in the harness; the WSL
+segfault found while wiring the map (XVC-C-09) is worked around and pinned
+as a repro for the compiler lane.
 
 ### D. Persistence & durability -- 55 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -133,16 +134,16 @@ invariants, periodic compaction, final + chained recovery; ~2.5s).
 Remaining: kill-recovery acceptance script, reference oracle cross-check,
 CI wiring.
 
-### J. Ecosystem & release engineering -- 40 %
-Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan for
-`xiom.vectors`/`xiom.wal`/`xiom.ann`, version/hash recording, and the final
-extraction wave: the acyclic porter-ready tree (`core/shim` <- `engine/core`
-<- `engine` facade; payload/types/storage/query/durability modules already
-real).
-Remaining: CI matrix (SHA-pinned actions), build-info/version stamp,
-GitHub release convention, rulesets on greenlight, staging E2E (parked until
-the owner greenlights public release), porter extraction with the packages
-lane.
+### J. Ecosystem & release engineering -- 48 %
+Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
+version/hash recording, the acyclic porter-ready tree, **release-prep
+drafts**: `scripts/ci.ps1` + `scripts/ci.sh` (full pre-release battery with
+aggregated exit codes, both verified green), `VERSION` (0.1.0-dev), a
+SHA-pinned `.github/workflows/ci.yml` draft, and
+`docs/RELEASE-CHECKLIST.md` (owner-gated flow).
+Remaining: self-hosted runners activation, branch rulesets on greenlight,
+staging E2E (parked until the owner greenlights public release), porter
+extraction with the packages lane.
 
 ## Milestones
 
@@ -313,6 +314,14 @@ lane.
   in the generator (residue 8 unreachable -> the payload branch never ran).
   I 78 -> 80; overall 66.98 -> 67 %. Evidence: suite 168/168 x2 (Win+WSL),
   all 16 probes x2 (Win) + WSL spot (soak/fuzz).
+- **2026-10-08 (twenty-fourth pass):** latency metrics + release-prep
+  drafts -- `hnsw_build_ops` build-work proxy (n=200: 62,129 ops) and a
+  per-ef visited/recall table (ef=8: 97/100 @ 63 visited; ef=128: 100/100
+  @ 196); `scripts/ci.ps1` + `scripts/ci.sh` pre-release batteries (both
+  green end-to-end), `VERSION` 0.1.0-dev, SHA-pinned CI workflow draft,
+  release checklist. C 95 -> 97, J 40 -> 48; overall 67.16 -> 68 %.
+  Evidence: full batteries via the new scripts (suite x2 + 16 probes x2 on
+  Windows and WSL).
 
 ## Update rule
 
