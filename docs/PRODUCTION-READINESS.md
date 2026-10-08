@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post SearchRequest wire + with_payload hydration)
+- **As of:** 2026-10-08 (post sorted payload key index)
 - **Overall:** **56 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -27,15 +27,15 @@ the code merely exists. Blockers are named; blocked work still scores.
 | B | Exact search & query engine | 10 | 90 | release-grade | range-search surface, post-filter planner |
 | C | ANN index (HNSW hardening) | 14 | 25 | scaffold | graph quality/tuning, recall harness, tombstones |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
-| E | Metadata & filtering | 8 | 90 | release-grade | sorted key index, pre/post planner |
+| E | Metadata & filtering | 8 | 95 | release-grade | pre/post planner, multi-key indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x90 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **55.58 -> 56 %**.
+**Overall today:** 0.08x95 + 0.10x90 + 0.14x25 + 0.20x55 + 0.08x95 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **55.98 -> 56 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -81,11 +81,13 @@ Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 manifest (`ManifestUpdate` persistence), crash-kill test harness, WAL
 retention/pruning policy.
 
-### E. Metadata & filtering -- 90 %
+### E. Metadata & filtering -- 95 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
-integration, durable metadata, filtered probe.
-Remaining: sorted key index (O(log n)), pre/post-filter planner, multi-key
-indexes.
+integration, durable metadata, filtered probe, sorted key index
+(parallel-vector rows; exists/count/Eq/Range with semantic float compare;
+gate `probe_payload_index`).
+Remaining: pre/post-filter planner (consumes the index for candidate ids +
+selectivity), multi-key indexes.
 
 ### F. API & query surface -- 70 %
 Done: facade (create/upsert/search/delete/get + payloads + filtered search),
@@ -174,6 +176,13 @@ lane.
   `docs/repro/xv-trailing-field-vec/`; hydration flags gated in the
   real-module probe only (green 8/8 fresh builds). F 60 -> 70; overall 56 %.
   Evidence: suite 168/168 x2 (Win+WSL), all 8 probes x2 (Win) + WSL spot.
+- **2026-10-08 (tenth pass):** Phase 3 refinement -- sorted payload key index
+  (rows sorted by field/kind/num/text/id in parallel vectors; maintained on
+  put/overwrite/remove; `payload_store_index_len/_exists/_field_count/_eq/
+  _range`; new probe `probe_payload_index`, 31 checks, stress 6/6 fresh
+  builds). E 90 -> 95; overall 55.98 -> 56 %. Evidence: suite 168/168 x2
+  (Win+WSL), all 9 probes x2 (Win) + WSL spot. Stdlib re-check: fd/fsync/
+  append-bytes still stubs (M2 stays parked).
 
 ## Update rule
 

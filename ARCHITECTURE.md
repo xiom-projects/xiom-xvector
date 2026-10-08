@@ -77,7 +77,8 @@ src/
 |   `-- validator.xi      dimension/metric compatibility, typed errors [IN PROGRESS]
 |
 |-- payload/
-|   |-- payload.xi        Payload + FieldValue + WAL codec + store      [EXTRACTED]
+|   |-- payload.xi        Payload + FieldValue + WAL codec + store +
+|   |                     sorted key index (parallel-vector rows)       [EXTRACTED]
 |   |-- filter_ast.xi     FilterExpr (Eq/Range/Exists/In/And/Or/Not)  [EXTRACTED]
 |   `-- filter_eval.xi    typed eval + payload_store_matches          [EXTRACTED]
 |
