@@ -29,6 +29,8 @@ HNSWGraph {
   ids:     Vec[Int];      // position -> user id
   vectors: Vec[Vector];   // position -> vector (index-aligned with ids)
   levels:  Vec[Int];      // position -> assigned top layer (0..7)
+  id_keys: Vec[Int];      // sorted unique ids (id map)
+  id_vals: Vec[Int];      // id_keys[i] -> position
   adj:     Vec[Int];      // (pos, layer) rows, m slots each
   deg:     Vec[Int];      // one degree counter per (pos, layer) row
   m:       Int;           // max degree per layer
@@ -173,7 +175,7 @@ empty search. Full run ~0.9s.
 | Build | **beam insertion honouring `ef_construction` + diversified pruning** | parallel/adaptive build, quantized distance |
 | Search | greedy descent + beam honouring `ef` | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
-| Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
+| Node position lookup | **O(log n) sorted id map** (`id_keys`/`id_vals`; duplicates rejected) | unchanged |
 | Deletes | **tombstones + `hnsw_compact`** (rebuild from live nodes, reclaim) | background/automatic compaction policy |
 | Persistence | **word codec** (`hnsw_encode`/`hnsw_decode`, strict roundtrip) | file-backed graph segments (stdlib I/O), engine load path |
 | Engine wiring | module + harness only | `search_execute` Hnsw route / collection index kind |
