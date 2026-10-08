@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+
+Status: **FIXED in v0.64.1** (2026-10-08 re-test): all six matrix shapes and the Option shape read correctly; the SearchHits wrapper is now an unwind candidate.
 # XVC-C-04 repro: `Result[Vec[non-scalar], E]` / `Option[Vec[non-scalar]]` payload loss
 
 Compiler: **v0.64.0** (Windows and WSL Linux, identical). A `Result` / `Option`

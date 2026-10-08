@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+
+Status: **FIXED in v0.64.1** (2026-10-08 re-test): the violation now exits 1.
 # XVC-C-02 repro: runtime contract violation exits 0
 
 Compiler: **v0.64.0**. `probe.xi` calls a function whose `requires` clause is
