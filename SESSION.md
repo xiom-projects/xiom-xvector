@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (22 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (23 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -17,14 +17,14 @@ graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
-decoder hardening [XVC-C-10 found]).
+decoder hardening [XVC-C-10 found] -> mixed-workload soak).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `c6a17f0` (feat: decoder hardening +
-fuzz gate), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `027535f` (test: mixed-workload soak),
+then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -34,7 +34,7 @@ fuzz gate), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `c6a17f0` + this wrap commit | this repo |
+| xvector | `027535f` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -148,6 +148,14 @@ fuzz gate), then this wrap commit. Identity `Lefteris Notas
   `docs/repro/xv-decode-pad-loop/`. Gate: 400+400+200 cases green,
   invariants hold on every `Some`, recovery keeps exactly the valid
   records; stress 6/6.
+- **Mixed-workload soak:** `probe_soak_mixed.xi` (400-point Hnsw
+  collection, 600 deterministic ops: 311 upserts / 115 searches / 63
+  filtered / 61 payload sets / 50 deletes) with per-op bookkeeping
+  invariants (search live/bounded/sorted/unique; filtered hits match the
+  bucket; Ok flags == presence), periodic consistency + compaction, and
+  final + chained recovery checks. ~2.5s; stress 4/4. NOTE: op/id/bucket
+  selection uses LCG HIGH bits (low-bit residue 8 was unreachable -- the
+  payload branch never ran; same degeneracy class as the level fix).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -161,13 +169,13 @@ final extraction wave):**
   in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
-- All **15 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- All **16 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
   `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
-  `probe_fuzz_codecs` (run via `scripts\run-probe.ps1`).
-- WSL spot: `probe_fuzz_codecs` x2 + `probe_hnsw_codec` x1 + the pad-loop
+  `probe_fuzz_codecs`, `probe_soak_mixed` (run via `scripts\run-probe.ps1`).
+- WSL spot: `probe_soak_mixed` x2 + `probe_fuzz_codecs` x1 + the pad-loop
   repro probe + `probe_result_shapes` x2 + `probe_bind_semantics` x2 +
   `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 + `probe_filter_plan` x2 +
   `probe_filtered_search` x1 + `probe_vector_store` green
@@ -175,8 +183,8 @@ final extraction wave):**
 - Stresses: `probe_search_request` 8/8, `probe_payload_index` 6/6,
   `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6,
   `probe_hnsw_codec` 6/6, `probe_fuzz_codecs` 6/6, `probe_result_shapes` 8/8,
-  `probe_bind_semantics` 8/8 fresh builds (see XVC-C-08 for why
-  trailing-field reads are not asserted in the suite).
+  `probe_bind_semantics` 8/8, `probe_soak_mixed` 4/4 fresh builds (see
+  XVC-C-08 for why trailing-field reads are not asserted in the suite).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -213,13 +221,12 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Soak harness (slice 3 of the extension):** sustained mixed workload
-   (upserts/searches/deletes/payload sets/compaction/recovery) with
-   invariant checks and bounded runtime. Then: HNSW harness latency
-   metrics, E stretch (multi-key / index-driven candidates), release-prep
-   drafts (CI with SHA-pinned actions, version stamp, checklist; publish
-   stays owner-gated). M2 stays parked until stdlib fd/fsync lands
-   (re-checked 2026-10-08: still stubs).
+1. **HNSW harness latency metrics (slice 4) + release-prep drafts (J):**
+   per-ef visited counts / build-work proxy in the recall harness; then a
+   CI workflow with SHA-pinned actions, build-info/version stamp and a
+   release checklist (committed; publish stays owner-gated). Then E stretch
+   (multi-key / index-driven candidates). M2 stays parked until stdlib
+   fd/fsync lands (re-checked 2026-10-08: still stubs).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -346,7 +353,7 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-168/168 x2 (Windows + WSL), 15 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 16 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -368,7 +375,8 @@ hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
 hnsw_decode strict graph codec; beam construction honouring
 ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
 pin probe; C-01 bind pin; HNSW+filter integration with exact fallback;
-deterministic fuzz gate + decoder hardening [XVC-C-10 found]).
+deterministic fuzz gate + decoder hardening [XVC-C-10 found];
+mixed-workload soak harness).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -379,14 +387,14 @@ bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
 pad step behind pad_adj_slots + strict bounds; repro
 docs/repro/xv-decode-pad-loop pinned at e0b1f7f).
 
-NEXT TASK (priority 1): soak harness (slice 3) -- sustained mixed workload
-(upserts/searches/deletes/payload sets/compaction/recovery) with invariant
-checks and bounded runtime; then HNSW harness latency metrics, E stretch
-(multi-key / index-driven candidates), release-prep drafts (CI with
-SHA-pinned actions, version stamp, checklist; publish stays owner-gated).
-M2 standby until stdlib lands fsync/fd-write/append-bytes (still stubs --
-re-checked 2026-10-08). Keep the wrap discipline: suite x2 (Win+WSL), all
-15 probes x2 (Win) + WSL spot, signed commits, docs updated.
+NEXT TASK (priority 1): HNSW harness latency metrics (slice 4) +
+release-prep drafts (J): per-ef visited counts / build-work proxy in the
+recall harness; CI workflow with SHA-pinned actions, build-info/version
+stamp, release checklist (committed; publish stays owner-gated). Then E
+stretch (multi-key / index-driven candidates). M2 standby until stdlib
+lands fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08).
+Keep the wrap discipline: suite x2 (Win+WSL), all 16 probes x2 (Win) +
+WSL spot, signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module

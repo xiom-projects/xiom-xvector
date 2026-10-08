@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post fuzz gate + decoder hardening; XVC-C-10)
+- **As of:** 2026-10-08 (post mixed-workload soak)
 - **Overall:** **67 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -31,11 +31,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 78 | release-grade | soak, kill-recovery, reference oracle, CI |
+| I | Testing & verification | 9 | 80 | release-grade | kill-recovery, reference oracle, CI |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
 **Overall today:** 0.08x95 + 0.10x95 + 0.14x95 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x78 + 0.08x40 = **66.98 -> 67 %**.
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x40 = **67.16 -> 67 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -123,14 +123,15 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 78 %
-Done: 168-check conformance suite (x2 Windows + WSL), 15 probes, build-time
+### I. Testing & verification -- 80 %
+Done: 168-check conformance suite (x2 Windows + WSL), 16 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
-compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), and
-a deterministic fuzz gate (`probe_fuzz_codecs`: payload/graph codec + WAL
-replay under random/mutated/truncated streams; found and pinned XVC-C-10).
-Remaining: soak (long-running upsert/search), kill-recovery acceptance
-script, reference oracle cross-check, CI wiring.
+compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
+deterministic fuzz gate (`probe_fuzz_codecs`; found XVC-C-10), and a
+mixed-workload soak (`probe_soak_mixed`: 600 ops with per-op bookkeeping
+invariants, periodic compaction, final + chained recovery; ~2.5s).
+Remaining: kill-recovery acceptance script, reference oracle cross-check,
+CI wiring.
 
 ### J. Ecosystem & release engineering -- 40 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan for
@@ -304,6 +305,14 @@ lane.
   (`docs/repro/xv-decode-pad-loop/`). I 72 -> 78; overall 66.71 -> 67 %.
   Evidence: suite 168/168 x2 (Win+WSL), all 15 probes x2 (Win) + WSL spot
   (fuzz/codec/pad-loop).
+- **2026-10-08 (twenty-third pass):** mixed-workload soak --
+  `probe_soak_mixed.xi` (400-point Hnsw collection, 600 deterministic ops:
+  311 upserts / 115 searches / 63 filtered / 61 payload sets / 50 deletes;
+  per-op bookkeeping invariants, periodic compaction, final + chained
+  recovery; ~2.5s; stress 4/4). Found and fixed an LCG low-bit degeneracy
+  in the generator (residue 8 unreachable -> the payload branch never ran).
+  I 78 -> 80; overall 66.98 -> 67 %. Evidence: suite 168/168 x2 (Win+WSL),
+  all 16 probes x2 (Win) + WSL spot (soak/fuzz).
 
 ## Update rule
 
