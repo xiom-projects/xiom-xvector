@@ -24,7 +24,7 @@ decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `5f9eada` (chore: release-prep drafts),
+**Repo:** private, no pushes. HEAD `66cb739` (fix: upsert update-in-place),
 then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
@@ -35,7 +35,7 @@ then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `5f9eada` + this wrap commit | this repo |
+| xvector | `66cb739` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -165,6 +165,13 @@ then this wrap commit. Identity `Lefteris Notas
   green end-to-end this pass), `VERSION` (0.1.0-dev), a SHA-pinned
   `.github/workflows/ci.yml` draft (activates with self-hosted runners) and
   `docs/RELEASE-CHECKLIST.md` (owner-gated flow).
+- **Upsert update-in-place fix (found during E-stretch recon):**
+  `index_add` used to reject an existing id and keep the OLD vector, so
+  re-upserting silently diverged from the HNSW graph (which updates in
+  place) and compaction reverted updates; recovery also kept the first
+  vector. Now it updates in place (WAL replay matches live behavior).
+  Regression gate in `probe_vector_store` (size stays, get_point/search
+  see the NEW vector bits, recovery keeps the latest).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted

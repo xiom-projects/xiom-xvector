@@ -66,7 +66,7 @@ Reuses `CollectionId`/`VectorId`/`SegmentId` from `xiom.core.ids`. Adds `PointId
 Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector WAL codec.
 `VectorIndex { vectors: Vec[Vector]; ids: Vec[Int]; dim: Int }` -- flat columnar store.
 - `index_new(dim)` `requires: dim > 0`
-- `index_add(idx, id, vec)` `requires: idx.dim == vec.dimension` (returns false on duplicate id)
+- `index_add(idx, id, vec)` `requires: idx.dim == vec.dimension` -- insert, or **update in place** when the id exists (upsert semantics; true when the store holds the id afterwards). Earlier revisions rejected duplicates and kept the old vector, diverging from the HNSW graph; fixed 2026-10-08.
 - `index_remove` (O(1) swap-with-last), `index_get -> Option[Vector]`, `index_size`.
 
 ## Durable vector codec (WAL payload)
