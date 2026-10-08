@@ -319,7 +319,7 @@ not assumed; this phase turns a working engine into an operable one.
 ### Contract status
 
 **22 contracts (requires/ensures)** applied to helper functions in the test file.
-These mirror the contracts in `engine.xi` and the standalone modules.
+These mirror the contracts in `engine/core.xi` and the standalone modules.
 Note the XVC-C-02 caveat: on v0.64.0 a runtime `requires` violation aborts with
 exit 0, so the suite must never call a contracted function out of contract
 (the invalid-dimension test exercises the `is_valid_dimension` predicate
@@ -353,7 +353,15 @@ Functions in source modules that lack `requires`/`ensures` contracts:
 
 | Module | Functions missing contracts |
 |--------|---------------------------|
-| `engine.xi` | `vector_magnitude`, `neighbor_new`, `index_remove`, `index_get`, `index_size`, `vector_encode`, `vector_decode`, `wal_writer_new`, `wal_writer_append`, `wal_writer_append_payload`, `wal_writer_resume`, `wal_writer_checkpoint_from`, `wal_writer_current_lsn`, `wal_writer_flush`, `log_upsert`, `log_delete`, `counter_new`, `counter_inc`, `engine_new`, `engine_upsert`, `engine_search`, `engine_delete`, `engine_size`, `engine_durable_lsn` |
+| `engine.xi` (facade) | All 8 facade functions (thin delegations to engine.core) |
+| `engine/core.xi` | `engine_new`, `engine_upsert`, `engine_search`, `engine_delete`, `engine_set_payload`, `engine_get_payload`, `engine_search_filtered`, `engine_get_point`, `engine_size`, `engine_durable_lsn` |
+| `core/shim.xi` | `counter_new`, `counter_inc`, `collection_id`, `vector_id`, `vector_id_value`, `segment_id`, `segment_id_eq`, `is_valid_dimension`, `is_valid_top_k` |
+| `types/dense_vector.xi` | `vector_magnitude` (+ normalize/add/sub/scale when implemented) |
+| `types/neighbor.xi` | `neighbor_new` |
+| `storage/vector_store.xi` | `index_remove`, `index_get`, `index_size`, `vector_encode`, `vector_decode` |
+| `durability/wal.xi` | `wal_writer_new`, `wal_writer_append`, `wal_writer_append_payload`, `wal_writer_resume`, `wal_writer_current_lsn`, `wal_writer_flush` |
+| `durability/recovery.xi` | `wal_writer_checkpoint_from` |
+| `durability/write_ahead_events.xi` | `log_upsert`, `log_delete`, `log_payload_set` |
 | `error.xi` | `vector_error_to_str`, `vector_error_to_core`, `vector_error_code` |
 | `ids.xi` | `point_id`, `point_id_value`, `point_id_eq`, `point_to_vector_id`, `vector_to_point_id` |
 | `ann_index.xi` | `ann_params_default`, `ann_params_valid`, `ann_index_kind_name` |

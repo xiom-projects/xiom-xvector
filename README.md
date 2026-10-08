@@ -31,6 +31,9 @@ xiom install xiom-vector
 ## Quick Start
 ```xiom
 use xiom.vector.engine;
+use xiom.vector.engine.core;
+use xiom.vector.types.dense_vector;
+use xiom.vector.types.metric;
 
 fn main() -> Int {
   var eng = engine_new();
@@ -51,9 +54,11 @@ fn main() -> Int {
 
 ```
 src/
+|-- core/shim.xi              xiom-core stand-ins (CoreError/ids/metrics/predicates)
 |-- error.xi                  VectorError taxonomy (-> CoreError)
 |-- ids.xi                    PointId + reuse of core Collection/Vector/SegmentId
-|-- engine.xi                 VectorEngine orchestrator (real dispatch)
+|-- engine.xi                 public facade (create/upsert/search/delete/payloads)
+|-- engine/core.xi            VectorEngine orchestrator (real dispatch)
 |-- types/                    dense_vector - metric - neighbor - dimension
 |-- collection/               schema - collection - validator
 |-- payload/                  payload - filter_ast - filter_eval
@@ -62,11 +67,11 @@ src/
 |-- index/                    ann_index - flat_index - hnsw
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - topk_heap - search_service
-|-- durability/               write_ahead_events
-`-- api/                      vector_api (public facade)
+|-- durability/               wal - recovery - write_ahead_events
+`-- api/                      vector_api (merged stub; facade lives in engine.xi)
 ```
 
-## Public API (`xiom.vector.engine`)
+## Public API (`xiom.vector.engine` facade; `engine_*` internals in `xiom.vector.engine.core`)
 
 | Function | Description |
 |----------|-------------|
@@ -75,7 +80,9 @@ src/
 | `search(eng, query, k)` | Exact top-k nearest neighbours; returns `Result[SearchHits, CoreError]` (`SearchHits { items: Vec[SearchResult] }`) |
 | `delete_point(eng, point)` | Remove a point |
 | `get_point(eng, point)` | Fetch a stored vector by id |
-| `engine_recover(wal, dim, metric)` | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
+| `set_payload` / `get_payload` | WAL-durable metadata attach/replace and read |
+| `search_filtered(eng, query, k, filter)` | Pre-filter exact top-k |
+| `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
 All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
 wrapper is required by compiler finding XVC-C-04

@@ -18,8 +18,8 @@ durably.
 
 | Layer | Modules | Responsibility |
 |-------|---------|----------------|
-| **API** | `api/vector_api` | Stable public surface: create/upsert/search/delete/get. |
-| **Orchestration** | `engine` | Wire the write path, query path, WAL, and metrics; own the active collection. |
+| **API** | `engine` (facade) | Stable public surface: create/upsert/search/delete/get + payloads + filtered search (`src/engine.xi`). |
+| **Orchestration** | `engine/core` + `core/shim` | Wire the write path, query path, WAL, and metrics; own the active collection (`src/engine/core.xi`; the xiom-core stand-ins live in `src/core/shim.xi` until the porter flow maps them). |
 | **Query** | `query/{search_request, topk_heap, search_service}` | Request modelling, bounded top-K, exact scan, index dispatch. |
 | **Index** | `index/{ann_index, flat_index, hnsw}` | Physical search structures: exact flat baseline + approximate HNSW. |
 | **Distance** | `distance/{cosine, dot, l2}` | Distance kernels (SIMD seam). |
@@ -44,14 +44,18 @@ Both are described end to end in [`query-execution.md`](query-execution.md) and
 
 ## What runs today
 
-The Phase 0-1 core is fully functional in memory: vector math, all three
-metrics, exact KNN/range search, the HNSW graph, the bounded top-K heap, and the
-engine orchestrator with real create/upsert/search/delete dispatch. The write
-path already appends to the shared core WAL before acking.
+The working core is fully functional in memory: vector math, all three
+metrics, exact KNN search (filtered and unfiltered), the HNSW graph, the
+bounded top-K heap, and the engine orchestrator with real
+create/upsert/search/delete dispatch. The write path appends to the WAL
+before acking, and the WAL carries vectors + metadata, so `engine_recover`
+rebuilds both. The module tree is final (four extraction waves):
+`engine` (facade) <- `engine/core` <- `core/shim`.
 
-Everything above storage/index -- collections beyond one, segments, payload
-filtering, durable recovery, IVF/PQ -- is typed and scaffolded with
-`// TODO(Phase N):` markers pointing at [`../ROADMAP.md`](../ROADMAP.md).
+Still typed/scaffolded (see [`../ROADMAP.md`](../ROADMAP.md)): multiple
+collections, segments, file-backed WAL + durable manifest (stdlib fsync gap),
+sorted payload index + pre/post planner, HNSW hardening + recall harness,
+IVF/PQ.
 
 ## Deep dives
 

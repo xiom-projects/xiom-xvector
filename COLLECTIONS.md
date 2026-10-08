@@ -30,7 +30,7 @@ optional `Payload` of metadata.
 
 ```xiom
 use xiom.vector.engine;
-use xiom.vector.api.vector_api;
+use xiom.vector.engine.core;
 use xiom.vector.types.metric;
 
 var eng = engine_new();

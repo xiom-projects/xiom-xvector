@@ -6,8 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 # Query Execution
 
 The end-to-end pipeline for `search`, plus the write path that feeds it. Modules
-involved: `api/vector_api`, `engine`, `query/*`, `index/*`, `storage/*`,
-`durability/*`.
+involved: `engine` (facade) -> `engine/core`, `query/*`, `index/*`,
+`storage/*`, `durability/*`.
 
 ## Write path (feeds the query path)
 

@@ -5,20 +5,20 @@
 
 **Project:** `E:\xiom-projects\xiom-xvector` -- production-grade vector
 database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
-collections, segments, WAL-backed durable writes; the working core is in
-`src/engine.xi` + the extracted modules).
+collections, segments, WAL-backed durable writes; the working tree is the
+`src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (clean handoff after 7 continuation passes:
-bootstrap -> Phase 2 durability -> Phase 3 payload filtering -> payload
-durability -> 3 extraction waves -> v0.64.1 re-test -> FloatVal unwind).
+**Last updated:** 2026-10-08 (8 continuation passes: bootstrap -> Phase 2
+durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
+waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `a60966c` (then this handoff commit).
-Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional commits,
-DCO `git commit -s`.
+**Repo:** private, no pushes. HEAD `f431aa3` (refactor: final extraction
+wave), then this wrap commit. Identity `Lefteris Notas
+<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -27,7 +27,7 @@ DCO `git commit -s`.
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `a60966c` + handoff commit | this repo |
+| xvector | `f431aa3` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -46,25 +46,35 @@ DCO `git commit -s`.
   (Eq/Range/In/Exists/And/Or/Not + no-payload semantics), `PayloadStore`,
   `set_payload`/`get_payload` (WAL-durable), `search_filtered`
   (pre-filter exact scan, k-bounded), delete clears metadata.
-- **Module extraction waves 1-3:** real modules with `engine.xi` importing
-  them -- `src/payload/{payload,filter_ast,filter_eval}.xi`;
-  `src/types/{dense_vector,metric,neighbor}.xi`;
+- **Module extraction waves 1-4 (tree final, acyclic):**
+  `src/payload/{payload,filter_ast,filter_eval}.xi`;
+  `src/types/{dense_vector,metric,neighbor,dimension}.xi`;
   `src/storage/vector_store.xi` (+ vector codec);
   `src/query/search_service.xi`; `src/durability/{wal,recovery,
-  write_ahead_events}.xi`.
+  write_ahead_events}.xi`; **wave 4 (final):** `src/core/shim.xi`
+  (`xiom.vector.core.shim`: CoreError/Counter/ids/predicates) and
+  `src/engine/core.xi` (`xiom.vector.engine.core`: VectorEngine + engine_*);
+  `src/engine.xi` (`xiom.vector.engine`) is now the **facade only**.
+  Dependency order: `core.shim <- engine.core <- engine` (no cycles).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **54 % today**; recompute at every wrap.
+  scorecard, **55 % today**; recompute at every wrap.
 
-**Green evidence (re-verified on compiler v0.64.1 + stdlib 0.64.2):**
+**Green evidence (re-verified on compiler v0.64.1 + stdlib 0.64.2, after the
+final extraction wave):**
 
+- `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
+  (the new-module import gate: `xiom.vector.engine` + `xiom.vector.engine.core`
+  in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **166/166 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **166/166 x2**.
-- Probes x2 all green: `probe_hello`, `probe_engine_import`,
-  `probe_vector_store`, `probe_filtered_search`, `probe_payload_recovery`,
-  `probe_floatval_roundtrip` (run via `scripts\run-probe.ps1` /
-  `bash scripts/run-probe.sh`).
+- All **7 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+  `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
+  `probe_payload_recovery`, `probe_floatval_roundtrip` (run via
+  `scripts\run-probe.ps1`).
+- WSL spot: `probe_engine_import` + `probe_vector_store` green with
+  bit-identical diagnostics (`bash scripts/run-probe.sh`).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -82,61 +92,29 @@ DCO `git commit -s`.
 
 ---
 
-## 1. NEXT TASK -- final extraction wave (priority 1)
+## 1. NEXT TASKS (priority order)
 
-Close the post-AUDIT tree with `engine.xi` left as the consumer-facing
-facade. Planned layout (avoids circular imports):
+The extraction tree is final; what remains is capability work.
 
-1. **`src/core/shim.xi`** (module `xiom.vector.core.shim`): `CoreError`,
-   `Counter` + `counter_new/inc`, `CollectionId`/`VectorId`/`SegmentId` +
-   helpers, `is_valid_dimension`/`is_valid_top_k`. (These are the
-   xiom-core stand-ins; the porter flow will later map them onto the real
-   package.)
-2. **`src/engine/core.xi`** (module `xiom.vector.engine.core`): `VectorEngine`
-   + `engine_new`, `engine_create_collection`, `engine_upsert`,
-   `engine_search`, `engine_delete`, `engine_set_payload`,
-   `engine_get_payload`, `engine_search_filtered`, `engine_recover`,
-   `engine_size`, `engine_durable_lsn`. Imports `core.shim` + all extracted
-   layers.
-3. **`src/engine.xi`** (module `xiom.vector.engine`) keeps ONLY the public
-   facade: `create_collection`, `upsert`, `search`, `delete_point`,
-   `get_point`, `set_payload`, `get_payload`, `search_filtered` --
-   delegating to `engine.core`. Do NOT keep shims here (shim <- core <-
-   facade must stay acyclic).
-4. **Consumers:** probes/evidence that call `engine_*` symbols
-   (`probe_vector_store`, `probe_filtered_search`, `probe_payload_recovery`,
-   the `docs/repro/xv-f32-*` evidence copies) gain
-   `use xiom.vector.engine.core;`; facade users keep
-   `use xiom.vector.engine;`. Batch-edit script pattern used before works.
-5. **Verify:** engine import probe -> suite x2 -> all probes x2 -> WSL spot;
-   then docs (ARCHITECTURE tree + note, SPEC engine section, SESSION,
-   readiness J bump).
-
-Fallback if the split tangles (e.g., cross-module `CoreError` type identity
-in `Result` signatures): move only the facade to
-`src/api/vector_api.xi` and keep `engine_*` in `engine.xi`.
-
-## 2. FOLLOW-UPS (after the extraction wave)
-
-1. **Phase 3 refinements:** sorted key index (O(log n) field lookup),
-   pre/post-filter planner, `SearchRequest`-driven search +
-   `with_payload` hydration.
-2. **Unwind candidates** (compiler now green): `SearchHits` struct wrapper
+1. **Phase 3 refinements:** sorted key index for payload fields (O(log n)
+   lookup), pre/post-filter planner (selectivity-based), `SearchRequest`-driven
+   search + `with_payload` hydration. Suite/probe gates for each step.
+2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
+   `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
+   `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
+   2026-10-08). Then: file-backed log segments, durable manifest,
+   kill-recovery test harness. NOTE: stdlib 0.64.2 made file writes byte-exact
+   + CRLF-clean (good news for WAL files).
+3. **HNSW hardening (Phase 4) + recall harness** vs the flat oracle; then
+   concurrency/soak (G phase).
+4. **Unwind candidates** (compiler now green): `SearchHits` struct wrapper
    (C-04 fixed) -- decide API shape deliberately; suite direct dispatch
    (C-01); predicate-based negative tests (C-02).
-3. **M2 file-backed WAL** the day the stdlib lands `fsync`/fd-write/
-   `append_file_bytes` (rows 1-3 of `docs/STDLIB-WISHLIST-XVECTOR.md`;
-   still stubs on stdlib 0.64.2 -- verified 2026-10-08). Then: durable
-   manifest, kill-recovery test harness. NOTE: stdlib 0.64.2 made file
-   writes byte-exact + CRLF-clean (good news for WAL files).
-4. **HNSW hardening (Phase 4) + recall harness** vs the flat oracle;
-   then concurrency/soak (G phase).
-5. **Porter flow prep:** when the tree is final, extract
-   `xiom.vectors`/`xiom.wal` with the packages lane (names frozen;
-   ORBITDB second user; PULSE third WAL user; `xiom.durable` must not grow
-   a competing WAL).
+5. **Porter flow prep:** with the tree final, extract `xiom.vectors`/
+   `xiom.wal` with the packages lane (names frozen; ORBITDB second user;
+   PULSE third WAL user; `xiom.durable` must not grow a competing WAL).
 
-## 3. Consumer-lane rules (non-negotiable)
+## 2. Consumer-lane rules (non-negotiable)
 
 - **Never edit** `E:\xiom-lang\stdlib`, `E:\xiom-lang\xiom`,
   `E:\xiom-packages\packages`. Record their HEAD hashes each wrap:
@@ -147,6 +125,20 @@ in `Result` signatures): move only the facade to
 - Consume packages from the registry only; propose reusable primitives as
   packages (`xiom.vectors` / `xiom.wal` / `xiom.ann`).
 - Repo stays private; no pushes; commits signed (`-s`) at every step.
+
+## 3. Module/consumer rules after the final wave
+
+- `src/engine.xi` = facade only (`create_collection`, `upsert`, `search`,
+  `delete_point`, `get_point`, `set_payload`, `get_payload`,
+  `search_filtered`). Never re-add shims or orchestration here.
+- `src/engine/core.xi` = `VectorEngine` + `engine_*` (internal surface).
+- `src/core/shim.xi` = xiom-core stand-ins (CoreError/Counter/ids/predicates);
+  the porter flow will map it onto the real `xiom.core` package.
+- **Consumers that call `engine_*` symbols must `use
+  xiom.vector.engine.core;`** in addition to `use xiom.vector.engine;`
+  (probes + repro evidence already do).
+- Repro evidence copies that import the engine: add the core import when
+  re-running them at a new compiler archive.
 
 ## 4. Pin discipline that bites (current)
 
@@ -164,6 +156,8 @@ in `Result` signatures): move only the facade to
   every green suite x2; redirect long-running output to files; build
   scripts delete stale binaries; use `scripts/lib.ps1` for process capture
   (PS 5.1 `Start-Process` ExitCode is unreliable).
+- WSL: default distro is `docker-desktop`; use `wsl.exe -d Ubuntu` for the
+  toolchain (`~/.local/share/xiom/bin/xiom`).
 
 ## 5. Ecosystem status (2026-10-08)
 
@@ -190,7 +184,7 @@ in `Result` signatures): move only the facade to
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still blocking M2 |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
-| `docs/PRODUCTION-READINESS.md` | owner | 54 %; recompute every wrap |
+| `docs/PRODUCTION-READINESS.md` | owner | 55 %; recompute every wrap |
 
 ---
 
@@ -206,35 +200,32 @@ stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
 Toolchain (latest-tracking): compiler v0.64.1 on Windows
-(%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom);
-stdlib lane E:\xiom-lang\stdlib (0.64.2, /mnt/e/... in WSL);
-XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh twin);
-scripts\build.ps1/.sh build; scripts\run-suite.* runs the conformance
-suite; scripts\run-probe.* runs probes. Green baseline: suite 166/166 x2
-(Windows + WSL), six probes green.
+(%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom, use
+`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (0.64.2, /mnt/e/...
+in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
+twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
+conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
+166/166 x2 (Windows + WSL), 7 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
-in-memory) and Phase 3 (payload filtering + durable metadata); three
-module extraction waves (payload, types/storage/query, durability);
-FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
-FIXED, XVC-C-07 OPEN (pass Vec by value to Str::from_utf8).
+in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
+extraction waves, tree final: facade (src/engine.xi) <- orchestrator
+(src/engine/core.xi) <- xiom-core shim (src/core/shim.xi), plus payload/
+types/storage/query/durability modules; consumers call engine_* via
+`use xiom.vector.engine.core;`. FloatVal gates restored after the v0.64.1
+fix. Compiler: XVC-C-01..06 FIXED, XVC-C-07 OPEN (pass Vec by value to
+Str::from_utf8).
 
-NEXT TASK (priority 1): final extraction wave -- move VectorEngine +
-engine_* into src/engine/core.xi (module xiom.vector.engine.core), core
-shims (CoreError/Counter/ids/predicates) into src/core/shim.xi, keep
-src/engine.xi as the facade only (no shims there; acyclic: shim <- core <-
-facade). Add `use xiom.vector.engine.core;` to consumers that call
-engine_* symbols. Verify: engine-import probe, suite x2, all probes x2,
-WSL spot; update ARCHITECTURE/SPEC/SESSION/readiness; commit signed.
-Fallback if the split tangles: move only the facade to
-src/api/vector_api.xi. Then follows: Phase 3 refinements (sorted payload
-index, pre/post planner, SearchRequest/with_payload); M2 file-backed WAL
-when stdlib lands fsync/fd-write/append-bytes (still stubs); HNSW
-hardening + recall harness.
+NEXT TASK (priority 1): Phase 3 refinements on the final tree -- sorted
+payload key index (O(log n) field lookup), selectivity-based pre/post-filter
+planner, SearchRequest-driven search + with_payload hydration. Add suite +
+probe gates for each, keep the numeric gates per build. Standby: M2
+file-backed WAL when stdlib lands fsync/fd-write/append-bytes (still
+stubs); HNSW hardening + recall harness; unwind candidates (C-04 SearchHits
+wrapper, C-01 direct dispatch).
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); numeric gates per build; watchdogs + exit
-codes; suite x2 green before any wrap; update SESSION.md STATE + relay
-rows + docs/PRODUCTION-READINESS.md at every wrap; commit signed at every
-step.
+codes; suite x2 green before any wrap; update SESSION.md STATE + relay rows
++ docs/PRODUCTION-READINESS.md at every wrap; commit signed at every step.
 ```

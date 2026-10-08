@@ -35,6 +35,12 @@ vector-specific.
 
 ```
 src/
+|-- core/
+|   `-- shim.xi      module xiom.vector.core.shim
+|                     xiom-core stand-ins (porter-flow mapping target):
+|                     CoreError, Counter + counter_new/inc,
+|                     CollectionId/VectorId/SegmentId + helpers, and the
+|                     validity predicates is_valid_dimension/is_valid_top_k [EXTRACTED]
 |-- error.xi        module xiom.vector.error
 |                     VectorError { DimensionMismatch, UnsupportedMetric,
 |                     CollectionNotFound, InvalidVector, SegmentSealed,
@@ -43,17 +49,18 @@ src/
 |                     PointId (user id) + reuse of core CollectionId/VectorId/
 |                     SegmentId + PointId<->VectorId bridges
 |-- engine.xi       module xiom.vector.engine
-|                     VectorEngine orchestrator -- engine_new,
+|                     public facade ONLY -- create_collection, upsert,
+|                     search, delete_point, get_point, set_payload,
+|                     get_payload, search_filtered; thin delegation to
+|                     engine.core (no shims here)                        [EXTRACTED]
+|-- engine/
+|   `-- core.xi      module xiom.vector.engine.core
+|                     VectorEngine + engine_* orchestration -- engine_new,
 |                     engine_create_collection, engine_upsert, engine_search,
-|                     engine_delete (REAL dispatch to store + WAL + search)
-|                     NOTE: engine.xi is the CONSOLIDATED working core being
-|                     unwound layer by layer. EXTRACTED: payload/filter;
-|                     types; storage/vector_store (+codec); query/
-|                     search_service; durability (wal/recovery/events).
-|                     Still inline: core-error/ids/counter + validity
-|                     predicates, VectorEngine + engine_* functions, API
-|                     facade (final extraction wave; cross-file imports
-|                     work on v0.64.0).
+|                     engine_delete, engine_set_payload, engine_get_payload,
+|                     engine_search_filtered, engine_get_point, engine_size,
+|                     engine_durable_lsn, engine_recover (REAL dispatch to
+|                     store + WAL + search + payloads + recovery)        [EXTRACTED]
 |
 |-- types/
 |   |-- dense_vector.xi   Vector + new/set/get + dot/magnitude          [EXTRACTED]
@@ -103,7 +110,7 @@ src/
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/
-    `-- vector_api.xi     public facade (create/upsert/search/delete/get) [DONE]
+    `-- vector_api.xi     merged stub -- the facade lives in engine.xi  [MERGED]
 ```
 
 ### Dependency direction
@@ -111,15 +118,22 @@ src/
 Higher layers depend on lower layers; there are no upward dependencies:
 
 ```
-api -> engine -> { query.search_service -> index.hnsw, storage.vector_store,
-                 durability.write_ahead_events, metric }
+engine (facade) -> engine.core + core.shim (signature types) + value types
+engine.core -> { core.shim, query.search_service -> storage.vector_store /
+                 payload.filter_eval, storage.vector_store, durability.*,
+                 payload.*, types.* }
 index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric}   (no query dependency)
-collection/* -> types, index.ann_index, core.ids
-segment/* -> storage.vector_store, segment_state, core.ids
+collection/* -> types, index.ann_index, core.shim ids
+segment/* -> storage.vector_store, segment_state, core.shim ids
 payload.filter_eval -> payload.filter_ast -> payload.payload
-everything fallible -> core.error (CoreError)
+everything fallible -> core.shim (CoreError; the local stand-in until the
+                       xiom.core porter flow maps it onto the package)
 ```
+
+The extraction chain is acyclic: **core.shim <- engine.core <- engine**
+(facade). The facade never reaches into the store, and the shim imports
+nothing from the vector tree.
 
 `index.hnsw` deliberately returns `Neighbor` (not the query-layer
 `SearchResult`) so the index layer never depends on the query layer. The query

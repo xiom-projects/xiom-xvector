@@ -17,7 +17,8 @@ packages/xiom-vector/
 |-- README.md - ARCHITECTURE.md - ROADMAP.md - COLLECTIONS.md - SPEC.md
 |-- docs/                       Deep-dive design docs
 `-- src/
-    |-- error.xi - ids.xi - engine.xi
+    |-- core/shim.xi
+    |-- error.xi - ids.xi - engine.xi - engine/core.xi
     |-- types/{dense_vector,metric,neighbor,dimension}.xi
     |-- collection/{schema,collection,validator}.xi
     |-- payload/{payload,filter_ast,filter_eval}.xi
@@ -26,7 +27,7 @@ packages/xiom-vector/
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,topk_heap,search_service}.xi
-    |-- durability/write_ahead_events.xi
+    |-- durability/{wal,recovery,write_ahead_events}.xi
     `-- api/vector_api.xi
 ```
 
@@ -119,7 +120,7 @@ Implemented today: `SearchResult`/`SearchHits` + `search_knn` + `search_knn_filt
 
 ## `xiom.vector.payload.{payload,filter_ast,filter_eval}` (extracted modules)
 Real modules since 2026-10-08 (first layer of the post-AUDIT module tree);
-`xiom.vector.engine` imports them (`use xiom.vector.payload.payload/filter_ast/filter_eval`),
+`xiom.vector.engine.core` imports them (`use xiom.vector.payload.payload/filter_ast/filter_eval`),
 and consumers of payload/filter symbols import the submodules directly.
 `enum FieldValue { IntVal, FloatVal, TextVal, BoolVal }`; `Payload` +
 `payload_new/set/has/get/len`, `field_value_kind`, `field_value_eq` (exact
@@ -178,17 +179,34 @@ vector**.
   just the store for compatibility. `engine_recover` uses both and checkpoints
   them.
 
-## `xiom.vector.engine`
-`VectorEngine { store; metric; dimension; created; wal; upserts; deletes; next_collection }`.
+## `xiom.vector.core.shim` (extracted module)
+Local `xiom-core` stand-ins, the porter-flow mapping target: `CoreError` (the
+same ten variants as `xiom.core.error`), `Counter` + `counter_new/inc`,
+`CollectionId`/`VectorId`/`SegmentId` + `collection_id`/`vector_id`/
+`vector_id_value`/`segment_id`/`segment_id_eq`, and the validity predicates
+`is_valid_dimension` (1...65536) / `is_valid_top_k` (1...10000).
+
+## `xiom.vector.engine.core` (extracted module)
+`VectorEngine { store; metric; dimension; created; wal; upserts; deletes;
+next_collection; payloads }` -- the orchestrator that owns the active
+collection, the WAL, and the payload store.
 - `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1`.
 - `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + metric.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0`, `SearchHits { items: Vec[SearchResult] }`. The struct wrapper is required by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element fields on v0.64.0).
-- `delete_point`, `engine_size`, `engine_durable_lsn`.
+- `engine_delete`, `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered`, `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
 - `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic.
 
+## `xiom.vector.engine` (facade)
+Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
+`create_collection`, `upsert`, `search`, `delete_point`, `get_point`,
+`set_payload`, `get_payload`, `search_filtered` -- thin delegations.
+Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
+...) import `xiom.vector.engine.core` in addition to this module.
+
 ## `xiom.vector.api.vector_api`
-Public facade: `create_collection`, `upsert`, `search` (`Result[SearchHits, CoreError]`), `delete_point`, `get_point`. All fallible calls return `Result[T, CoreError]`.
+Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
+`src/engine.xi`.
 
 ---
 
