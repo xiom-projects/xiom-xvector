@@ -81,17 +81,25 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
     engine, torn-record skip).
   - Suite: SECTION 15 (9 tests) -> **165/165 x2**; readiness tracker
     `docs/PRODUCTION-READINESS.md` created (weighted scorecard; ~53 % today).
+- **Module extraction milestone 3 (fifth continuation):** the durability
+  layer is real too: `src/durability/wal.xi` (WalOpKind/WalRecord/WalWriter +
+  append/append_payload/current_lsn/flush/resume), `src/durability/recovery.xi`
+  (recover_state/recover_store + wal_writer_checkpoint_from),
+  `src/durability/write_ahead_events.xi` (log_upsert/log_delete/
+  log_payload_set). `engine.xi` now holds only: core-error/counter/ids,
+  validity predicates, `engine_recover`, `VectorEngine` + `engine_*`, and the
+  API facade. Suite 165/165 x2 (Windows + WSL) and Windows probes x2 green;
+  WSL `probe_vector_store` drew 1 green / 2 red across 3 fresh builds --
+  exactly the XVC-C-05 numeric-draw signature (the diag prints the int
+  bit-pattern dot), not a regression (the suite and non-numeric checks stay
+  green).
 - **Module extraction milestone 2 (fourth continuation):** the types /
   storage / search layers are now real modules too:
   `src/types/dense_vector.xi` (Vector + dot/magnitude),
   `src/types/metric.xi` (DistanceMetric + 3 distances + dispatch),
   `src/types/neighbor.xi`, `src/storage/vector_store.xi` (VectorIndex CRUD +
   vector WAL codec), `src/query/search_service.xi` (SearchResult/SearchHits +
-  search_knn/search_knn_filtered). `engine.xi` imports them; probes and
-  compiler-lane evidence files import the submodules directly. All probes x2
-  + suite 165/165 green. Still inline in engine.xi: core-error/ids/counter,
-  WAL types + wal_writer_*, recovery/checkpoint, VectorEngine + engine_*
-  functions, API facade -- the next extraction targets.
+  search_knn/search_knn_filtered). All probes x2 + suite 165/165 green.
 - **Module extraction milestone 1 (third continuation):** the payload/filter
   layer is now the first REAL module of the post-AUDIT tree --
   `src/payload/payload.xi` (FieldValue/Payload + codec + PayloadStore),
@@ -126,11 +134,11 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   WAL blocked; byte append (`append_file_bytes`) and fd write path missing;
   `crc32_ieee`/`crc32c` available and adopted for framing.
 - **Next action (priority order):**
-  1. Continue the extraction, layer by layer: vector codec + metrics/types
-     (`src/types`, `src/storage`), then WAL + recovery, then store/engine
-     facade + API; keep engine.xi importable as the stable facade and
-     re-verify all probes + suite after each layer (porter preparation for
-     `xiom.vectors` / `xiom.wal`).
+  1. Final extraction wave: move `VectorEngine` + `engine_*` + the API facade
+     into `src/engine.xi`-style modules (`src/engine/engine.xi`,
+     `src/api/vector_api.xi`), keep `src/engine.xi` as the thin facade (or
+     retarget consumers to the modules), possibly move core-error/ids/counter
+     to a `src/core/` shim. Then the tree is porter-ready.
   2. Phase 3 refinements: sorted key index (O(log n) lookup), pre/post-filter
      planner, `SearchRequest`-driven search + `with_payload` hydration.
   3. Watch compiler lane for XVC-C-01..07; re-run the repro bundles at the
