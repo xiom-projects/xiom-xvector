@@ -113,9 +113,24 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 `validate_dimension(schema, dim) -> Bool`; `validate_vector(schema, v) -> Result[Bool, VectorError]` (enforces dimension constancy); `validate_metric(schema, metric) -> Result[Bool, VectorError]`.
 
 ## `xiom.vector.payload.{payload,filter_ast,filter_eval}`
-`enum FieldValue { IntVal, FloatVal, TextVal, BoolVal }`; `Payload` + `payload_new/set/has/len`, `field_value_kind`.
+`enum FieldValue { IntVal, FloatVal, TextVal, BoolVal }`; `Payload` +
+`payload_new/set/has/get/len`, `field_value_kind`, `field_value_eq` (exact
+within type; cross-type false), `field_value_as_float` (Int promotes).
 `enum FilterExpr { Eq, Range, Exists, In, And, Or, Not }` + constructors.
-`filter_matches(expr, payload) -> Bool` -- combinators + Exists implemented; value predicates fail-open (Phase 3).
+`filter_matches(expr, payload) -> Bool` -- full typed evaluation: Eq exact
+within type; Range inclusive with Int->Float32 promotion; In membership;
+Exists; And/Or/Not combinators. No-payload semantics: value predicates false,
+`And([])=true`, `Or([])=false`, `Not([])=true`.
+`PayloadStore` (id -> Payload, swap-remove) + `payload_store_put/get/remove/len/matches`.
+NOTE (compiler XVC-C-06): Float32 enum payloads can read as 0 in affected
+builds; lane gates avoid FloatVal assertions until fixed.
+
+## `xiom.vector.payload` engine integration
+`engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`
+(`Ok(false)` for a missing point; payloads never outlive their point),
+`engine_get_payload -> Option[Payload]`, `engine_search_filtered(eng, query, k, filter) -> Result[SearchHits, CoreError]`
+(pre-filter exact scan, `k`-bounded; facade `search_filtered`). `engine_delete`
+removes the point's payload.
 
 ## `xiom.vector.segment.{segment_state,segment,manifest}`
 `enum SegmentStateKind { Mutable, Sealing, Sealed, Indexing, Immutable, Compacting, Dropped }` + `segment_state_is_writable/is_terminal/code/can_transition`.

@@ -92,7 +92,7 @@ wrapper is required by compiler finding XVC-C-04
 | WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; `fsync` blocked on the stdlib fd-syscall gap) |
 | Collections / schema / validator | [YELLOW] In progress (single active collection) |
 | Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
-| Payload + metadata filtering | [ORANGE] Scaffold (AST + fail-open eval) |
+| Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
 | Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint done in-memory; durable manifest pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
