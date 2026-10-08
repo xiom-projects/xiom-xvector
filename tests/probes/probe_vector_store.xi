@@ -139,6 +139,48 @@ fn main() -> Int {
   fails = check(w4_ok && engine_size(&reopened2) == 3, "post-reopen write accepted (size=3)", fails);
   fails = check(engine_durable_lsn(&reopened2) == lsn_before_w4 + 1, "post-reopen write advances LSN by 1", fails);
 
+  // 8. update-in-place: re-upserting an existing id replaces the vector
+  var upd = upsert(&mut reopened2, 4, mk_vec3(0.0, 0.6, 0.8));
+  var upd_ok: Bool = false;
+  match upd { Ok(ok) => { upd_ok = ok; } Err(_) => {} }
+  fails = check(upd_ok && engine_size(&reopened2) == 3, "update-in-place: id 4 re-upserted (size stays 3)", fails);
+  var replaced: Bool = false;
+  var e6: Float32 = 0.6;
+  var e8: Float32 = 0.8;
+  match get_point(&reopened2, 4) {
+    Some(g4) => {
+      if float.float_bits(g4.data[0] as Float64) == float.float_bits(0.0 as Float64)
+        && g4.data[1] == e6
+        && g4.data[2] == e8 {
+        replaced = true;
+      }
+    }
+    None => {}
+  }
+  fails = check(replaced, "update-in-place: get_point returns the NEW vector bits", fails);
+  var q4 = mk_vec3(0.0, 0.6, 0.8);
+  var got_new: Bool = false;
+  match search(&reopened2, &q4, 1) {
+    Ok(h) => {
+      if h.items.len() == 1 && h.items[0].id == 4 && f32_approx(h.items[0].distance, 0.0, 0.001) {
+        got_new = true;
+      }
+    }
+    Err(_) => {}
+  }
+  fails = check(got_new, "update-in-place: search finds the NEW vector at distance 0", fails);
+  var rec_upd = engine_recover(&reopened2.wal, 3, DistanceMetric.Cosine);
+  var rec_new: Bool = false;
+  match get_point(&rec_upd, 4) {
+    Some(r4) => {
+      if r4.data[1] == e6 && r4.data[2] == e8 {
+        rec_new = true;
+      }
+    }
+    None => {}
+  }
+  fails = check(rec_new && engine_size(&rec_upd) == 3, "update-in-place: recovery keeps the LATEST vector", fails);
+
   io.println("");
   io.println("probe_vector_store: " + int_to_str(fails) + " failed checks");
   return fails;
