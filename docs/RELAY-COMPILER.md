@@ -116,3 +116,20 @@ adopted: build the graph in a local variable, assign the field once --
 green on Windows + WSL afterwards. Please prioritize the whole
 context-sensitive family (C-05/C-06/C-08/C-09); it makes cross-platform
 verification unreliable.
+
+**Addendum 6 (2026-10-08, later): XVC-C-10 -- `hnsw_decode` segfaults on large pad volume.**
+
+The new deterministic fuzz probe (payload codec / graph codec / WAL replay
+with random + mutated + truncated streams) found a crash inside
+`hnsw_decode`: the inline pad step (`while pad < m` pushing zero adjacency
+slots) segfaults at `m >= 512` on Windows AND WSL, even on a pristine
+stream and with a forced `None` return (so not the struct-return path).
+Control experiments are green: 712k standalone `Vec[Int]` pushes, the same
+nested pad loop alone, interleaved pushes into two struct Vec fields --
+context-sensitive lowering again. Repro (revision-pinned):
+`docs/repro/xv-decode-pad-loop/`; general gate
+`tests/probes/probe_fuzz_codecs.xi`. Workaround adopted: pad step behind
+`pad_adj_slots` + strict-decode bounds (`m <= 512`, `count <= words.len()`);
+green on both platforms afterwards. This is the fourth member of the
+context-sensitive family (C-05/C-06/C-08/C-09/C-10) -- a single root cause
+investigation would unlock a lot for us.
