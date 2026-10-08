@@ -14,7 +14,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 xiom-vector is organized as a **layered engine** rather than a flat set of files. It reuses `xiom-core` (errors, ids, config, limits, contracts, WAL, metrics) as its durable-systems substrate and adds the vector-specific layers on top: types, storage, indexes, query, collections, payload/filtering, segments, durability, and a public API facade.
 
-The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, and the in-memory HNSW graph -- is fully implemented today. Higher layers (collections, segments, payload filtering, durable recovery) are typed and scaffolded against the roadmap.
+The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, and WAL-backed recovery (vectors + metadata) -- is implemented today. Collections, segments, and the durable manifest are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
 
 See:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) -- the shared-core + vector-layer model, module tree, write/search paths, failure domains.
@@ -67,6 +67,7 @@ src/
 ```
 
 ## Public API (`xiom.vector.engine`)
+
 | Function | Description |
 |----------|-------------|
 | `create_collection(eng, dim, metric)` | Create the active collection; fixes dimension + metric |

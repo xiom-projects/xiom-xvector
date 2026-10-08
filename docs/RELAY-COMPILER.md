@@ -49,6 +49,12 @@ Same per-build flip behaviour as XVC-C-05. Repro + recipe:
 `docs/repro/xv-f32-payload-zero/README.md`. Lane workaround: FloatVal is
 diagnostic-only in gates until fixed.
 
+**Addendum 2 (2026-10-08): XVC-C-07.**
+`Str::from_utf8(&Vec[UInt8])` type-checks but emits invalid LLVM IR (`invalid
+getelementptr indices`); passing the Vec **by value** is correct (stdlib
+convention). Minimal repro: `docs/repro/xv-from-utf8-vec-ref/`. Found while
+writing the payload WAL codec; compile fails loudly.
+
 Context: the lane builds a durable vector database; its distance kernel is
 exactly the XVC-C-05 shape, and its test harness was exactly the XVC-C-01
 shape (both worked around, see SESSION.md).

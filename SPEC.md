@@ -127,10 +127,23 @@ builds; lane gates avoid FloatVal assertions until fixed.
 
 ## `xiom.vector.payload` engine integration
 `engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`
-(`Ok(false)` for a missing point; payloads never outlive their point),
+(WAL-before-ack: the encoded record is appended before the store is touched;
+`Ok(false)` for a missing point; payloads never outlive their point),
 `engine_get_payload -> Option[Payload]`, `engine_search_filtered(eng, query, k, filter) -> Result[SearchHits, CoreError]`
 (pre-filter exact scan, `k`-bounded; facade `search_filtered`). `engine_delete`
 removes the point's payload.
+
+## Payload WAL codec (durable metadata)
+- `payload_encode(p) -> Vec[Int]` -- `[version=1, field_count, (key_len,
+  key_bytes...), kind, value_words...]` with kind 1=int, 2=float (Float64 bit
+  pattern), 3=text (len, bytes), 4=bool; strings are UTF-8 bytes as Ints.
+- `payload_decode(words) -> Option[Payload]` -- strict; malformed -> `None`
+  (torn-record tolerance).
+- Records are appended as `WalOpKind.Update` (key = point id); `recover_state`
+  replays them after Insert/Delete; `wal_writer_checkpoint_from` re-encodes
+  live payloads so chained reopen keeps metadata. NOTE (compiler XVC-C-06):
+  Float32 payloads can read as 0 in affected builds; lane gates use
+  Int/Text/Bool.
 
 ## `xiom.vector.segment.{segment_state,segment,manifest}`
 `enum SegmentStateKind { Mutable, Sealing, Sealed, Indexing, Immutable, Compacting, Dropped }` + `segment_state_is_writable/is_terminal/code/can_transition`.
@@ -145,11 +158,17 @@ vector**.
 - `wal_writer_append_payload(w, op, key, value, payload)` -- record with an
   encoded vector payload.
 - `wal_writer_resume(next_lsn) -> WalWriter` -- empty buffer, LSN continuity.
-- `wal_writer_checkpoint_from(w, idx) -> WalWriter` -- compacted checkpoint
-  log: every live point re-encoded as an Insert with fresh LSNs continuing
-  after `w`; the returned log alone reconstructs the store.
-- `log_upsert(w, collection, point, payload)`, `log_delete(w, collection, point)`
-  map onto the above; `event_op`.
+- `wal_writer_checkpoint_from(w, idx, payloads) -> WalWriter` -- compacted
+  checkpoint log: every live point re-encoded as an Insert and every payload
+  as an Update with fresh LSNs continuing after `w`; the returned log alone
+  reconstructs store + metadata.
+- `log_upsert(w, collection, point, payload)`, `log_delete(w, collection, point)`,
+  `log_payload_set(w, collection, point, words)` map onto the above; `event_op`.
+- `recover_state(w, dim) -> RecoveredState { store; payloads }` -- replay in
+  LSN order (Insert -> store, Delete -> store+payload removal, Update ->
+  payload set/overwrite, malformed records skipped); `recover_store` returns
+  just the store for compatibility. `engine_recover` uses both and checkpoints
+  them.
 
 ## `xiom.vector.engine`
 `VectorEngine { store; metric; dimension; created; wal; upserts; deletes; next_collection }`.
@@ -158,7 +177,7 @@ vector**.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0`, `SearchHits { items: Vec[SearchResult] }`. The struct wrapper is required by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element fields on v0.64.0).
 - `delete_point`, `engine_size`, `engine_durable_lsn`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
-- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay + compacted checkpoint WAL; LSNs stay monotonic.
+- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic.
 
 ## `xiom.vector.api.vector_api`
 Public facade: `create_collection`, `upsert`, `search` (`Result[SearchHits, CoreError]`), `delete_point`, `get_point`. All fallible calls return `Result[T, CoreError]`.
