@@ -95,7 +95,8 @@ fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
 - `hnsw_insert(graph, id, vec, metric)` -- deterministic geometric level assignment (`ml`), per-layer exact k-NN on every layer up to the existing top, bidirectional edges with farthest-edge pruning; the entry tracks the highest-level node.
 - `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- greedy descent above layer 0, then a best-first beam (breadth = `max(k, ef)`); `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
 - `hnsw_search_visited` (visited-node count, latency proxy), `hnsw_size`, `hnsw_level_of`, `hnsw_layer_capacity`, `hnsw_find_node_pos` (linear; id -> position map pending).
-- Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 300/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 288/800).
+- `hnsw_delete(graph, id) -> Bool` -- tombstone: the node keeps routing traffic but is never returned (idempotent; false for unknown/already-deleted). `hnsw_live_count` reports non-deleted nodes. Re-inserting an id updates the vector in place and revives the node (edges kept; re-linking pending).
+- Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 300/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 288/800); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty.
 
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to `types.metric` today.

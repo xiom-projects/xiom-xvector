@@ -108,6 +108,17 @@ step).
 4. Return the first `k` results as `Vec[Neighbor]` (`ensures: len <= k`).
    `hnsw_search_visited` exposes the touched-node count (latency proxy).
 
+## Deletes (`hnsw_delete`)
+
+Tombstones: `hnsw_delete(id)` marks the position dead (the `deleted`
+vector); the node keeps its edges and keeps routing traffic, but
+`hnsw_search` never adds it to results. Deleting an unknown or
+already-deleted id returns `false`. `hnsw_live_count` reports the
+non-deleted node count. Re-inserting an id updates the vector in place and
+revives the node (edges are kept; re-linking on update is a hardening TODO).
+There is no edge repair or memory reclaim yet -- a rebuild compacts
+tombstones (future work).
+
 ## Contracts
 
 - `hnsw_new` -- `m > 0`, `ml > 0.0`.
@@ -126,9 +137,12 @@ step).
 | n=200 | 8 | 300/300 | beam clamped to breadth 10 |
 | n=200 cosine | 64 | 100/100 | metric-agnostic smoke |
 | n=800 | 64 | 200/200 | avg visited 288/800, top level 4 |
+| n=200, id 42 deleted | 64 | 300/300 | stray42=0, live 199 (flat oracle also removed 42) |
 
 Gates: recall >= 0.85 (ef=64), >= 0.50 (ef=8), >= 0.60 (cosine), >= 0.80
-(n=800). Full run ~0.9s.
+(n=800). Delete checks: tombstone semantics, idempotent delete, never
+returned, recall-after-delete, revive on re-insert, delete-all -> live 0 and
+empty search. Full run ~0.9s.
 
 ## Current simplifications (and the production TODOs)
 
@@ -139,7 +153,7 @@ Gates: recall >= 0.85 (ef=64), >= 0.50 (ef=8), >= 0.60 (cosine), >= 0.80
 | Search | greedy descent + beam honouring `ef` | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
-| Deletes | not supported | tombstones + edge repair |
+| Deletes | **tombstones** (routers kept, never returned; revive on re-insert) | edge repair, background rebuild/memory reclaim |
 | Persistence | in-memory only | serialized into sealed segments |
 | Engine wiring | module + harness only | `search_execute` Hnsw route / collection index kind |
 
