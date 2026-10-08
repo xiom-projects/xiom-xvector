@@ -341,6 +341,43 @@ fn main() -> Int {
   qd.set(0, 1.0); qd.set(1, 0.0);
   var after_all = hnsw_search(&small, &qd, 3, 8, DistanceMetric.Euclidean);
   fails = check(after_all.len() == 0, "all tombstoned -> empty search", fails);
+  var small_c = hnsw_compact(&small, DistanceMetric.Euclidean);
+  fails = check(hnsw_size(&small_c) == 0 && hnsw_live_count(&small_c) == 0,
+    "compact(all deleted) -> empty graph", fails);
+
+  // --- compaction: rebuild from live nodes, reclaim tombstones ---
+  var delc: Int = 101;
+  while delc <= 150 {
+    hnsw_delete(&mut graph, delc);
+    index_remove(&mut flat, delc);
+    delc = delc + 1;
+  }
+  fails = check(hnsw_live_count(&graph) == 150 && hnsw_size(&graph) == 200,
+    "pre-compact: 50 tombstoned, size 200, live 150", fails);
+  var compacted = hnsw_compact(&graph, DistanceMetric.Euclidean);
+  fails = check(hnsw_size(&compacted) == 150 && hnsw_live_count(&compacted) == 150,
+    "hnsw_compact: size 150, live 150, no tombstones", fails);
+  var stray_c: Int = 0;
+  var hits_c: Int = 0;
+  qi = 0;
+  while qi < 20 {
+    var qcc = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut qcc);
+    var qc = vec_from_coords(&qcc);
+    var o = search_knn(&flat, &qc, k, DistanceMetric.Euclidean);
+    var a = hnsw_search(&compacted, &qc, k, 64, DistanceMetric.Euclidean);
+    hits_c = hits_c + hit_count(&o, &a, k);
+    var t2: Int = 0;
+    while t2 < a.len() {
+      if (a[t2].id as Int) >= 101 && (a[t2].id as Int) <= 150 { stray_c = stray_c + 1; }
+      t2 = t2 + 1;
+    }
+    qi = qi + 1;
+  }
+  io.println("    diag compacted: recall@10 ef=64 " + int_to_str(hits_c) + "/" + int_to_str(20 * k)
+    + "  stray_deleted=" + int_to_str(stray_c));
+  fails = check(stray_c == 0 && hits_c * 100 >= 20 * k * 80,
+    "compacted graph: no deleted ids returned, recall >= 0.80", fails);
 
   // --- cold graph + dimension mismatch are safe ---
   var cold = hnsw_new(4, 4.0);

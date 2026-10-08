@@ -191,6 +191,33 @@ fn main() -> Int {
   upsert(&mut flat, 7, vr2);
   fails = check(hnsw_live_count(&ann.graph) == n, "re-upsert revives the graph node (live 150)", fails);
 
+  // --- compaction via the facade ---
+  match delete_point(&mut ann, 8) { Ok(_) => {} Err(_) => { fails = fails + 1; } }
+  match delete_point(&mut flat, 8) { Ok(_) => {} Err(_) => { fails = fails + 1; } }
+  var reclaimed: Int = -1;
+  match compact_index(&mut ann) {
+    Ok(cnt) => { reclaimed = cnt; }
+    Err(_) => { fails = fails + 1; }
+  }
+  fails = check(reclaimed == 1 && hnsw_size(&ann.graph) == n - 1 && hnsw_live_count(&ann.graph) == n - 1,
+    "compact_index reclaims 1 node (graph 149, live 149)", fails);
+  var hits_c2: Int = 0;
+  q = 0;
+  while q < 5 {
+    var c = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut c);
+    var qv = vec_from_coords(&c);
+    var o = eng_search(&flat, &qv, k);
+    var a = eng_search(&ann, &qv, k);
+    hits_c2 = hits_c2 + hit_count(&o, &a, k);
+    q = q + 1;
+  }
+  fails = check(hits_c2 * 100 >= 5 * k * 80, "post-compact engine recall@10 >= 0.80", fails);
+  match compact_index(&mut flat) {
+    Ok(z) => { fails = check(z == 0, "compact_index on Flat -> 0", fails); }
+    Err(_) => { fails = fails + 1; }
+  }
+
   // --- filtered search stays exact on an Hnsw collection ---
   i = 1;
   while i <= 5 {
@@ -231,9 +258,9 @@ fn main() -> Int {
 
   // --- recover rebuilds the flat store; Hnsw re-applies ---
   var rec = engine_recover(&ann.wal, dim, DistanceMetric.Euclidean);
-  fails = check(engine_size(&rec) == n, "engine_recover rebuilds the store (150)", fails);
+  fails = check(engine_size(&rec) == n - 1, "engine_recover rebuilds the store (149, point 8 deleted)", fails);
   match set_index(&mut rec, AnnIndexKind.Hnsw, ann_params_default()) {
-    Ok(ok) => { fails = check(ok && hnsw_size(&rec.graph) == n, "recovered engine re-applies Hnsw (graph 150)", fails); }
+    Ok(ok) => { fails = check(ok && hnsw_size(&rec.graph) == n - 1, "recovered engine re-applies Hnsw (graph 149)", fails); }
     Err(_) => { fails = check(false, "recovered set_index(Hnsw) -> Ok", fails); }
   }
   var hits_rec: Int = 0;

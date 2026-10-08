@@ -106,6 +106,22 @@ pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnP
   return Ok(true);
 }
 
+// Compact the ANN graph: rebuild it from the live nodes, reclaiming
+// tombstoned slots (no-op returning 0 for a Flat collection). The flat
+// store is untouched. Returns the number of reclaimed graph nodes.
+pub fn engine_compact_index(eng: &mut VectorEngine) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  if eng.index_kind != AnnIndexKind.Hnsw {
+    return Ok(0);
+  }
+  var before: Int = hnsw_size(&eng.graph);
+  var fresh = hnsw_compact(&eng.graph, eng.metric);
+  eng.graph = fresh;
+  var after: Int = hnsw_size(&eng.graph);
+  return Ok(before - after);
+}
+
 pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError]
   requires: eng.created
 {
