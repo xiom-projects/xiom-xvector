@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (21 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (22 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -16,14 +16,15 @@ payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
-shape pins + unwind decision -> HNSW+filter integration).
+shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
+decoder hardening [XVC-C-10 found]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `654c04c` (feat: HNSW+filter
-integration), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `c6a17f0` (feat: decoder hardening +
+fuzz gate), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -33,7 +34,7 @@ integration), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `654c04c` + this wrap commit | this repo |
+| xvector | `c6a17f0` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -138,6 +139,15 @@ integration), then this wrap commit. Identity `Lefteris Notas
   filtered branch; Flat keeps the planner. Gate `probe_engine_hnsw`:
   majority filter k-filled 8/8 with recall 80/80 vs the oracle; 1- and
   3-match filters fall back bit-identically; zero-match empty; stress 6/6.
+- **Fuzz gate + decoder hardening:** new `probe_fuzz_codecs.xi`
+  (deterministic random/mutated/truncated streams into `payload_decode`,
+  `hnsw_decode`, WAL replay + chained checkpoint). It found **XVC-C-10**:
+  `hnsw_decode`'s inline pad loop segfaulted at `m >= 512`; fixed by moving
+  the pad step behind `pad_adj_slots` and adding strict bounds
+  (`m <= 512`, `count <= words.len()`). Repro pinned at `e0b1f7f`:
+  `docs/repro/xv-decode-pad-loop/`. Gate: 400+400+200 cases green,
+  invariants hold on every `Some`, recovery keeps exactly the valid
+  records; stress 6/6.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -151,21 +161,22 @@ final extraction wave):**
   in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
-- All **14 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- All **15 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
-  `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes` (run via
-  `scripts\run-probe.ps1`).
-- WSL spot: `probe_result_shapes` x2 + `probe_bind_semantics` x2 +
-  `probe_hnsw_codec` x2 + `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 +
-  `probe_filter_plan` x2 + `probe_filtered_search` x1 + `probe_vector_store`
-  green (`bash scripts/run-probe.sh`).
+  `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
+  `probe_fuzz_codecs` (run via `scripts\run-probe.ps1`).
+- WSL spot: `probe_fuzz_codecs` x2 + `probe_hnsw_codec` x1 + the pad-loop
+  repro probe + `probe_result_shapes` x2 + `probe_bind_semantics` x2 +
+  `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 + `probe_filter_plan` x2 +
+  `probe_filtered_search` x1 + `probe_vector_store` green
+  (`bash scripts/run-probe.sh`).
 - Stresses: `probe_search_request` 8/8, `probe_payload_index` 6/6,
   `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6,
-  `probe_hnsw_codec` 6/6, `probe_result_shapes` 8/8, `probe_bind_semantics`
-  8/8 fresh builds (see XVC-C-08 for why trailing-field reads are not
-  asserted in the suite).
+  `probe_hnsw_codec` 6/6, `probe_fuzz_codecs` 6/6, `probe_result_shapes` 8/8,
+  `probe_bind_semantics` 8/8 fresh builds (see XVC-C-08 for why
+  trailing-field reads are not asserted in the suite).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -189,8 +200,12 @@ final extraction wave):**
   sensitive lowering; same family as C-08). Worked around (local graph then
   single field assign). Repro pinned at `bca8b7f`:
   `docs/repro/xv-wsl-nested-field/`.
+- **XVC-C-10 OPEN (new on v0.64.1):** `hnsw_decode`'s inline pad loop
+  segfaulted at `m >= 512` (Windows + WSL) on otherwise pristine streams.
+  Worked around (`pad_adj_slots` function boundary + strict bounds). Repro
+  pinned at `e0b1f7f`: `docs/repro/xv-decode-pad-loop/`.
 - Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addendum 3 =
-  v0.64.1 results; Addendum 4 = XVC-C-08; Addendum 5 = XVC-C-09).
+  v0.64.1 results; 4 = C-08; 5 = C-09; 6 = C-10).
 
 ---
 
@@ -198,10 +213,9 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Fuzz probes (slice 2 of the extension):** deterministic LCG-driven
-   fuzz of `payload_decode`, `hnsw_decode` and WAL replay with
-   random/tampered words -- must never crash, only return `None`/valid.
-   Then: soak harness (mixed workload + invariants), HNSW harness latency
+1. **Soak harness (slice 3 of the extension):** sustained mixed workload
+   (upserts/searches/deletes/payload sets/compaction/recovery) with
+   invariant checks and bounded runtime. Then: HNSW harness latency
    metrics, E stretch (multi-key / index-driven candidates), release-prep
    drafts (CI with SHA-pinned actions, version stamp, checklist; publish
    stays owner-gated). M2 stays parked until stdlib fd/fsync lands
@@ -266,6 +280,11 @@ The extraction tree is final; what remains is capability work.
   Windows is green.** Build the nested value in a local and assign the field
   once; repro `docs/repro/xv-wsl-nested-field/` (pinned `bca8b7f`). Always
   run the WSL spot before trusting a green Windows wrap.
+- **XVC-C-10 (open): `hnsw_decode`'s inline pad loop segfaults at larger
+  `m`.** Keep large-volume push loops behind function boundaries and bound
+  strict decode (`m <= 512`, `count <= words.len()`); repro
+  `docs/repro/xv-decode-pad-loop/` (pinned `e0b1f7f`); general gate
+  `probe_fuzz_codecs`.
 - Historical v0.64.0-era traps (C-01..C-06) are fixed; if any reappears,
   open a delta row instead of re-bisecting (details in the findings doc).
 - Keep numeric gates per build (suite/probes assert exact bits; red = build
@@ -301,8 +320,8 @@ The extraction tree is final; what remains is capability work.
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/9 fixed (v0.64.1); C-07 + C-08 + C-09 open |
-| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = v0.64.1 re-test; 4 = C-08; 5 = C-09 |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/10 fixed (v0.64.1); C-07 + C-08 + C-09 + C-10 open |
+| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = re-test; 4 = C-08; 5 = C-09; 6 = C-10 |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still blocking M2 |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
@@ -327,7 +346,7 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-168/168 x2 (Windows + WSL), 14 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 15 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -348,24 +367,26 @@ probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
 hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
 hnsw_decode strict graph codec; beam construction honouring
 ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
-pin probe; C-01 bind pin; HNSW+filter integration with exact fallback).
+pin probe; C-01 bind pin; HNSW+filter integration with exact fallback;
+deterministic fuzz gate + decoder hardening [XVC-C-10 found]).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
 docs/repro/xv-trailing-field-vec; gate such reads only in real-module
 probes); XVC-C-09 OPEN (WSL-only nested-field mutation segfault; build into
 a local then assign once; repro docs/repro/xv-wsl-nested-field pinned at
-bca8b7f).
+bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
+pad step behind pad_adj_slots + strict bounds; repro
+docs/repro/xv-decode-pad-loop pinned at e0b1f7f).
 
-NEXT TASK (priority 1): fuzz probes (deterministic LCG-driven tamper/fuzz
-of payload_decode, hnsw_decode and WAL replay -- never crash, only return
-None/valid), then the soak harness (mixed workload + invariants), HNSW
-harness latency metrics, E stretch (multi-key / index-driven candidates),
-release-prep drafts (CI with SHA-pinned actions, version stamp, checklist;
-publish stays owner-gated). M2 standby until stdlib lands
-fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08). Keep
-the wrap discipline: suite x2 (Win+WSL), all 14 probes x2 (Win) + WSL
-spot, signed commits, docs updated.
+NEXT TASK (priority 1): soak harness (slice 3) -- sustained mixed workload
+(upserts/searches/deletes/payload sets/compaction/recovery) with invariant
+checks and bounded runtime; then HNSW harness latency metrics, E stretch
+(multi-key / index-driven candidates), release-prep drafts (CI with
+SHA-pinned actions, version stamp, checklist; publish stays owner-gated).
+M2 standby until stdlib lands fsync/fd-write/append-bytes (still stubs --
+re-checked 2026-10-08). Keep the wrap discipline: suite x2 (Win+WSL), all
+15 probes x2 (Win) + WSL spot, signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module

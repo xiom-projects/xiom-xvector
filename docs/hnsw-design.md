@@ -133,13 +133,15 @@ wrapper is `compact_index` (Flat -> 0 reclaimed).
 `hnsw_encode(g) -> Vec[Int]` / `hnsw_decode(words) -> Option[HNSWGraph]` is
 a deterministic word codec mirroring the WAL style: header
 (`version=2, m, ml_bits, ef_construction, layer_capacity, entry,
-node_count`), then per node
-`id, level, deleted, vector words` (via `storage.vector_store.vector_encode`)
+node_count`), then per node`id, level, deleted, vector words` (via `storage.vector_store.vector_encode`)
 followed by every layer row's degree + neighbor positions. Decode is
 strict: truncated, tampered, out-of-range, or trailing-junk input returns
-`None` (torn-record tolerance). The codec is the step before file-backed
-graph segments (stdlib fd/fsync pending); today the engine still rebuilds
-the graph from the flat store on load, which the codec will replace.
+`None` (torn-record tolerance), `m > 512` (AnnParams max degree) and
+`count > words.len()` are rejected, and the pad step lives behind
+`pad_adj_slots` (XVC-C-10: the inline loop segfaulted at larger `m`). The
+codec is the step before file-backed graph segments (stdlib fd/fsync
+pending); today the engine still rebuilds the graph from the flat store on
+load, which the codec will replace.
 
 ## Contracts
 
