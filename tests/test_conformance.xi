@@ -4,6 +4,7 @@
 module xiom.vector.tests.test_conformance
 
 use xiom.io;
+use xiom.num.float;
 use xiom.test;
 
 fn int_to_str(n: Int) -> Str {
@@ -64,6 +65,12 @@ pub type VectorIndex = {
 pub type SearchResult = {
   id: Int;
   distance: Float32;
+}
+
+// Ok-payload wrapper mirroring engine.xi (XVC-C-04: Result[Vec[non-scalar]]
+// loses element fields on v0.64.0; wrapping the Vec in a struct preserves it).
+pub type SearchHits = {
+  items: Vec[SearchResult];
 }
 
 pub enum WalOpKind {
@@ -448,6 +455,32 @@ fn index_size(idx: &VectorIndex) -> Int {
   return idx.ids.len();
 }
 
+// ---- Durable vector codec (mirrors engine.xi) ----
+fn vector_encode(v: &Vector) -> Vec[Int] {
+  var out = Vec[Int].new();
+  out.push(v.dimension);
+  var i: Int = 0;
+  while i < v.dimension {
+    out.push(float.float_bits(v.data[i] as Float64));
+    i = i + 1;
+  }
+  return out;
+}
+
+fn vector_decode(payload: &Vec[Int]) -> Option[Vector] {
+  if payload.len() < 1 { return None; }
+  var dim = payload[0];
+  if !is_valid_dimension(dim) { return None; }
+  if payload.len() != dim + 1 { return None; }
+  var v = vector_new(dim);
+  var i: Int = 0;
+  while i < dim {
+    v.data[i] = float.bits_to_float(payload[i + 1]) as Float32;
+    i = i + 1;
+  }
+  return Some(v);
+}
+
 fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMetric) -> Vec[SearchResult]
   requires: k > 0
   requires: idx.dim == query.dimension
@@ -500,6 +533,31 @@ fn wal_writer_flush(w: &mut WalWriter) -> Bool {
   return true;
 }
 
+fn wal_writer_append_payload(w: &mut WalWriter, op: WalOpKind, key: Int, value: Int, payload: Vec[Int]) -> Int {
+  var assigned = w.next_lsn;
+  var rec = WalRecord{
+    lsn: assigned, op: op, key: key, value: value, payload: payload, timestamp: 0,
+  };
+  w.records.push(rec);
+  w.next_lsn = w.next_lsn + 1;
+  return assigned;
+}
+
+fn wal_writer_resume(next_lsn: Int) -> WalWriter {
+  var records = Vec[WalRecord].new();
+  return WalWriter{ records: records, next_lsn: next_lsn, synced_lsn: next_lsn - 1 };
+}
+
+fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex) -> WalWriter {
+  var out = wal_writer_resume(w.next_lsn);
+  var i: Int = 0;
+  while i < idx.ids.len() {
+    wal_writer_append_payload(&mut out, WalOpKind.Insert, idx.ids[i], 1, vector_encode(&idx.vectors[i]));
+    i = i + 1;
+  }
+  return out;
+}
+
 fn counter_new(name: Str) -> Counter {
   return Counter{ name: name, value: 0 };
 }
@@ -540,26 +598,26 @@ fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Bool {
   if vec.dimension != eng.dimension {
     return false;
   }
-  wal_writer_append(&mut eng.wal, WalOpKind.Insert, 1, point);
+  var payload = vector_encode(&vec);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.Insert, point, 1, payload);
   var ok = index_add(&mut eng.store, point, vec);
   counter_inc(&mut eng.upserts);
   return ok;
 }
 
-fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Vec[SearchResult] {
+fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError] {
   if query.dimension != eng.dimension {
-    var empty = Vec[SearchResult].new();
-    return empty;
+    return Err(CoreError{ case: 1, msg: "dimension mismatch" });
   }
   if !is_valid_top_k(k) {
-    var empty = Vec[SearchResult].new();
-    return empty;
+    return Err(CoreError{ case: 1, msg: "top_k out of range" });
   }
-  return search_knn(&eng.store, query, k, eng.metric);
+  var hits = search_knn(&eng.store, query, k, eng.metric);
+  return Ok(SearchHits{ items: hits });
 }
 
 fn engine_delete(eng: &mut VectorEngine, point: Int) -> Bool {
-  wal_writer_append(&mut eng.wal, WalOpKind.Delete, 1, point);
+  wal_writer_append(&mut eng.wal, WalOpKind.Delete, point, 1);
   var ok = index_remove(&mut eng.store, point);
   counter_inc(&mut eng.deletes);
   return ok;
@@ -571,6 +629,46 @@ fn engine_size(eng: &VectorEngine) -> Int {
 
 fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
+}
+
+// ---- Recovery replay (mirrors engine.xi) ----
+fn recover_store(w: &WalWriter, dim: Int) -> VectorIndex
+  requires: dim > 0
+{
+  var idx = index_new(dim);
+  var i: Int = 0;
+  while i < w.records.len() {
+    var op = w.records[i].op;
+    var key = w.records[i].key;
+    match op {
+      Insert => {
+        match vector_decode(&w.records[i].payload) {
+          Some(v) => {
+            if v.dimension == dim { index_add(&mut idx, key, v); }
+          }
+          None => {}
+        }
+      }
+      Delete => {
+        index_remove(&mut idx, key);
+      }
+      _ => {}
+    }
+    i = i + 1;
+  }
+  return idx;
+}
+
+fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
+  requires: dim > 0
+{
+  var eng = engine_new();
+  eng.store = recover_store(w, dim);
+  eng.dimension = dim;
+  eng.metric = metric;
+  eng.created = true;
+  eng.wal = wal_writer_checkpoint_from(w, &eng.store);
+  return eng;
 }
 
 // ============================================================================
@@ -2168,16 +2266,23 @@ fn test_engine_create_collection() -> TestResult {
 }
 
 fn run_engine_create_collection_invalid() -> Int {
+  // `engine_create_collection` is contracted (`requires: dim >= 1`), so an
+  // out-of-range dim is rejected by the CONTRACT, not the body -- and on
+  // v0.64.0 a runtime requires-violation aborts the process with exit 0
+  // (XVC-C-02), which would silently kill the whole suite. Verify the
+  // predicate rejects invalid dims and the boundary dim=1 is accepted.
+  if is_valid_dimension(0) { return 1; }
+  if is_valid_dimension(65537) { return 1; }
   var eng = engine_new();
-  var cid = engine_create_collection(&mut eng, 0, DistanceMetric.Euclidean);
+  var cid = engine_create_collection(&mut eng, 1, DistanceMetric.Euclidean);
   match cid {
-    Some(_) => { return 1; }
-    None => { return 0; }
+    Some(_) => { return 0; }
+    None => { return 1; }
   }
 }
 fn test_engine_create_collection_invalid() -> TestResult {
-  if run_engine_create_collection_invalid() == 0 { return assert(true, "Engine: create_collection(0) rejects invalid dim"); }
-  return assert(false, "Engine: invalid dim should fail");
+  if run_engine_create_collection_invalid() == 0 { return assert(true, "Engine: invalid dim rejected by predicate; dim=1 accepted"); }
+  return assert(false, "Engine: invalid dim boundary failed");
 }
 
 fn run_engine_upsert() -> Int {
@@ -2218,13 +2323,45 @@ fn run_engine_search() -> Int {
   var v2 = vector_new(2); vector_set(&mut v2, 0, 100.0); engine_upsert(&mut eng, 20, v2);
   var query = vector_new(2);
   vector_set(&mut query, 0, 1.0);
-  var results = engine_search(&eng, &query, 1);
-  if results.len() == 1 && results[0].id == 10 { return 0; }
+  var r = engine_search(&eng, &query, 1);
+  match r {
+    Ok(h) => { if h.items.len() == 1 && h.items[0].id == 10 { return 0; } }
+    Err(_) => {}
+  }
   return 1;
 }
 fn test_engine_search() -> TestResult {
   if run_engine_search() == 0 { return assert(true, "Engine: search returns nearest (id=10)"); }
   return assert(false, "Engine: search failed");
+}
+
+fn run_search_hits_shape() -> Int {
+  // Regression guard for XVC-C-04: the Ok payload of a Result[Vec[struct]]
+  // used to arrive with zeroed element fields. The SearchHits wrapper must
+  // carry BOTH ids and non-zero distances through the Result.
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
+  var v1 = vector_new(2); vector_set(&mut v1, 0, 1.0);
+  var v2 = vector_new(2); vector_set(&mut v2, 0, 100.0);
+  engine_upsert(&mut eng, 10, v1);
+  engine_upsert(&mut eng, 20, v2);
+  var query = vector_new(2); vector_set(&mut query, 0, 1.0);
+  var r = engine_search(&eng, &query, 2);
+  match r {
+    Ok(h) => {
+      if h.items.len() != 2 { return 1; }
+      if h.items[0].id != 10 { return 2; }
+      if h.items[1].id != 20 { return 3; }
+      if !f32_approx(h.items[0].distance, 0.0, 0.0001) { return 4; }
+      if !f32_approx(h.items[1].distance, 99.0, 0.0001) { return 5; }
+      return 0;
+    }
+    Err(_) => { return 6; }
+  }
+}
+fn test_search_hits_shape() -> TestResult {
+  if run_search_hits_shape() == 0 { return assert(true, "SearchHits: Ok payload carries ids + distances"); }
+  return assert(false, "SearchHits: payload fields lost (XVC-C-04)");
 }
 
 fn run_engine_delete() -> Int {
@@ -2267,8 +2404,11 @@ fn run_engine_full_lifecycle() -> Int {
   vector_set(&mut query, 0, 1.0);
   vector_set(&mut query, 1, 0.0);
   vector_set(&mut query, 2, 0.0);
-  var results = engine_search(&eng, &query, 3);
-  if results.len() == 3 && results[0].id == 1 { return 0; }
+  var r = engine_search(&eng, &query, 3);
+  match r {
+    Ok(h) => { if h.items.len() == 3 && h.items[0].id == 1 { return 0; } }
+    Err(_) => {}
+  }
   return 1;
 }
 fn test_engine_full_lifecycle() -> TestResult {
@@ -2670,8 +2810,11 @@ fn run_engine_search_empty() -> Int {
   engine_create_collection(&mut eng, 2, DistanceMetric.Euclidean);
   var query = vector_new(2);
   vector_set(&mut query, 0, 1.0);
-  var results = engine_search(&eng, &query, 5);
-  if results.len() == 0 { return 0; }
+  var r = engine_search(&eng, &query, 5);
+  match r {
+    Ok(h) => { if h.items.len() == 0 { return 0; } }
+    Err(_) => {}
+  }
   return 1;
 }
 fn test_engine_search_empty() -> TestResult {
@@ -2754,11 +2897,219 @@ fn test_search_request_fields() -> TestResult {
 }
 
 // ============================================================================
+// SECTION 13: Durable codec + WAL recovery replay (Phase 2 slice)
+// ============================================================================
+
+fn mk_vec3(a: Float32, b: Float32, c: Float32) -> Vector {
+  var v = vector_new(3);
+  vector_set(&mut v, 0, a);
+  vector_set(&mut v, 1, b);
+  vector_set(&mut v, 2, c);
+  return v;
+}
+
+fn run_codec_roundtrip() -> Int {
+  var v = mk_vec3(1.5, -2.25, 0.0);
+  var payload = vector_encode(&v);
+  if payload.len() != 4 { return 1; }
+  if payload[0] != 3 { return 2; }
+  match vector_decode(&payload) {
+    Some(w) => {
+      if w.dimension != 3 { return 3; }
+      if !f32_eq(w.data[0], 1.5) { return 4; }
+      if !f32_eq(w.data[1], -2.25) { return 5; }
+      if !f32_eq(w.data[2], 0.0) { return 6; }
+      return 0;
+    }
+    None => { return 7; }
+  }
+}
+fn test_codec_roundtrip() -> TestResult {
+  if run_codec_roundtrip() == 0 { return assert(true, "Codec: Float32 value roundtrip"); }
+  return assert(false, "Codec: value roundtrip failed");
+}
+
+fn run_codec_bit_exactness() -> Int {
+  var v = vector_new(2);
+  vector_set(&mut v, 0, -0.0);
+  vector_set(&mut v, 1, 1.1754944e-38);   // smallest positive normal Float32
+  let b0 = float.float_bits(v.data[0] as Float64);
+  let b1 = float.float_bits(v.data[1] as Float64);
+  var payload = vector_encode(&v);
+  match vector_decode(&payload) {
+    Some(w) => {
+      if float.float_bits(w.data[0] as Float64) != b0 { return 1; }
+      if float.float_bits(w.data[1] as Float64) != b1 { return 2; }
+      return 0;
+    }
+    None => { return 3; }
+  }
+}
+fn test_codec_bit_exactness() -> TestResult {
+  if run_codec_bit_exactness() == 0 { return assert(true, "Codec: negative zero + subnormal bit-exact"); }
+  return assert(false, "Codec: bit exactness failed");
+}
+
+fn run_codec_malformed_rejected() -> Int {
+  var empty = Vec[Int].new();
+  match vector_decode(&empty) { Some(_) => { return 1; } None => {} }
+  var dim0 = Vec[Int].new(); dim0.push(0);
+  match vector_decode(&dim0) { Some(_) => { return 2; } None => {} }
+  var short = Vec[Int].new(); short.push(3); short.push(1);
+  match vector_decode(&short) { Some(_) => { return 3; } None => {} }
+  var huge = Vec[Int].new(); huge.push(65537);
+  match vector_decode(&huge) { Some(_) => { return 4; } None => {} }
+  return 0;
+}
+fn test_codec_malformed_rejected() -> TestResult {
+  if run_codec_malformed_rejected() == 0 { return assert(true, "Codec: malformed payloads -> None"); }
+  return assert(false, "Codec: malformed payload accepted");
+}
+
+fn run_recover_replays_inserts() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Euclidean);
+  var ok1 = engine_upsert(&mut eng, 10, mk_vec3(1.0, 0.0, 0.0));
+  var ok2 = engine_upsert(&mut eng, 20, mk_vec3(0.0, 1.0, 0.0));
+  if !ok1 || !ok2 { return 1; }
+  var recovered = recover_store(&eng.wal, 3);
+  if index_size(&recovered) != 2 { return 2; }
+  match index_get(&recovered, 10) {
+    Some(v) => { if !f32_eq(v.data[0], 1.0) { return 3; } }
+    None => { return 4; }
+  }
+  match index_get(&recovered, 20) {
+    Some(v) => { if !f32_eq(v.data[1], 1.0) { return 5; } }
+    None => { return 6; }
+  }
+  match index_get(&recovered, 99) {
+    Some(_) => { return 7; }
+    None => {}
+  }
+  return 0;
+}
+fn test_recover_replays_inserts() -> TestResult {
+  if run_recover_replays_inserts() == 0 { return assert(true, "Recovery: inserts replayed from WAL payloads"); }
+  return assert(false, "Recovery: insert replay failed");
+}
+
+fn run_recover_replays_delete() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Euclidean);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.0, 1.0, 0.0));
+  var okdel = engine_delete(&mut eng, 1);
+  if !okdel { return 1; }
+  var recovered = recover_store(&eng.wal, 3);
+  if index_size(&recovered) != 1 { return 2; }
+  match index_get(&recovered, 1) { Some(_) => { return 3; } None => {} }
+  match index_get(&recovered, 2) { Some(_) => {} None => { return 4; } }
+  return 0;
+}
+fn test_recover_replays_delete() -> TestResult {
+  if run_recover_replays_delete() == 0 { return assert(true, "Recovery: delete replayed, point stays gone"); }
+  return assert(false, "Recovery: delete replay failed");
+}
+
+fn run_recover_search_identical() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.9, 0.1, 0.0));
+  engine_upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
+  var query = mk_vec3(1.0, 0.0, 0.0);
+  var r_before = engine_search(&eng, &query, 2);
+  var recovered = engine_recover(&eng.wal, 3, DistanceMetric.Cosine);
+  var r_after = engine_search(&recovered, &query, 2);
+  var b = Vec[SearchResult].new();
+  var a = Vec[SearchResult].new();
+  match r_before { Ok(h) => { b = h.items; } Err(_) => {} }
+  match r_after { Ok(h) => { a = h.items; } Err(_) => {} }
+  if b.len() != a.len() { return 1; }
+  if b.len() != 2 { return 2; }
+  var i: Int = 0;
+  while i < b.len() {
+    if b[i].id != a[i].id { return 3; }
+    if !f32_approx(b[i].distance, a[i].distance, 0.0001) { return 4; }
+    i = i + 1;
+  }
+  return 0;
+}
+fn test_recover_search_identical() -> TestResult {
+  if run_recover_search_identical() == 0 { return assert(true, "Recovery: post-reopen search identical"); }
+  return assert(false, "Recovery: search diverged after reopen");
+}
+
+fn run_recover_lsn_continuity() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Euclidean);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.0, 1.0, 0.0));
+  let lsn_before = engine_durable_lsn(&eng);
+  if lsn_before != 2 { return 1; }
+  var recovered = engine_recover(&eng.wal, 3, DistanceMetric.Euclidean);
+  let lsn_recovered = engine_durable_lsn(&recovered);
+  if lsn_recovered < lsn_before { return 2; }   // LSNs stay monotonic
+  engine_upsert(&mut recovered, 3, mk_vec3(0.0, 0.0, 1.0));
+  if engine_durable_lsn(&recovered) != lsn_recovered + 1 { return 3; }
+  return 0;
+}
+fn test_recover_lsn_continuity() -> TestResult {
+  if run_recover_lsn_continuity() == 0 { return assert(true, "Recovery: LSN monotonic, +1 per write after reopen"); }
+  return assert(false, "Recovery: LSN continuity broken");
+}
+
+fn run_recover_twice() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Euclidean);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.0, 1.0, 0.0));
+  var r1 = engine_recover(&eng.wal, 3, DistanceMetric.Euclidean);
+  if engine_size(&r1) != 2 { return 1; }
+  engine_delete(&mut r1, 1);
+  var r2 = engine_recover(&r1.wal, 3, DistanceMetric.Euclidean);
+  if engine_size(&r2) != 1 { return 2; }
+  match index_get(&r2.store, 1) { Some(_) => { return 3; } None => {} }
+  match index_get(&r2.store, 2) { Some(_) => {} None => { return 4; } }
+  return 0;
+}
+fn test_recover_twice() -> TestResult {
+  if run_recover_twice() == 0 { return assert(true, "Recovery: chained reopen (recovered engine is recoverable)"); }
+  return assert(false, "Recovery: chained reopen failed");
+}
+
+fn run_recover_torn_tail_tolerated() -> Int {
+  var w = wal_writer_new();
+  var v1 = mk_vec3(1.0, 2.0, 3.0);
+  wal_writer_append_payload(&mut w, WalOpKind.Insert, 7, 1, vector_encode(&v1));
+  var torn = Vec[Int].new();
+  torn.push(3);   // dim says 3, only one float follows -> malformed
+  torn.push(1);
+  wal_writer_append_payload(&mut w, WalOpKind.Insert, 8, 1, torn);
+  var v2 = mk_vec3(4.0, 5.0, 6.0);
+  wal_writer_append_payload(&mut w, WalOpKind.Insert, 9, 1, vector_encode(&v2));
+  var recovered = recover_store(&w, 3);
+  if index_size(&recovered) != 2 { return 1; }
+  match index_get(&recovered, 7) { Some(_) => {} None => { return 2; } }
+  match index_get(&recovered, 8) { Some(_) => { return 3; } None => {} }
+  match index_get(&recovered, 9) { Some(_) => {} None => { return 4; } }
+  return 0;
+}
+fn test_recover_torn_tail_tolerated() -> TestResult {
+  if run_recover_torn_tail_tolerated() == 0 { return assert(true, "Recovery: torn payload skipped, later records replayed"); }
+  return assert(false, "Recovery: torn tail handling failed");
+}
+
+// ============================================================================
 // Main -- manual dispatch
 // ============================================================================
 
-fn run_one_test(fn_ptr: &fn() -> TestResult) -> Int {
-  return report(fn_ptr().passed, fn_ptr().name);
+// NOTE: dispatch by evaluated result, not `&fn()` pointers. On compiler
+// v0.64.0 a `&fn() -> T` parameter called as `f()` emits invalid LLVM IR
+// (`inttoptr ptr to ptr`, clang exit 1) and `(*f)()` compiles but crashes
+// (exit 0xC0000005). Finding XVC-C-01; repro docs/repro/xv-fnptr-call-inttoptr/.
+fn run_one_test(r: TestResult) -> Int {
+  return report(r.passed, r.name);
 }
 
 fn main() -> Int {
@@ -2766,156 +3117,168 @@ fn main() -> Int {
   var failed: Int = 0; var total: Int = 0;
 
   // SECTION 1: Types
-  failed = failed + run_one_test(&test_types_vector_id_construct); total = total + 1;
-  failed = failed + run_one_test(&test_types_collection_id_construct); total = total + 1;
-  failed = failed + run_one_test(&test_types_segment_id_construct); total = total + 1;
-  failed = failed + run_one_test(&test_types_segment_id_eq); total = total + 1;
-  failed = failed + run_one_test(&test_types_dimension_construct); total = total + 1;
-  failed = failed + run_one_test(&test_types_dimension_eq); total = total + 1;
-  failed = failed + run_one_test(&test_types_dimension_is_valid); total = total + 1;
+  failed = failed + run_one_test(test_types_vector_id_construct()); total = total + 1;
+  failed = failed + run_one_test(test_types_collection_id_construct()); total = total + 1;
+  failed = failed + run_one_test(test_types_segment_id_construct()); total = total + 1;
+  failed = failed + run_one_test(test_types_segment_id_eq()); total = total + 1;
+  failed = failed + run_one_test(test_types_dimension_construct()); total = total + 1;
+  failed = failed + run_one_test(test_types_dimension_eq()); total = total + 1;
+  failed = failed + run_one_test(test_types_dimension_is_valid()); total = total + 1;
 
   // SECTION 2: Distance metrics
-  failed = failed + run_one_test(&test_distance_euclidean_same); total = total + 1;
-  failed = failed + run_one_test(&test_distance_euclidean_345); total = total + 1;
-  failed = failed + run_one_test(&test_distance_cosine_identical); total = total + 1;
-  failed = failed + run_one_test(&test_distance_cosine_orthogonal); total = total + 1;
-  failed = failed + run_one_test(&test_distance_cosine_opposite); total = total + 1;
-  failed = failed + run_one_test(&test_distance_cosine_zero_vector); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dot_same); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dot_orthogonal); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dispatch_euclidean); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dispatch_cosine); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dispatch_dot); total = total + 1;
-  failed = failed + run_one_test(&test_distance_magnitude); total = total + 1;
-  failed = failed + run_one_test(&test_distance_magnitude_zero); total = total + 1;
-  failed = failed + run_one_test(&test_distance_dot_raw); total = total + 1;
+  failed = failed + run_one_test(test_distance_euclidean_same()); total = total + 1;
+  failed = failed + run_one_test(test_distance_euclidean_345()); total = total + 1;
+  failed = failed + run_one_test(test_distance_cosine_identical()); total = total + 1;
+  failed = failed + run_one_test(test_distance_cosine_orthogonal()); total = total + 1;
+  failed = failed + run_one_test(test_distance_cosine_opposite()); total = total + 1;
+  failed = failed + run_one_test(test_distance_cosine_zero_vector()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dot_same()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dot_orthogonal()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dispatch_euclidean()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dispatch_cosine()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dispatch_dot()); total = total + 1;
+  failed = failed + run_one_test(test_distance_magnitude()); total = total + 1;
+  failed = failed + run_one_test(test_distance_magnitude_zero()); total = total + 1;
+  failed = failed + run_one_test(test_distance_dot_raw()); total = total + 1;
 
   // SECTION 3: Vector store
-  failed = failed + run_one_test(&test_store_index_new); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_add); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_add_duplicate); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_get); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_get_miss); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_remove); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_remove_miss); total = total + 1;
-  failed = failed + run_one_test(&test_store_index_add_multiple); total = total + 1;
+  failed = failed + run_one_test(test_store_index_new()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_add()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_add_duplicate()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_get()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_get_miss()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_remove()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_remove_miss()); total = total + 1;
+  failed = failed + run_one_test(test_store_index_add_multiple()); total = total + 1;
 
   // SECTION 4: HNSW index (params only, HNSW has T001 errors per AUDIT.md)
-  failed = failed + run_one_test(&test_hnsw_params_valid); total = total + 1;
-  failed = failed + run_one_test(&test_hnsw_params_invalid_m); total = total + 1;
-  failed = failed + run_one_test(&test_hnsw_params_m_too_high); total = total + 1;
-  failed = failed + run_one_test(&test_hnsw_params_invalid_efc); total = total + 1;
-  failed = failed + run_one_test(&test_hnsw_params_invalid_efs); total = total + 1;
-  failed = failed + run_one_test(&test_hnsw_params_default_values); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_valid()); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_invalid_m()); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_m_too_high()); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_invalid_efc()); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_invalid_efs()); total = total + 1;
+  failed = failed + run_one_test(test_hnsw_params_default_values()); total = total + 1;
 
   // SECTION 5: Flat index
-  failed = failed + run_one_test(&test_flat_search_exact_top1); total = total + 1;
-  failed = failed + run_one_test(&test_flat_search_results_bounded); total = total + 1;
-  failed = failed + run_one_test(&test_flat_search_ordered); total = total + 1;
-  failed = failed + run_one_test(&test_flat_search_all_metrics); total = total + 1;
+  failed = failed + run_one_test(test_flat_search_exact_top1()); total = total + 1;
+  failed = failed + run_one_test(test_flat_search_results_bounded()); total = total + 1;
+  failed = failed + run_one_test(test_flat_search_ordered()); total = total + 1;
+  failed = failed + run_one_test(test_flat_search_all_metrics()); total = total + 1;
 
   // SECTION 6: Segment management
-  failed = failed + run_one_test(&test_segment_new); total = total + 1;
-  failed = failed + run_one_test(&test_segment_insert); total = total + 1;
-  failed = failed + run_one_test(&test_segment_transition_mutable_sealing); total = total + 1;
-  failed = failed + run_one_test(&test_segment_transition_full_lifecycle); total = total + 1;
-  failed = failed + run_one_test(&test_segment_transition_illegal); total = total + 1;
-  failed = failed + run_one_test(&test_segment_transition_sealed_indexing_ok); total = total + 1;
-  failed = failed + run_one_test(&test_segment_transition_dropped_terminal); total = total + 1;
-  failed = failed + run_one_test(&test_manifest_new); total = total + 1;
-  failed = failed + run_one_test(&test_manifest_add_remove); total = total + 1;
-  failed = failed + run_one_test(&test_manifest_remove_miss); total = total + 1;
-  failed = failed + run_one_test(&test_manifest_lsn); total = total + 1;
-  failed = failed + run_one_test(&test_state_is_writable); total = total + 1;
-  failed = failed + run_one_test(&test_state_is_terminal); total = total + 1;
-  failed = failed + run_one_test(&test_state_code_all); total = total + 1;
+  failed = failed + run_one_test(test_segment_new()); total = total + 1;
+  failed = failed + run_one_test(test_segment_insert()); total = total + 1;
+  failed = failed + run_one_test(test_segment_transition_mutable_sealing()); total = total + 1;
+  failed = failed + run_one_test(test_segment_transition_full_lifecycle()); total = total + 1;
+  failed = failed + run_one_test(test_segment_transition_illegal()); total = total + 1;
+  failed = failed + run_one_test(test_segment_transition_sealed_indexing_ok()); total = total + 1;
+  failed = failed + run_one_test(test_segment_transition_dropped_terminal()); total = total + 1;
+  failed = failed + run_one_test(test_manifest_new()); total = total + 1;
+  failed = failed + run_one_test(test_manifest_add_remove()); total = total + 1;
+  failed = failed + run_one_test(test_manifest_remove_miss()); total = total + 1;
+  failed = failed + run_one_test(test_manifest_lsn()); total = total + 1;
+  failed = failed + run_one_test(test_state_is_writable()); total = total + 1;
+  failed = failed + run_one_test(test_state_is_terminal()); total = total + 1;
+  failed = failed + run_one_test(test_state_code_all()); total = total + 1;
 
   // SECTION 7: Collection
-  failed = failed + run_one_test(&test_collection_schema_new); total = total + 1;
-  failed = failed + run_one_test(&test_collection_schema_normalization); total = total + 1;
-  failed = failed + run_one_test(&test_collection_schema_add_field); total = total + 1;
-  failed = failed + run_one_test(&test_collection_schema_dimension); total = total + 1;
-  failed = failed + run_one_test(&test_collection_new); total = total + 1;
-  failed = failed + run_one_test(&test_collection_register_segment); total = total + 1;
-  failed = failed + run_one_test(&test_validate_dimension_ok); total = total + 1;
-  failed = failed + run_one_test(&test_validate_dimension_mismatch); total = total + 1;
-  failed = failed + run_one_test(&test_validate_metric_all); total = total + 1;
+  failed = failed + run_one_test(test_collection_schema_new()); total = total + 1;
+  failed = failed + run_one_test(test_collection_schema_normalization()); total = total + 1;
+  failed = failed + run_one_test(test_collection_schema_add_field()); total = total + 1;
+  failed = failed + run_one_test(test_collection_schema_dimension()); total = total + 1;
+  failed = failed + run_one_test(test_collection_new()); total = total + 1;
+  failed = failed + run_one_test(test_collection_register_segment()); total = total + 1;
+  failed = failed + run_one_test(test_validate_dimension_ok()); total = total + 1;
+  failed = failed + run_one_test(test_validate_dimension_mismatch()); total = total + 1;
+  failed = failed + run_one_test(test_validate_metric_all()); total = total + 1;
 
   // SECTION 8: Payload
-  failed = failed + run_one_test(&test_payload_new); total = total + 1;
-  failed = failed + run_one_test(&test_payload_set_has); total = total + 1;
-  failed = failed + run_one_test(&test_payload_len); total = total + 1;
-  failed = failed + run_one_test(&test_field_value_kind); total = total + 1;
-  failed = failed + run_one_test(&test_filter_exists_true); total = total + 1;
-  failed = failed + run_one_test(&test_filter_exists_false); total = total + 1;
-  failed = failed + run_one_test(&test_filter_eq); total = total + 1;
-  failed = failed + run_one_test(&test_filter_and_both_true); total = total + 1;
-  failed = failed + run_one_test(&test_filter_and_one_false); total = total + 1;
-  failed = failed + run_one_test(&test_filter_or_one_true); total = total + 1;
-  failed = failed + run_one_test(&test_filter_or_both_false); total = total + 1;
-  failed = failed + run_one_test(&test_filter_not_true); total = total + 1;
-  failed = failed + run_one_test(&test_filter_not_false); total = total + 1;
-  failed = failed + run_one_test(&test_filter_empty_not); total = total + 1;
+  failed = failed + run_one_test(test_payload_new()); total = total + 1;
+  failed = failed + run_one_test(test_payload_set_has()); total = total + 1;
+  failed = failed + run_one_test(test_payload_len()); total = total + 1;
+  failed = failed + run_one_test(test_field_value_kind()); total = total + 1;
+  failed = failed + run_one_test(test_filter_exists_true()); total = total + 1;
+  failed = failed + run_one_test(test_filter_exists_false()); total = total + 1;
+  failed = failed + run_one_test(test_filter_eq()); total = total + 1;
+  failed = failed + run_one_test(test_filter_and_both_true()); total = total + 1;
+  failed = failed + run_one_test(test_filter_and_one_false()); total = total + 1;
+  failed = failed + run_one_test(test_filter_or_one_true()); total = total + 1;
+  failed = failed + run_one_test(test_filter_or_both_false()); total = total + 1;
+  failed = failed + run_one_test(test_filter_not_true()); total = total + 1;
+  failed = failed + run_one_test(test_filter_not_false()); total = total + 1;
+  failed = failed + run_one_test(test_filter_empty_not()); total = total + 1;
 
   // SECTION 9: Search
-  failed = failed + run_one_test(&test_topk_new); total = total + 1;
-  failed = failed + run_one_test(&test_topk_push_bounded); total = total + 1;
-  failed = failed + run_one_test(&test_topk_push_sorted); total = total + 1;
-  failed = failed + run_one_test(&test_topk_is_full); total = total + 1;
-  failed = failed + run_one_test(&test_topk_worst); total = total + 1;
-  failed = failed + run_one_test(&test_topk_worst_empty); total = total + 1;
-  failed = failed + run_one_test(&test_engine_new); total = total + 1;
-  failed = failed + run_one_test(&test_engine_create_collection); total = total + 1;
-  failed = failed + run_one_test(&test_engine_create_collection_invalid); total = total + 1;
-  failed = failed + run_one_test(&test_engine_upsert); total = total + 1;
-  failed = failed + run_one_test(&test_engine_upsert_dim_mismatch); total = total + 1;
-  failed = failed + run_one_test(&test_engine_search); total = total + 1;
-  failed = failed + run_one_test(&test_engine_delete); total = total + 1;
-  failed = failed + run_one_test(&test_engine_delete_miss); total = total + 1;
-  failed = failed + run_one_test(&test_engine_full_lifecycle); total = total + 1;
+  failed = failed + run_one_test(test_topk_new()); total = total + 1;
+  failed = failed + run_one_test(test_topk_push_bounded()); total = total + 1;
+  failed = failed + run_one_test(test_topk_push_sorted()); total = total + 1;
+  failed = failed + run_one_test(test_topk_is_full()); total = total + 1;
+  failed = failed + run_one_test(test_topk_worst()); total = total + 1;
+  failed = failed + run_one_test(test_topk_worst_empty()); total = total + 1;
+  failed = failed + run_one_test(test_engine_new()); total = total + 1;
+  failed = failed + run_one_test(test_engine_create_collection()); total = total + 1;
+  failed = failed + run_one_test(test_engine_create_collection_invalid()); total = total + 1;
+  failed = failed + run_one_test(test_engine_upsert()); total = total + 1;
+  failed = failed + run_one_test(test_engine_upsert_dim_mismatch()); total = total + 1;
+  failed = failed + run_one_test(test_engine_search()); total = total + 1;
+  failed = failed + run_one_test(test_search_hits_shape()); total = total + 1;
+  failed = failed + run_one_test(test_engine_delete()); total = total + 1;
+  failed = failed + run_one_test(test_engine_delete_miss()); total = total + 1;
+  failed = failed + run_one_test(test_engine_full_lifecycle()); total = total + 1;
 
   // SECTION 10: ANN index
-  failed = failed + run_one_test(&test_ann_kind_names); total = total + 1;
-  failed = failed + run_one_test(&test_ann_kind_enum_variants); total = total + 1;
-  failed = failed + run_one_test(&test_ann_params_collection_attached); total = total + 1;
+  failed = failed + run_one_test(test_ann_kind_names()); total = total + 1;
+  failed = failed + run_one_test(test_ann_kind_enum_variants()); total = total + 1;
+  failed = failed + run_one_test(test_ann_params_collection_attached()); total = total + 1;
 
   // SECTION 11: Error types
-  failed = failed + run_one_test(&test_error_dimension_mismatch); total = total + 1;
-  failed = failed + run_one_test(&test_error_unsupported_metric); total = total + 1;
-  failed = failed + run_one_test(&test_error_collection_not_found); total = total + 1;
-  failed = failed + run_one_test(&test_error_invalid_vector); total = total + 1;
-  failed = failed + run_one_test(&test_error_segment_sealed); total = total + 1;
-  failed = failed + run_one_test(&test_error_topk_exceeded); total = total + 1;
-  failed = failed + run_one_test(&test_error_to_str_all); total = total + 1;
-  failed = failed + run_one_test(&test_error_codes_unique); total = total + 1;
+  failed = failed + run_one_test(test_error_dimension_mismatch()); total = total + 1;
+  failed = failed + run_one_test(test_error_unsupported_metric()); total = total + 1;
+  failed = failed + run_one_test(test_error_collection_not_found()); total = total + 1;
+  failed = failed + run_one_test(test_error_invalid_vector()); total = total + 1;
+  failed = failed + run_one_test(test_error_segment_sealed()); total = total + 1;
+  failed = failed + run_one_test(test_error_topk_exceeded()); total = total + 1;
+  failed = failed + run_one_test(test_error_to_str_all()); total = total + 1;
+  failed = failed + run_one_test(test_error_codes_unique()); total = total + 1;
 
   // SECTION 12: Durability/engine
-  failed = failed + run_one_test(&test_wal_new); total = total + 1;
-  failed = failed + run_one_test(&test_wal_append); total = total + 1;
-  failed = failed + run_one_test(&test_wal_append_multiple); total = total + 1;
-  failed = failed + run_one_test(&test_wal_current_lsn); total = total + 1;
-  failed = failed + run_one_test(&test_wal_flush); total = total + 1;
-  failed = failed + run_one_test(&test_wal_before_ack_contract); total = total + 1;
-  failed = failed + run_one_test(&test_counter_new); total = total + 1;
-  failed = failed + run_one_test(&test_counter_inc); total = total + 1;
-  failed = failed + run_one_test(&test_engine_counters); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_new); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_put_lookup); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_put_update); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_remove); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_remove_miss); total = total + 1;
-  failed = failed + run_one_test(&test_id_map_lookup_miss); total = total + 1;
+  failed = failed + run_one_test(test_wal_new()); total = total + 1;
+  failed = failed + run_one_test(test_wal_append()); total = total + 1;
+  failed = failed + run_one_test(test_wal_append_multiple()); total = total + 1;
+  failed = failed + run_one_test(test_wal_current_lsn()); total = total + 1;
+  failed = failed + run_one_test(test_wal_flush()); total = total + 1;
+  failed = failed + run_one_test(test_wal_before_ack_contract()); total = total + 1;
+  failed = failed + run_one_test(test_counter_new()); total = total + 1;
+  failed = failed + run_one_test(test_counter_inc()); total = total + 1;
+  failed = failed + run_one_test(test_engine_counters()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_new()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_put_lookup()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_put_update()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_remove()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_remove_miss()); total = total + 1;
+  failed = failed + run_one_test(test_id_map_lookup_miss()); total = total + 1;
+
+  // SECTION 13: Durable codec + recovery replay (Phase 2)
+  failed = failed + run_one_test(test_codec_roundtrip()); total = total + 1;
+  failed = failed + run_one_test(test_codec_bit_exactness()); total = total + 1;
+  failed = failed + run_one_test(test_codec_malformed_rejected()); total = total + 1;
+  failed = failed + run_one_test(test_recover_replays_inserts()); total = total + 1;
+  failed = failed + run_one_test(test_recover_replays_delete()); total = total + 1;
+  failed = failed + run_one_test(test_recover_search_identical()); total = total + 1;
+  failed = failed + run_one_test(test_recover_lsn_continuity()); total = total + 1;
+  failed = failed + run_one_test(test_recover_twice()); total = total + 1;
+  failed = failed + run_one_test(test_recover_torn_tail_tolerated()); total = total + 1;
 
   // Boundary/validation
-  failed = failed + run_one_test(&test_is_valid_dimension); total = total + 1;
-  failed = failed + run_one_test(&test_is_valid_top_k); total = total + 1;
-  failed = failed + run_one_test(&test_engine_search_empty); total = total + 1;
-  failed = failed + run_one_test(&test_engine_durable_lsn_tracks); total = total + 1;
-  failed = failed + run_one_test(&test_neighbor_struct); total = total + 1;
-  failed = failed + run_one_test(&test_search_result_struct); total = total + 1;
-  failed = failed + run_one_test(&test_dimension_within_limit); total = total + 1;
-  failed = failed + run_one_test(&test_f32_approx_epsilon); total = total + 1;
-  failed = failed + run_one_test(&test_search_request_fields); total = total + 1;
+  failed = failed + run_one_test(test_is_valid_dimension()); total = total + 1;
+  failed = failed + run_one_test(test_is_valid_top_k()); total = total + 1;
+  failed = failed + run_one_test(test_engine_search_empty()); total = total + 1;
+  failed = failed + run_one_test(test_engine_durable_lsn_tracks()); total = total + 1;
+  failed = failed + run_one_test(test_neighbor_struct()); total = total + 1;
+  failed = failed + run_one_test(test_search_result_struct()); total = total + 1;
+  failed = failed + run_one_test(test_dimension_within_limit()); total = total + 1;
+  failed = failed + run_one_test(test_f32_approx_epsilon()); total = total + 1;
+  failed = failed + run_one_test(test_search_request_fields()); total = total + 1;
 
   let passed = total - failed;
   io.println("");
