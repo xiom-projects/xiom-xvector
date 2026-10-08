@@ -20,7 +20,8 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   (`git commit -s`).
 - **VERSION POLICY (owner decision): track the LATEST compiler / stdlib /
   packages.** Record exact versions and lane hashes at every wrap.
-  - compiler: **v0.64.0**, Windows `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`,
+  - compiler: **v0.64.1** (re-pinned 2026-10-08 after the release),
+    Windows `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`,
     WSL Ubuntu `~/.local/bin/xiom` (both verified this session).
   - stdlib: `E:\xiom-lang\stdlib` = `/mnt/e/xiom-lang/stdlib` -- lane
     checkout `9e64302` (2026-10-08, "refresh handoff snapshot 21").
@@ -116,6 +117,14 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   - `probe_engine_import` green (cross-file module import).
   - Every build is numerically re-verified (XVC-C-05 rule; the
     filtered-search probe draws red builds ~1 in 3 -- rebuild, don't trust).
+- **Compiler re-test on v0.64.1 (sixth continuation): 6 of 7 findings FIXED**
+  (XVC-C-01 invalid IR/crash, C-02 contract exit 0, C-03 W004 noise,
+  C-04 Result[Vec[non-scalar]] field loss, C-05 per-build f32->int lowering,
+  C-06 FloatVal payload zeroing); **XVC-C-07 OPEN**
+  (`Str::from_utf8(&Vec)` invalid getelementptr; pass by value still required).
+  Regression on v0.64.1: suite 165/165 x2 (Windows + WSL), all five probes
+  x2 (new pin probe `probe_floatval_roundtrip.xi`), WSL matrix 9/9 exact.
+  Workarounds left in place as unwind candidates (see findings doc).
 - **New compiler findings this session (details in the relay doc):**
   XVC-C-01 `&fn()` call miscompile (invalid IR / runtime crash);
   XVC-C-02 runtime contract violation exits 0;
@@ -141,10 +150,12 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
      to a `src/core/` shim. Then the tree is porter-ready.
   2. Phase 3 refinements: sorted key index (O(log n) lookup), pre/post-filter
      planner, `SearchRequest`-driven search + `with_payload` hydration.
-  3. Watch compiler lane for XVC-C-01..07; re-run the repro bundles at the
-     next archive, then re-pin. When fsync lands, implement file-backed WAL
-     segments + durable manifest (Phase 2 exit criteria; stdlib wishlist rows
-     1-3).
+  3. Compiler: v0.64.1 fixed XVC-C-01..06; **C-07 still open** (re-test
+     `docs/repro/xv-from-utf8-vec-ref/` at the next archive). Optional:
+     unwind the old workarounds now that the pin is green (restore FloatVal
+     gates, consider unwrapping `SearchHits`). When fsync lands, implement
+     file-backed WAL segments + durable manifest (Phase 2 exit criteria;
+     stdlib wishlist rows 1-3).
   4. HNSW hardening (Phase 4) + recall harness; concurrency/soak next.
 
 ## 1. Consumer-lane rules (non-negotiable)
@@ -159,7 +170,7 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   Reusable primitives this lane grows should be **proposed as packages**
   in the package wishlist (`xiom.vectors` / `xiom.wal` / `xiom.ann`).
 
-## 2. Pin discipline that bites (v0.64.0, extended this session)
+## 2. Pin discipline that bites (current pin v0.64.1; extended this session)
 
 - Initialize every local at declaration (`var x: T = <default>;`); every
   **struct literal must list every field** -- a missing field reads
@@ -171,18 +182,20 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   for every `&mut Int` read (C-PULSE-04).
 - Types are `Vec[T]` / `Result[T, Err]`; after every write run the
   byte-level grep for `Vec<|Result<|Option<`.
-- **XVC-C-01: never call a `&fn() -> T` parameter as `f()`** (invalid IR) or
-  `(*f)()` (runtime crash). Evaluate at the call site or use a struct-field
-  fn pointer.
-- **XVC-C-02: never call a contracted function out of contract** -- a
-  runtime `requires` violation aborts with **exit 0** (silent green). Test
-  the predicate, not the contracted entry point.
-- **XVC-C-04: never return `Result[Vec[non-scalar], E]` /
-  `Option[Vec[non-scalar]]`** -- wrap the Vec in a struct Ok-payload
-  (`SearchHits` pattern).
-- **XVC-C-05: verify numerics per build.** Treat a red numeric check as a
-  build rejection; rebuild rather than trusting the binary. `--sequential`
-  is an A/B diagnostic only.
+- **Historical v0.64.0-era traps (fixed in v0.64.1; kept for regression
+  triage):** `&fn()` parameter calls emitted invalid IR / crashed
+  (XVC-C-01); contract violations exited 0 (XVC-C-02); W004 false-positive
+  arms (XVC-C-03); `Result[Vec[non-scalar]]` / `Option[Vec[non-scalar]]`
+  payloads lost element fields (XVC-C-04); f32 ops lowered as integer bit
+  patterns per build (XVC-C-05); FloatVal enum payloads read 0 (XVC-C-06).
+  If any reappears, open a delta row instead of re-bisecting.
+  Lane workarounds stay in place as documented unwind candidates
+  (`SearchHits` wrapper, direct dispatch, predicate-based negative tests,
+  FloatVal diagnostics).
+- **XVC-C-07 still open:** pass Vec arguments **by value** to
+  `Str::from_utf8` (`&Vec[UInt8]` -> invalid getelementptr).
+- **Keep numeric gates per build** as general hygiene: the suite and probes
+  assert exact bits; treat any red numeric check as a build rejection.
 - Keep a `-TimeoutSec` watchdog on every run/suite and gate on exit code;
   run every green suite x2; soak anything long-running.
 - Start long-running processes with output redirected to **files** (never
@@ -196,10 +209,11 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
 
 ## 3. Known ecosystem status (2026-10-08)
 
-- Open compiler findings relevant here: C-PULSE-02 (registry deps ->
-  catalog roots; workaround `source-roots`), C-PULSE-04, C-PULSE-05,
-  C-PULSE-06, C-PULSE-07; PULSE C-PULSE-08..12; plus XVECTOR's
-  XVC-C-01..05 (above). C-PULSE-01 resolved on v0.64.0.
+- Compiler findings relevant here: C-PULSE-02 (registry deps ->
+  catalog roots; workaround `source-roots`), C-PULSE-04..07; PULSE
+  C-PULSE-08..12; XVECTOR's XVC-C-01..06 are FIXED as of v0.64.1
+  (re-tested), XVC-C-07 remains open (pass `Vec` by value to
+  `Str::from_utf8`). C-PULSE-01 resolved on v0.64.0.
 - Stdlib: SHA-256/HMAC usable env-free; `crc32_ieee`/`crc32c` available;
   fsync/fd-syscall family still stubs (see wishlist).
 - Registry ready for consumers: `xiom.http` 0.1.1, `xiom.jwt` 0.2.0,
@@ -218,9 +232,9 @@ edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages.
 Repo stays PRIVATE; no pushes without owner approval. Identity
 "Lefteris Notas <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Toolchain (latest-tracking): compiler v0.64.0 on Windows
+Toolchain (latest-tracking): compiler v0.64.1 on Windows
 (%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL Ubuntu
-(~/.local/bin/xiom), stdlib lane E:\xiom-lang\stdlib (= /mnt/e/... in WSL),
+(~/.local/share/xiom), stdlib lane E:\xiom-lang\stdlib (= /mnt/e/... in WSL),
 XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and its .sh
 twin); build with scripts\build.ps1 / scripts\build.sh; suites via
 scripts\run-suite.*; the critical probe is
@@ -228,19 +242,18 @@ tests\probes\probe_vector_store.xi (run via scripts\run-probe.*).
 
 Bootstrap is DONE; Phase 2 (WAL vector+payload codec, recovery/checkpoint)
 and Phase 3 (payload filtering + durable metadata) are implemented; the
-suite is 165/165 x2 on both platforms. Progress is measured by
-docs/PRODUCTION-READINESS.md (weighted scorecard, ~53% today) -- recompute
-it at every wrap. Continue the ROADMAP: extract the payload/filter module
-as the first real layer (porter preparation), then sorted payload index +
-planner; file-backed WAL waits on the stdlib fsync gap; then HNSW hardening.
+suite is 165/165 x2 on both platforms. Three extraction waves are done
+(payload, types/storage/query, durability); engine.xi is the thin
+orchestration facade. Progress is measured by docs/PRODUCTION-READINESS.md
+(weighted scorecard, ~54% today) -- recompute it at every wrap. Next:
+final extraction wave (engine/core + API modules), then sorted payload
+index + planner; file-backed WAL waits on the stdlib fsync gap; then HNSW
+hardening.
 
-Pin discipline additions: never call `&fn()` parameters (XVC-C-01);
-never call contracted functions out of contract -- violations abort with
-exit 0 (XVC-C-02); never return Result[Vec[non-scalar]]/Option[Vec[non-scalar]]
--- wrap the Vec in a struct (XVC-C-04); pass Vec arguments BY VALUE to
-`Str::from_utf8` (XVC-C-07); VERIFY NUMERICS PER BUILD -- the f32 lowering
-is nondeterministic per build (XVC-C-05) and f32 enum payloads can read as
-0 (XVC-C-06), so keep FloatVal out of gating assertions and rebuild on any
-red numeric check. Update SESSION.md STATE + the relay docs at every wrap;
-commit signed at every step.
+Compiler status: v0.64.1 fixed XVC-C-01..06 (re-tested; see
+docs/COMPILER-FINDINGS-XVECTOR.md); XVC-C-07 is still open -- pass Vec
+arguments BY VALUE to `Str::from_utf8`. Keep numeric gates per build as
+hygiene (suite/probes assert exact bits; red = build rejection). Update
+SESSION.md STATE + the relay docs at every wrap; commit signed at every
+step.
 ```

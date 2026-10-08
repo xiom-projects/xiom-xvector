@@ -17,7 +17,7 @@
 #             bundled lib/xiom tree (release-artifact behavior)
 #   packages  <xiom_home>/packages (none consumed by xvector yet)
 #
-# XIOM_RUNTIME_DIR is RETIRED on v0.64.0 (verified env-free). Always cleared.
+# XIOM_RUNTIME_DIR is retired since v0.64.0 (verified env-free). Always cleared.
 # Safe to source repeatedly; never exits the caller on warnings.
 # ============================================================================
 
@@ -53,5 +53,5 @@ _ver="$("$XIOM_COMPILER" --version 2>&1 | head -n 1)"
 printf 'dev-env: %s\n' "$_ver"
 printf 'dev-env: XIOM_COMPILER = %s\n' "$XIOM_COMPILER"
 printf 'dev-env: XIOM_STDLIB   = %s\n' "${XIOM_STDLIB:-<unset: compiler bundled stdlib>}"
-printf 'dev-env: XIOM_RUNTIME_DIR retired (v0.64.0 R65 install-layout fix)\n'
+printf 'dev-env: XIOM_RUNTIME_DIR retired (v0.64.1 R65 install-layout fix)\n'
 unset _ver
