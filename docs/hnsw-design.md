@@ -52,7 +52,7 @@ Adjacency holds positions; `hnsw_search` maps to user ids on output
 | `m` | Max edges per node per layer. | 16 | enforced (`hnsw_new requires: m > 0`); production bound <= `core.limits.max_graph_degree()` (512) via `AnnParams` |
 | `ml` | Level multiplier (P(level >= l) ~= `ml^(-l)`). | 4.0 | **honoured** by the deterministic level assignment |
 | `ef` | Query-time beam width (`hnsw_search` arg). | 64 | **honoured**: breadth = `max(k, ef)` |
-| `ef_construction` | Build-time beam width. | 200 | not needed yet: construction selects exact per-layer k-NN |
+| `ef_construction` | Build-time beam width. | 200 | **honoured** by the construction beam (clamped to >= `m`) |
 
 `AnnParams` (in `index/ann_index.xi`) carries `m`, `ef_construction`, and
 `ef_search`; `ann_params_valid` bounds `m` by the shared core graph-degree limit.
@@ -83,16 +83,21 @@ recall/latency.
    always `1 mod 4`, making level >= 2 impossible).
 2. Reserve 8 layer rows (degrees 0, slots zeroed). The first node becomes
    the entry.
-3. For every layer the node belongs to, up to the existing top: **exact
-   k-NN** among that layer's existing members (`levels[j] >= layer`), then
-   bidirectional edges with farthest-edge pruning.
-4. Layers above the existing top have no peers yet (the node is alone
+3. **Greedy descent** from the top entry down to the new node's level + 1.
+4. For every layer from `min(level, top)` down to 0: a **beam search**
+   (`search_layer_build`, width = `max(m, ef_construction)`) collects
+   candidates, the **diversified heuristic** (`select_diverse`) keeps up to
+   `m` that are closer to the new node than to every already-selected
+   neighbour, and edges are added bidirectionally. A full existing block is
+   pruned with the same heuristic over (existing + incoming). The closest
+   candidate becomes the entry for the next layer down.
+5. Layers above the existing top have no peers yet (the node is alone
    there); if the new level exceeds the entry's, the node becomes the new
    entry.
 
-The build is O(n^2) (exact k-NN selection); `ef_construction` becomes
-meaningful once construction switches to beam insertion (next hardening
-step).
+`ef_construction` (default 200, `hnsw_set_ef_construction`; values < 1 are
+ignored) trades build quality for cost; the engine seeds it from
+`AnnParams`.
 
 ## Search path (`hnsw_search`)
 
@@ -125,7 +130,8 @@ wrapper is `compact_index` (Flat -> 0 reclaimed).
 
 `hnsw_encode(g) -> Vec[Int]` / `hnsw_decode(words) -> Option[HNSWGraph]` is
 a deterministic word codec mirroring the WAL style: header
-(`version=1, m, ml_bits, layer_capacity, entry, node_count`), then per node
+(`version=2, m, ml_bits, ef_construction, layer_capacity, entry,
+node_count`), then per node
 `id, level, deleted, vector words` (via `storage.vector_store.vector_encode`)
 followed by every layer row's degree + neighbor positions. Decode is
 strict: truncated, tampered, out-of-range, or trailing-junk input returns
@@ -147,10 +153,10 @@ the graph from the flat store on load, which the codec will replace.
 
 | Dataset | ef | recall@10 | notes |
 |---|---|---|---|
-| n=200 | 64 | 300/300 | avg visited 171/200; levels L0=149 L1=40 L2=9 L4=2 |
-| n=200 | 8 | 300/300 | beam clamped to breadth 10 |
+| n=200 | 64 | 300/300 | avg visited 170/200; levels L0=149 L1=40 L2=9 L4=2 |
+| n=200 | 8 | 296/300 | beam clamped to breadth 10 |
 | n=200 cosine | 64 | 100/100 | metric-agnostic smoke |
-| n=800 | 64 | 200/200 | avg visited 288/800, top level 4 |
+| n=800 | 64 | 200/200 | avg visited 299/800, top level 4 |
 | n=200, id 42 deleted | 64 | 300/300 | stray42=0, live 199 (flat oracle also removed 42) |
 | n=200, 50 ids deleted + compacted | 64 | 200/200 | size/live 150, stray_deleted=0; engine-level `compact_index` reclaims 1 with post-compact recall holding |
 
@@ -164,7 +170,7 @@ empty search. Full run ~0.9s.
 | Area | Now (working) | Production (Phase 4) |
 |------|---------------|----------------------|
 | Layers | **multi-layer** (8-layer capacity, geometric `ml`, greedy descent) | adaptive capacity / higher levels for very large n |
-| Build | exact per-layer k-NN + farthest-edge prune | beam insertion honouring `ef_construction`, diversified pruning (`neighbor_closer`) |
+| Build | **beam insertion honouring `ef_construction` + diversified pruning** | parallel/adaptive build, quantized distance |
 | Search | greedy descent + beam honouring `ef` | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | linear `hnsw_find_node_pos` | id -> position map |
