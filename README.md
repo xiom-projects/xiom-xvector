@@ -83,7 +83,7 @@ src/
 | `delete_point(eng, point)` | Remove a point |
 | `get_point(eng, point)` | Fetch a stored vector by id |
 | `set_payload` / `get_payload` | WAL-durable metadata attach/replace and read |
-| `search_filtered(eng, query, k, filter)` | Pre-filter exact top-k |
+| `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 

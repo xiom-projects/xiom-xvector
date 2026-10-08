@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post shape pins + unwind-candidate decision)
-- **Overall:** **66 %** (weighted; see method)
+- **As of:** 2026-10-08 (post HNSW+filter integration)
+- **Overall:** **67 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -24,7 +24,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | # | Phase | Weight | Score | Level | Blockers |
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
-| B | Exact search & query engine | 10 | 92 | release-grade | range-search surface, batch search |
+| B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 95 | release-grade | file-backed persistence, latency metrics |
 | D | Persistence & durability | 20 | 55 | buildable | stdlib fsync gap, file-backed segments, durable manifest |
 | E | Metadata & filtering | 8 | 97 | release-grade | multi-key indexes |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 72 | buildable | soak, fuzz, kill-recovery test, reference cross-check |
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
-**Overall today:** 0.08x95 + 0.10x92 + 0.14x95 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x75 + 0.08x40 = **66.41 -> 66 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x95 + 0.20x55 + 0.08x97 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x75 + 0.08x40 = **66.71 -> 67 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -61,10 +61,12 @@ top-K bounded heap, exact f32<->bits codec, 168-check suite.
 Remaining: reference cross-check (numpy-style oracle) under fuzz; NaN/Inf
 documented policy in distance kernels.
 
-### B. Exact search & query engine -- 92 %
+### B. Exact search & query engine -- 95 %
 Done: flat exact KNN, k-bounded sorted results, filtered exact search
-(pre-filter scan + selectivity-based post plan with fallback), SearchHits
-public shape, error paths.
+(pre-filter scan + selectivity-based post plan with fallback), **filtered
+search on ANN collections** (HNSW fetch + matching subset with exact flat
+fallback when under-filled; k-fill guarantee kept), SearchHits public
+shape, error paths.
 Remaining: range-search surface, batch search.
 
 ### C. ANN index -- 95 %
@@ -284,6 +286,14 @@ lane.
   C-01 (8/8 + 2/2). Decision: keep the SearchHits wrapper and the suite's
   direct dispatch (C-08/C-09 family still open; revisit at the next
   archive). I 72 -> 75; overall 66.14 -> 66 %. Evidence: suite 168/168 x2
+  (Win+WSL), all 14 probes x2 (Win) + WSL spot.
+- **2026-10-08 (twenty-first pass):** HNSW+filter integration --
+  `hnsw_search_filtered` (ANN fetch `ef_search` wide + matching subset;
+  exact flat filtered fallback when under-filled) behind
+  `engine_search_filtered` and the request-driven filtered branch. Gate:
+  majority filter k-filled 8/8 with recall 80/80 vs the exact oracle;
+  1-/3-match filters fall back bit-identically; zero-match empty; stress
+  6/6. B 92 -> 95; overall 66.41 -> 67 %. Evidence: suite 168/168 x2
   (Win+WSL), all 14 probes x2 (Win) + WSL spot.
 
 ## Update rule

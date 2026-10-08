@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (20 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (21 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -16,14 +16,14 @@ payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
-shape pins + unwind-candidate decision).
+shape pins + unwind decision -> HNSW+filter integration).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `6b1acea` (test: shapes pin probe),
-then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `654c04c` (feat: HNSW+filter
+integration), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -33,7 +33,7 @@ then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `6b1acea` + this wrap commit | this repo |
+| xvector | `654c04c` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -132,6 +132,12 @@ then this wrap commit. Identity `Lefteris Notas
   `SearchHits` wrapper (zero-cost, public API, C-08/C-09 family still open)
   and KEEP the suite's direct dispatch; revisit at the next compiler
   archive.
+- **HNSW+filter integration:** `hnsw_search_filtered` (ANN fetch `ef_search`
+  wide + matching subset; falls back to the exact flat filtered scan when
+  under-filled) behind `engine_search_filtered` and the request-driven
+  filtered branch; Flat keeps the planner. Gate `probe_engine_hnsw`:
+  majority filter k-filled 8/8 with recall 80/80 vs the oracle; 1- and
+  3-match filters fall back bit-identically; zero-match empty; stress 6/6.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -192,14 +198,14 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Priority list exhausted for autonomous work (2026-10-08).** Remaining
-   items are stdlib-gated or release gates: M2 file-backed WAL (fsync/
-   fd-write/append-bytes still stubs -- re-checked 2026-10-08), HNSW
-   file-backed segments (same gate), HNSW harness latency metrics (avg
-   visited already reported), multi-key / index-driven candidate iteration
-   (E stretch), unwind re-evaluation at the next compiler archive, G-phase
-   concurrency/soak. A new SESSION pass should start from this list when
-   the stdlib gap lands or the owner opens a release gate.
+1. **Fuzz probes (slice 2 of the extension):** deterministic LCG-driven
+   fuzz of `payload_decode`, `hnsw_decode` and WAL replay with
+   random/tampered words -- must never crash, only return `None`/valid.
+   Then: soak harness (mixed workload + invariants), HNSW harness latency
+   metrics, E stretch (multi-key / index-driven candidates), release-prep
+   drafts (CI with SHA-pinned actions, version stamp, checklist; publish
+   stays owner-gated). M2 stays parked until stdlib fd/fsync lands
+   (re-checked 2026-10-08: still stubs).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -342,7 +348,7 @@ probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
 hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
 hnsw_decode strict graph codec; beam construction honouring
 ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
-pin probe; C-01 bind pin).
+pin probe; C-01 bind pin; HNSW+filter integration with exact fallback).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -351,14 +357,15 @@ probes); XVC-C-09 OPEN (WSL-only nested-field mutation segfault; build into
 a local then assign once; repro docs/repro/xv-wsl-nested-field pinned at
 bca8b7f).
 
-NEXT TASK (priority 1): the autonomous priority list is exhausted --
-remaining work is stdlib-gated (M2 file-backed WAL; HNSW file-backed
-segments) or release/owner-gated (staging E2E, rulesets, releases). When
-the stdlib gap lands: M2 file-backed WAL + kill-recovery harness, then
-HNSW segments. Optional stretch: HNSW harness latency metrics, multi-key /
-index-driven candidate iteration, unwind re-evaluation at the next
-compiler archive, G-phase concurrency/soak. Keep the wrap discipline:
-suite x2 (Win+WSL), all 14 probes x2, signed commits, docs updated.
+NEXT TASK (priority 1): fuzz probes (deterministic LCG-driven tamper/fuzz
+of payload_decode, hnsw_decode and WAL replay -- never crash, only return
+None/valid), then the soak harness (mixed workload + invariants), HNSW
+harness latency metrics, E stretch (multi-key / index-driven candidates),
+release-prep drafts (CI with SHA-pinned actions, version stamp, checklist;
+publish stays owner-gated). M2 standby until stdlib lands
+fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08). Keep
+the wrap discipline: suite x2 (Win+WSL), all 14 probes x2 (Win) + WSL
+spot, signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
