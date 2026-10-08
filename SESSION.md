@@ -5,7 +5,9 @@
 
 **Written:** 2026-10-07 (bootstrap by the PULSE lane, owner request).
 **Updated:** 2026-10-08 (first XVECTOR session: bootstrap executed + Phase 2
-durability slice; continuation same day: Phase 3 payload filtering + XVC-C-06).
+durability slice; continuation same day: Phase 3 payload filtering +
+XVC-C-06; second continuation: durable payloads + XVC-C-07 + production
+readiness tracker).
 **Project:** production-grade vector database engine for XIOM (dense
 vectors, distance metrics, flat + HNSW ANN, collections, segments,
 WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
@@ -65,16 +67,26 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
     `engine_set_payload` (Ok(false) for missing point), `engine_get_payload`,
     `engine_search_filtered`/`search_filtered` (pre-filter exact scan,
     k-bounded), delete removes metadata.
-  - Suite **156/156 x2**; new probe `tests/probes/probe_filtered_search.xi`
+  - Suite **165/165 x2**; new probe `tests/probes/probe_filtered_search.xi`
     green x2 (engine-import unit; FloatVal is diagnostic-only -- XVC-C-06).
-  - Payload durability is a follow-up (WAL does not encode payloads yet;
-    recovery drops metadata -- see the `engine_recover` NOTE).
+- **Payload durability (second continuation):**
+  - `payload_encode`/`payload_decode` (word codec: version, field count,
+    UTF-8 key/value bytes, Float64-bit floats; strict, malformed -> None);
+    `log_payload_set` appends `WalOpKind.Update` records; `engine_set_payload`
+    is WAL-before-ack; `recover_state` replays store + payloads in LSN order
+    (Delete clears metadata); the compacted checkpoint carries payloads so
+    chained reopen keeps metadata.
+  - Probes: `tests/probes/probe_payload_recovery.xi` green x2 (payload replay,
+    chained overwrite, delete cleanup, filtered search on the recovered
+    engine, torn-record skip).
+  - Suite: SECTION 15 (9 tests) -> **165/165 x2**; readiness tracker
+    `docs/PRODUCTION-READINESS.md` created (weighted scorecard; ~53 % today).
 - **Green evidence (exact commands):**
-  - `scripts\run-suite.ps1 -Runs 2` -> `156/156 passed` twice, exit 0,
-    stderr 0; same on WSL: `bash scripts/run-suite.sh 2 120`.
-  - `scripts\run-probe.ps1 tests\probes\probe_vector_store.xi -Runs 2` and
-    `scripts\run-probe.ps1 tests\probes\probe_filtered_search.xi -Runs 2` ->
-    0 failed checks x2.
+  - `scripts\run-suite.ps1 -Runs 2` -> `165/165 passed` twice, exit 0,
+    stderr 0; same on WSL: `bash scripts/run-suite.sh 2 180`.
+  - `scripts\run-probe.ps1 tests\probes\probe_vector_store.xi -Runs 2`,
+    `...probe_filtered_search.xi...`, `...probe_payload_recovery.xi...` ->
+    0 failed checks x2 (rebuild-on-red discipline for XVC-C-05/06 draws).
   - `bash scripts/run-probe.sh tests/probes/probe_hello.xi 2 60` green in WSL.
   - `probe_engine_import` green (cross-file module import).
   - Every build is numerically re-verified (XVC-C-05 rule; the
@@ -88,24 +100,26 @@ WAL-backed durable writes; consolidated engine in `src/engine.xi` per AUDIT).
   XVC-C-05 per-build nondeterministic Float32 -> integer bit-pattern
   lowering (no reliable flag workaround; verify numerics per build);
   XVC-C-06 Float32 enum payloads can read as 0 in affected builds
-  (FloatVal gates avoided; diagnostic-only in the probe).
+  (FloatVal gates avoided; diagnostic-only in the probe);
+  XVC-C-07 `Str::from_utf8(&Vec[UInt8])` emits invalid LLVM IR -- pass the
+  Vec by value (found in the payload codec; repro
+  `docs/repro/xv-from-utf8-vec-ref/`).
 - **stdlib status:** fsync/fdatasync still documented-Err stubs
   (`xiom/os/fs_ffi.xi:238`, `xiom/os/sync_io.xi:80`) -- Phase 2 file-backed
   WAL blocked; byte append (`append_file_bytes`) and fd write path missing;
   `crc32_ieee`/`crc32c` available and adopted for framing.
 - **Next action (priority order):**
-  1. Payload durability: encode payloads into WAL records (or a side log) so
-     `engine_recover` restores metadata; then Phase 3's sorted key index and
-     the pre/post-filter planner.
-  2. Restore the layered module tree: cross-file imports now work on
-     v0.64.0 (probe_engine_import green); the AUDIT-era consolidation can be
-     unwound incrementally (engine.xi stays the stable facade until each
-     layer compiles + passes the suite). The Phase 3 payload/filter code is
-     the natural first extracted module.
-  3. Watch compiler lane for XVC-C-01..06; re-run the repro bundles at the
+  1. Extract the payload/filter + codec code as the first real module of the
+     layered tree (cross-file imports verified; engine.xi stays the facade),
+     then continue extraction layer by layer; this is also the porter
+     preparation for `xiom.vectors` / `xiom.wal`.
+  2. Phase 3 refinements: sorted key index (O(log n) lookup), pre/post-filter
+     planner, `SearchRequest`-driven search + `with_payload` hydration.
+  3. Watch compiler lane for XVC-C-01..07; re-run the repro bundles at the
      next archive, then re-pin. When fsync lands, implement file-backed WAL
-     segments + durable manifest (Phase 2 exit criteria).
-  4. HNSW hardening (Phase 4) after the tree cleanup/porter extraction.
+     segments + durable manifest (Phase 2 exit criteria; stdlib wishlist rows
+     1-3).
+  4. HNSW hardening (Phase 4) + recall harness; concurrency/soak next.
 
 ## 1. Consumer-lane rules (non-negotiable)
 
@@ -186,20 +200,21 @@ twin); build with scripts\build.ps1 / scripts\build.sh; suites via
 scripts\run-suite.*; the critical probe is
 tests\probes\probe_vector_store.xi (run via scripts\run-probe.*).
 
-Bootstrap is DONE; Phase 2 (WAL vector codec + recovery/checkpoint) and
-Phase 3 (payload filtering: typed eval + engine integration + filtered
-search) are implemented; the suite is 156/156 x2 on both platforms.
-Continue the ROADMAP: payload durability (WAL encodes payloads), then
-unwind the AUDIT-era consolidation into the layered module tree
-(cross-file imports now work on v0.64.0; extract the payload/filter module
-first), then HNSW hardening; file-backed WAL waits on the stdlib fsync gap.
+Bootstrap is DONE; Phase 2 (WAL vector+payload codec, recovery/checkpoint)
+and Phase 3 (payload filtering + durable metadata) are implemented; the
+suite is 165/165 x2 on both platforms. Progress is measured by
+docs/PRODUCTION-READINESS.md (weighted scorecard, ~53% today) -- recompute
+it at every wrap. Continue the ROADMAP: extract the payload/filter module
+as the first real layer (porter preparation), then sorted payload index +
+planner; file-backed WAL waits on the stdlib fsync gap; then HNSW hardening.
 
 Pin discipline additions: never call `&fn()` parameters (XVC-C-01);
 never call contracted functions out of contract -- violations abort with
 exit 0 (XVC-C-02); never return Result[Vec[non-scalar]]/Option[Vec[non-scalar]]
--- wrap the Vec in a struct (XVC-C-04); VERIFY NUMERICS PER BUILD -- the
-f32 lowering is nondeterministic per build (XVC-C-05) and f32 enum
-payloads can read as 0 (XVC-C-06), so keep FloatVal out of gating
-assertions and rebuild on any red numeric check. Update SESSION.md STATE +
-the relay docs at every wrap; commit signed at every step.
+-- wrap the Vec in a struct (XVC-C-04); pass Vec arguments BY VALUE to
+`Str::from_utf8` (XVC-C-07); VERIFY NUMERICS PER BUILD -- the f32 lowering
+is nondeterministic per build (XVC-C-05) and f32 enum payloads can read as
+0 (XVC-C-06), so keep FloatVal out of gating assertions and rebuild on any
+red numeric check. Update SESSION.md STATE + the relay docs at every wrap;
+commit signed at every step.
 ```
