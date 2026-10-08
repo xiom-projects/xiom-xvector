@@ -9,6 +9,7 @@
 module probe_filtered_search
 
 use xiom.vector.engine;
+use xiom.vector.engine.core;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.query.search_service;
