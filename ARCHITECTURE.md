@@ -218,8 +218,9 @@ api.search
              Flat/Ivf -> search_service.search_knn  (exact scan, O(n))
              Hnsw     -> index.hnsw.hnsw_search      (multi-layer greedy
                          descent + beam, ef = ann.ef_search)
-        3. filter (Phase 3): filtered queries always take the exact flat scan
-           regardless of index kind (ANN+filter is future work) --
+        3. filter (Phase 3): Hnsw -> ANN fetch (ef_search wide) then keep the
+           matching subset; under-filled -> exact flat filtered scan. Flat ->
+           the planner:
              scan -> evaluate FilterExpr per candidate BEFORE distance
              post -> rank all via the flat scan, keep the matching subset;
                      if it does not fill k, fall back to the scan
