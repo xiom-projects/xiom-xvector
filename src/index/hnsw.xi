@@ -381,6 +381,23 @@ pub fn hnsw_insert_ref(g: &mut HNSWGraph, id: Int, vec: &Vector, metric: Distanc
   hnsw_insert(g, id, copy, metric);
 }
 
+// Live count and a rebuild path: `hnsw_compact` returns a fresh graph built
+// from the live nodes only (same m/ml, insertion order preserved). This is
+// the tombstone compaction / edge-repair step -- deleted nodes no longer
+// route or occupy slots; memory is reclaimed.
+pub fn hnsw_compact(g: &HNSWGraph, metric: DistanceMetric) -> HNSWGraph {
+  var fresh = hnsw_new(g.m, g.ml);
+  var i: Int = 0;
+  while i < g.ids.len() {
+    if !g.deleted[i] {
+      var v = g.vectors[i];
+      hnsw_insert_ref(&mut fresh, g.ids[i], &v, metric);
+    }
+    i = i + 1;
+  }
+  return fresh;
+}
+
 // Best-first search. Returns up to k ascending-by-distance neighbors
 // (`ensures: result.len() <= k`); empty graph or dimension mismatch -> empty.
 pub fn hnsw_search(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: DistanceMetric) -> Vec[Neighbor]

@@ -30,6 +30,12 @@ pub fn set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) 
   return engine_set_index(eng, kind, params);
 }
 
+// Compact the ANN graph (rebuild from live nodes; reclaims tombstones).
+// Returns the number of reclaimed nodes; 0 on a Flat collection.
+pub fn compact_index(eng: &mut VectorEngine) -> Result[Int, CoreError] {
+  return engine_compact_index(eng);
+}
+
 pub fn upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError] {
   return engine_upsert(eng, point, vec);
 }
