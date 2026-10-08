@@ -1,0 +1,16 @@
+# XIOM XVECTOR -- compiler project manifest (xiom.toml is the canonical
+# project manifest; package.xi remains the registry/pkg manifest).
+#
+# NOTE (C-PULSE-02, inherited): on v0.64.0 the compiler's dependency graph
+# only adds the project's own source roots + stdlib to the module catalog;
+# registry [dependencies] are parsed but not mapped to source directories.
+# xvector currently has NO registry dependencies (stdlib + inline core
+# substrate only), so "src" alone is the whole catalog. Re-test when the
+# first registry package is adopted.
+[project]
+name = "xiom.xvector"
+version = "0.2.0"
+root = "src"
+source-roots = [
+  "src",
+]

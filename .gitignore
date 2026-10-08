@@ -1,18 +1,53 @@
 # Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
-build/
+# Build artifacts (compiler output lands next to the source or in out/)
+a.exe
+a.exe.ll
 *.exe
+*.exe.ll
 *.o
 *.obj
+*.pdb
+*.ilk
+*.dll
+*.lib
+*.exp
 *.ll
 *.bc
 *.wasm
+a.out
+build/
+/out/
+/bin/
+/obj/
+/dist/
+deps/
+
+# Kilo / Agent Manager / editor workspace state (never commit)
+.kilo/
 .vscode/
 .idea/
+*.code-workspace
 *.swp
 *.swo
+
+# XIOM package manager / AI caches (xiom.lock stays committed once present)
+.xiom_ai_cache/
+.xiom-cache/
+.xiom_ai.json
+
+# Local runtime data (vector stores, WAL segments, probes, soak logs)
+*.log
+/probe-logs/
+/soak/
+*.xvlog
+
+# Secrets / env
+.env
+.env.*
+
+# OS noise
 .DS_Store
 Thumbs.db
-deps/
-*.lock
+Desktop.ini
