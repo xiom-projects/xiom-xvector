@@ -527,3 +527,52 @@ pub fn payload_store_index_range(s: &PayloadStore, field: Str, lo: Float32, hi: 
   }
   return out;
 }
+
+// Match counts without materializing id lists (planner estimates). Same
+// semantics as the _eq/_range walks above; duplicated deliberately so the
+// estimate path stays allocation-free.
+pub fn payload_store_index_count_eq(s: &PayloadStore, field: Str, value: FieldValue) -> Int {
+  var kind: Int = field_index_kind(&value);
+  var n: Int = 0;
+  if kind == 2 {
+    var pos: Int = payload_index_field_start(s, field);
+    while pos < s.index_id.len() && s.index_field[pos] == field {
+      if s.index_kind[pos] == 2 {
+        var fv = float.bits_to_float(s.index_num[pos]) as Float32;
+        var cand = FieldValue.FloatVal(fv);
+        if field_value_eq(&cand, &value) { n = n + 1; }
+      }
+      pos = pos + 1;
+    }
+    return n;
+  }
+  var num: Int = field_index_num(&value);
+  var text: Str = field_index_text(&value);
+  var p: Int = payload_index_tuple_start(s, field, kind, num, text);
+  while p < s.index_id.len()
+    && s.index_field[p] == field
+    && s.index_kind[p] == kind
+    && s.index_num[p] == num
+    && s.index_text[p] == text {
+    n = n + 1;
+    p = p + 1;
+  }
+  return n;
+}
+
+pub fn payload_store_index_count_range(s: &PayloadStore, field: Str, lo: Float32, hi: Float32) -> Int {
+  var n: Int = 0;
+  var pos: Int = payload_index_field_start(s, field);
+  while pos < s.index_id.len() && s.index_field[pos] == field {
+    var k = s.index_kind[pos];
+    if k == 1 {
+      var v = s.index_num[pos] as Float32;
+      if v >= lo && v <= hi { n = n + 1; }
+    } elif k == 2 {
+      var v2 = float.bits_to_float(s.index_num[pos]) as Float32;
+      if v2 >= lo && v2 <= hi { n = n + 1; }
+    }
+    pos = pos + 1;
+  }
+  return n;
+}

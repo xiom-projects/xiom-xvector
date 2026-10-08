@@ -104,6 +104,16 @@ fn main() -> Int {
   fails = check(ids_empty(&payload_store_index_range(&st, "nope", 0.0, 100.0)),
     "range on missing field -> {}", fails);
 
+  fails = check(payload_store_index_count_eq(&st, "color", FieldValue.TextVal("red")) == 2
+    && payload_store_index_count_eq(&st, "stock", FieldValue.IntVal(7)) == 1
+    && payload_store_index_count_eq(&st, "price", FieldValue.FloatVal(2.5)) == 1
+    && payload_store_index_count_eq(&st, "price", FieldValue.FloatVal(2.4)) == 0,
+    "count_eq agrees with eq (text/int/float)", fails);
+  fails = check(payload_store_index_count_range(&st, "stock", 0.0, 100.0) == 2
+    && payload_store_index_count_range(&st, "stock", 8.0, 10.0) == 1
+    && payload_store_index_count_range(&st, "color", 0.0, 100.0) == 0,
+    "count_range agrees with range", fails);
+
   // Overwrite: id 1 drops active, changes color; rows must match the payload.
   var p1b = payload_new();
   payload_set(&mut p1b, "color", FieldValue.TextVal("green"));
