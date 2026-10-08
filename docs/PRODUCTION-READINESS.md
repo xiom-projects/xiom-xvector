@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-08 (post HNSW id map; XVC-C-09 worked around)
+- **As of:** 2026-10-08 (post shape pins + unwind-candidate decision)
 - **Overall:** **66 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -35,7 +35,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | J | Ecosystem & release engineering | 8 | 40 | buildable | CI, version stamp, porter extraction (tree final; extraction pending), release |
 
 **Overall today:** 0.08x95 + 0.10x92 + 0.14x95 + 0.20x55 + 0.08x97 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x72 + 0.08x40 = **66.14 -> 66 %**.
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x75 + 0.08x40 = **66.41 -> 66 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -121,9 +121,12 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 72 %
-Done: 168-check conformance suite (x2 Windows + WSL), 13 probes, build-time
-watchdog, rebuild-on-red discipline, per-build numeric gates.
+### I. Testing & verification -- 75 %
+Done: 168-check conformance suite (x2 Windows + WSL), 14 probes, build-time
+watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
+compiler-workaround pins (XVC-C-04 shape matrix via `probe_result_shapes`,
+C-01 bind semantics via `probe_bind_semantics`; both stress 8/8 fresh
+builds).
 Remaining: soak (long-running upsert/search), fuzz (codec + filters),
 kill-recovery acceptance script, reference oracle cross-check, CI wiring.
 
@@ -274,6 +277,14 @@ lane.
   -> 66 %. Evidence: suite 168/168 x2 (Win+WSL), all 13 probes x2 (Win) +
   WSL spot (engine/recall/codec probes green post-workaround); three HNSW
   probes stress 6/6 each.
+- **2026-10-08 (twentieth pass):** slice 5 -- compiler-workaround pins and
+  unwind-candidate evaluation: new per-build pin `probe_result_shapes.xi`
+  gates the whole XVC-C-04 matrix (incl. the real engine path) on every
+  build (8/8 Windows + 2/2 WSL fresh builds); `probe_bind_semantics` pins
+  C-01 (8/8 + 2/2). Decision: keep the SearchHits wrapper and the suite's
+  direct dispatch (C-08/C-09 family still open; revisit at the next
+  archive). I 72 -> 75; overall 66.14 -> 66 %. Evidence: suite 168/168 x2
+  (Win+WSL), all 14 probes x2 (Win) + WSL spot.
 
 ## Update rule
 

@@ -129,6 +129,7 @@ Selectivity-based plan choice for filtered search.
 ## `xiom.vector.query.search_service` (extracted module)
 Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `hydrate_hits` (search_range / search_execute pending).
 `SearchResult { id: Int; distance: Float32 }`.
+- Per-build pin for the Result/Option payload shapes (XVC-C-04): `tests/probes/probe_result_shapes.xi`.
 - `search_knn(idx, query, k, metric)` `requires: k > 0, idx.dim == query.dimension` `ensures: result.len() <= k`.
 - `search_range(idx, query, radius, metric)` `requires: radius > 0.0, idx.dim == query.dimension`.
 - `search_execute(idx, graph, query, k, metric, kind)` -- routes by `AnnIndexKind` (Flat/Ivf -> exact scan, Hnsw -> graph), lowers `Neighbor -> SearchResult`, `ensures: result.len() <= k`.

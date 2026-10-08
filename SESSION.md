@@ -8,21 +8,22 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (19 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (20 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
 payload key index -> selectivity pre/post filter planner -> HNSW layer-0
 graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
-beam construction + diversified pruning -> HNSW id map [XVC-C-09 found]).
+beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
+shape pins + unwind-candidate decision).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `cceae11` (feat: HNSW id map + WSL
-nested-field workaround), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `6b1acea` (test: shapes pin probe),
+then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -32,7 +33,7 @@ nested-field workaround), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `cceae11` + this wrap commit | this repo |
+| xvector | `6b1acea` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -124,6 +125,13 @@ nested-field workaround), then this wrap commit. Identity `Lefteris Notas
   the compiled `engine_set_index` segfaulted on WSL while Windows stayed
   green; fixed by building the graph in a local then assigning `eng.graph`
   once. Repro pinned at `bca8b7f`: `docs/repro/xv-wsl-nested-field/`.
+- **Workaround pins + unwind decision (slice 5):** new per-build pin
+  `probe_result_shapes.xi` gates the whole XVC-C-04 shape matrix (incl. the
+  real engine path) on every build -- 8/8 fresh builds Windows + 2/2 WSL;
+  `probe_bind_semantics` pins C-01 (8/8 + 2/2). Decision: KEEP the
+  `SearchHits` wrapper (zero-cost, public API, C-08/C-09 family still open)
+  and KEEP the suite's direct dispatch; revisit at the next compiler
+  archive.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -137,18 +145,21 @@ final extraction wave):**
   in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
-- All **13 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- All **14 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
-  `probe_engine_hnsw`, `probe_hnsw_codec` (run via `scripts\run-probe.ps1`).
-- WSL spot: `probe_hnsw_codec` x2 + `probe_engine_hnsw` x1 +
-  `probe_hnsw_recall` x2 + `probe_filter_plan` x2 + `probe_filtered_search`
-  x1 + `probe_vector_store` green (`bash scripts/run-probe.sh`).
+  `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes` (run via
+  `scripts\run-probe.ps1`).
+- WSL spot: `probe_result_shapes` x2 + `probe_bind_semantics` x2 +
+  `probe_hnsw_codec` x2 + `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 +
+  `probe_filter_plan` x2 + `probe_filtered_search` x1 + `probe_vector_store`
+  green (`bash scripts/run-probe.sh`).
 - Stresses: `probe_search_request` 8/8, `probe_payload_index` 6/6,
   `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6,
-  `probe_hnsw_codec` 6/6 fresh builds (see XVC-C-08 for why trailing-field
-  reads are not asserted in the suite).
+  `probe_hnsw_codec` 6/6, `probe_result_shapes` 8/8, `probe_bind_semantics`
+  8/8 fresh builds (see XVC-C-08 for why trailing-field reads are not
+  asserted in the suite).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -181,13 +192,14 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Compiler-workaround unwind candidates (slice 5):** `SearchHits` struct
-   wrapper (C-04 fixed) -- decide API shape deliberately; suite direct
-   dispatch (C-01); predicate-based negative tests (C-02). Only land what is
-   verified green per build (Windows + WSL). Then HNSW round-5 finishing:
-   harness latency metrics; file-backed graph segments once stdlib I/O
-   lands. Gates today: `probe_hnsw_recall`, `probe_engine_hnsw`,
-   `probe_hnsw_codec` (all stress 6/6).
+1. **Priority list exhausted for autonomous work (2026-10-08).** Remaining
+   items are stdlib-gated or release gates: M2 file-backed WAL (fsync/
+   fd-write/append-bytes still stubs -- re-checked 2026-10-08), HNSW
+   file-backed segments (same gate), HNSW harness latency metrics (avg
+   visited already reported), multi-key / index-driven candidate iteration
+   (E stretch), unwind re-evaluation at the next compiler archive, G-phase
+   concurrency/soak. A new SESSION pass should start from this list when
+   the stdlib gap lands or the owner opens a release gate.
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -309,7 +321,7 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-168/168 x2 (Windows + WSL), 13 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 14 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -329,7 +341,8 @@ routing with ef=ann.ef_search, filtered stays exact; gate
 probe_engine_hnsw: engine recall 200/200, delete/revive, recover+re-apply;
 hnsw_compact tombstone compaction + engine compact_index; hnsw_encode/
 hnsw_decode strict graph codec; beam construction honouring
-ef_construction with diversified pruning; sorted id map).
+ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
+pin probe; C-01 bind pin).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -338,14 +351,14 @@ probes); XVC-C-09 OPEN (WSL-only nested-field mutation segfault; build into
 a local then assign once; repro docs/repro/xv-wsl-nested-field pinned at
 bca8b7f).
 
-NEXT TASK (priority 1): compiler-workaround unwind candidates (slice 5) --
-`SearchHits` struct wrapper (C-04 fixed; decide the API shape), suite direct
-dispatch (C-01), predicate-based negative tests (C-02) -- only what is
-verified green per build on Windows + WSL. Then HNSW round-5 finishing:
-harness latency metrics; file-backed graph segments once stdlib I/O lands.
-Add suite + probe gates for each step, keep the numeric gates per build.
-Standby: M2 file-backed WAL when stdlib lands fsync/fd-write/append-bytes
-(still stubs -- re-checked 2026-10-08).
+NEXT TASK (priority 1): the autonomous priority list is exhausted --
+remaining work is stdlib-gated (M2 file-backed WAL; HNSW file-backed
+segments) or release/owner-gated (staging E2E, rulesets, releases). When
+the stdlib gap lands: M2 file-backed WAL + kill-recovery harness, then
+HNSW segments. Optional stretch: HNSW harness latency metrics, multi-key /
+index-driven candidate iteration, unwind re-evaluation at the next
+compiler archive, G-phase concurrency/soak. Keep the wrap discipline:
+suite x2 (Win+WSL), all 14 probes x2, signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
