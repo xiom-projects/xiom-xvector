@@ -11,7 +11,8 @@ Instrument: **XIOM Compiler v0.64.1** (current pin), Windows
 (`~/.local/share/xiom`, Ubuntu); stdlib `E:\xiom-lang\stdlib`
 (`/mnt/e/xiom-lang/stdlib` in WSL) and the compiler-bundled tree; no
 registry packages consumed yet (see `PACKAGE-WISHLIST-XVECTOR.md`).
-All findings below were reported on v0.64.0 and re-tested on v0.64.1.
+All findings below were reported on v0.64.0 and re-tested on v0.64.1, except
+**XVC-C-08**, which was found on v0.64.1 (2026-10-08).
 
 Format: `| Date | Finding | Evidence | Workaround | Impact |`.
 Every finding carries a minimal repro bundle under `docs/repro/`.
@@ -20,7 +21,7 @@ Reference docs read before reporting (do NOT re-run known bisections; add
 delta evidence only): packages `docs/COMPILER-FINDINGS.md`,
 `docs/repro/README.md`, PULSE `docs/COMPILER-FINDINGS-PULSE.md`.
 
-## Re-test on v0.64.1 (2026-10-08) -- 6 of 7 FIXED
+## Re-test on v0.64.1 (2026-10-08) -- 6 of 7 FIXED (XVC-C-08 opened later same day)
 
 | ID | v0.64.1 verdict | Evidence |
 |---|---|---|
@@ -51,6 +52,7 @@ struct wrapper (C-04), IntVal/TextVal gating with FloatVal diagnostics
 | 2026-10-08 | **[FIXED v0.64.1]** **XVC-C-05 (major): per-build nondeterministic codegen -- Float32 arithmetic on `Vec[Float32]` elements can be lowered as INTEGER arithmetic on the IEEE-754 bit patterns.** In `probe_failing.xi`, a red build's `vector_dot(p2, q)` returns double `1.13319008125164e+18` = `1063675494 x 1065353216` = `0x3F666666 x 0x3F800000` -- the f32 **bit patterns** of `0.9` and `1.0` multiplied as `Int`s; `p2.data[0]` prints as `1063675494.0` (the integer of `0x3F666666`). Green builds of the same bytes are exact. Correctness flips **per compilation**: irrelevant byte changes (a comment, the module name) and the `--sequential` flag all perturb which lowering is emitted, in BOTH directions. Smaller sibling probes importing the SAME engine module (`evidence_debug_cosine.xi`, `evidence_bisect_a/b/c.xi`) were green in every compile; a self-contained control is green. So the trigger is compilation-unit shape + emission order, not the source semantics. Same family as the packages-lane "nondeterministic payload-length read" note. | Bundle `docs/repro/xv-f32-int-miscompile/`: `probe_failing.xi` (flaky), `evidence_debug_cosine.xi` + `evidence_bisect_a/b/c.xi` + `evidence_debug_search.xi` (green controls), `control_selfcontained_min.xi` (green self-contained), `linux_matrix.sh` (WSL matrix runner). Measured 2026-10-08, v0.64.0: Windows same-bytes default **1/3, 2/3 and 1/3 red** across three 3x batches (never stable); Windows `--sequential` **2/3 red then 3/3 green on earlier bytes** (not a fix); WSL Linux default **3/3 red** on earlier bytes, **3/3 green** after a comment-only change; WSL `--sequential` 3/3 red on the later bytes. Full raw-bits decode in the bundle README. | **No reliable flag workaround.** Treat a red numeric check as a build rejection: every evidence build must run its own numeric assertions (the suite/probe do); rebuild and re-verify rather than trusting a binary. `scripts/build.ps1 -Sequential` / `XVECTOR_SEQUENTIAL=1 scripts/build.sh` remain as A/B diagnostics only. | silent wrong numeric results in any production unit -- a vector DB's distance kernel is exactly this shape; needs compiler-lane localization of the int/float lowering decision (watch for a unit-hash/order dependency) |
 | 2026-10-08 | **[FIXED v0.64.1]** **XVC-C-06: Float32 enum payloads can read as 0 in a given compilation unit/build** (tag intact, payload zeroed) -- same per-build family as XVC-C-05. Observed while adding payload filtering: in the 156-check suite unit a directly constructed `FieldValue.FloatVal(10.0)` extracted as `0.0` (float_bits=0) with `field_value_kind == "float"`; the engine-import probe `probe_filtered_search.xi` failed FloatVal Range/And checks in 2 of 3 builds (`diag FloatVal(2.5) roundtrip bits=0`, expected 4612811918334230528), while IntVal/TextVal/Bool payloads were stable in the same units. Flips green/red across builds like XVC-C-05; small standalone probes with identical code were green (minimal reduction pending). | `docs/repro/xv-f32-payload-zero/README.md` (suite DBG evidence `direct_f=0 stored_f=0 kind=float` + probe diagnostic + rebuild recipe). Lane impact: the suite's Range tests moved to IntVal fields and the probe's FloatVal roundtrip is now a diagnostic print, not a gate. | Do not put Float32 payloads in gating assertions on this pin (metadata with float prices/scores can silently read 0); use IntVal/TextVal for gates and keep FloatVal as a build-verified diagnostic; rebuild + re-verify per build (XVC-C-05 rule). | float-typed metadata silently zeroes in affected builds -- exactly the payload type a vector DB filters on |
 | 2026-10-08 | **[OPEN]** **XVC-C-07: `Str::from_utf8(&Vec[UInt8])` type-checks but emits invalid LLVM IR** -- clang `error: invalid getelementptr indices` (`getelementptr %struct.Vec*, %struct.Vec** %tmp, i32 0, i32 0`). Passing the Vec **by value** is correct and is what the stdlib does (`convert/cstring.xi:47`, `convert/escape.xi:577`, `compress/compress.xi:526`). Found while implementing the XVECTOR payload WAL codec; compile fails loudly (no silent wrong code observed). | `docs/repro/xv-from-utf8-vec-ref/` (`probe.xi`: `Str::from_utf8(&kb)` -> clang exit 1; `Str::from_utf8(kb)` -> green). | Pass the Vec by value; the compiler should reject `&Vec` at type-check time (or accept it coherently). | blocks a natural API spelling; the engine now passes by value |
+| 2026-10-08 | **[OPEN]** **XVC-C-08: a trailing scalar after a Vec-bearing field in a `Vec[Struct]` element reads as uninitialized garbage in some compilation units** (observed: `Bool` reads `true` when stored `false`; `Int` also affected, so not Bool-specific). Found while landing `SearchRequest`-driven search with `with_payload` hydration: `hydrate_hits` pushes `SearchHit{ id; distance; payload: Payload; has_payload: Bool }`. The **same source** is correct in its own module (`tests/probes/probe_search_request.xi`, green 8/8 fresh builds) but miscompiles in the big conformance-suite unit (hydration flags read true) and in the standalone reduction. Trigger matrix (`variants.xi`): needs the Vec-bearing field plus surrounding machinery in a loop; scalar-only and plain-push shapes are green (V1-V4, V6, V8); an `if` + `Option[non-scalar]` match in the loop is present in all red shapes, but sign/`Int` flag variants are red too; declaring the scalar **before** the Vec is green in the bundle (V13) -- yet the same reorder in the suite unit produced an access violation (`0xC0000005`), so layout workarounds are context-sensitive in both directions. | `docs/repro/xv-trailing-field-vec/`: `probe.xi` -> exit 1 `BAD detach count`, 5/5 Windows builds; `variants.xi` -> exit 5 (first failing variant: V5/V7/V10/V11/V12/V14 red, `code 2` = second element's flag true; V13 green); `min.xi` scalar control green. | Do not trust trailing-scalar reads in affected units; gate hydration flags only in the real-module probe; verify any layout workaround per unit. | silent wrong metadata: hydrated search results can claim payloads they do not have |
 
 
 ## Notes for the compiler lane
@@ -60,11 +62,13 @@ struct wrapper (C-04), IntVal/TextVal gating with FloatVal diagnostics
   then run `out\pf.exe`; repeat 3x — expect nondeterminism on Windows.
   `-Sequential` is the A/B switch. On WSL:
   `bash scripts/build.sh docs/repro/... <name>` (set `XVECTOR_SEQUENTIAL=1` for the flag).
-- The conformance suite is `tests/test_conformance.xi` (136 checks, self-contained; does not import `src/engine.xi`).
+- The conformance suite is `tests/test_conformance.xi` (168 checks, self-contained; does not import `src/engine.xi`).
   Run: `scripts\run-suite.ps1` / `bash scripts/run-suite.sh`.
 - The critical-primitive probe is `tests/probes/probe_vector_store.xi` (imports `src/engine.xi` via `xiom.toml` roots;
   exercise with `scripts\run-probe.ps1 tests\probes\probe_vector_store.xi -Sequential`).
 - Phase 3 filtering probe: `tests/probes/probe_filtered_search.xi` (engine-import unit; prints the XVC-C-06
   FloatVal diagnostic; run with `scripts\run-probe.ps1 tests\probes\probe_filtered_search.xi -Runs 2`).
-- Bump procedure when the next archive lands: re-run all five repro bundles FIRST,
-  then the suite x2 + the probe, then re-pin in `SESSION.md`.
+- SearchRequest/hydration probe: `tests/probes/probe_search_request.xi` (real-module gate for XVC-C-08;
+  run with `scripts\run-probe.ps1 tests\probes\probe_search_request.xi -Runs 2`).
+- Bump procedure when the next archive lands: re-run all repro bundles FIRST,
+  then the suite x2 + the probes, then re-pin in `SESSION.md`.

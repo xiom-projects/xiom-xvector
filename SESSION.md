@@ -8,17 +8,18 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (8 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (9 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
-waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave).
+waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
+SearchRequest wire + with_payload hydration [XVC-C-08 found]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `f431aa3` (refactor: final extraction
-wave), then this wrap commit. Identity `Lefteris Notas
-<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes. HEAD `41cbc11` (feat: SearchRequest-driven
+search + with_payload hydration), then this wrap commit. Identity `Lefteris
+Notas <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -27,7 +28,7 @@ wave), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `f431aa3` + this wrap commit | this repo |
+| xvector | `41cbc11` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -56,10 +57,17 @@ wave), then this wrap commit. Identity `Lefteris Notas
   `src/engine/core.xi` (`xiom.vector.engine.core`: VectorEngine + engine_*);
   `src/engine.xi` (`xiom.vector.engine`) is now the **facade only**.
   Dependency order: `core.shim <- engine.core <- engine` (no cycles).
+- **Phase 3 refinement (request surface):** `SearchRequest` rewritten against
+  the real types + `search_request_set_with_payload`; `SearchHit`/
+  `HydratedHits` + `hydrate_hits` in `query/search_service.xi`;
+  `engine_search_request` (metric validation, filtered/plain dispatch,
+  optional hydration) + facade `search_with_request`; new probe
+  `probe_search_request` (real-module gate). Hydration flags are gated in
+  that probe only (compiler XVC-C-08, below).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **55 % today**; recompute at every wrap.
+  scorecard, **56 % today**; recompute at every wrap.
 
 **Green evidence (re-verified on compiler v0.64.1 + stdlib 0.64.2, after the
 final extraction wave):**
@@ -67,14 +75,16 @@ final extraction wave):**
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
   (the new-module import gate: `xiom.vector.engine` + `xiom.vector.engine.core`
   in one consumer).
-- `scripts\run-suite.ps1 -Runs 2` -> **166/166 passed** twice, exit 0;
-  WSL `bash scripts/run-suite.sh 2 240` -> **166/166 x2**.
-- All **7 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
+  WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
+- All **8 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
-  `probe_payload_recovery`, `probe_floatval_roundtrip` (run via
-  `scripts\run-probe.ps1`).
-- WSL spot: `probe_engine_import` + `probe_vector_store` green with
-  bit-identical diagnostics (`bash scripts/run-probe.sh`).
+  `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`
+  (run via `scripts\run-probe.ps1`).
+- WSL spot: `probe_search_request` x2 (bit-identical to Windows) +
+  `probe_vector_store` green (`bash scripts/run-probe.sh`).
+- `probe_search_request` stress: **8/8 fresh builds green** (the shipped
+  hydration path is stable in its own unit; see XVC-C-08).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
@@ -87,8 +97,14 @@ final extraction wave):**
 - **XVC-C-07 OPEN:** `Str::from_utf8(&Vec[UInt8])` emits invalid LLVM IR
   (`invalid getelementptr`); pass the Vec **by value**. Repro:
   `docs/repro/xv-from-utf8-vec-ref/`. Re-test at the next archive.
-- Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addendum 3 has the
-  v0.64.1 results).
+- **XVC-C-08 OPEN (new on v0.64.1):** a trailing scalar after a Vec-bearing
+  field in a `Vec[Struct]` element can read as uninitialized garbage
+  (silent wrong hydration flags; Bool true / Int nonzero) depending on the
+  compilation unit. Repro: `docs/repro/xv-trailing-field-vec/` (probe exit
+  1, variants matrix exit 5). The shipped `hydrate_hits` is green in its own
+  unit (probe 8/8 builds); the suite mirror asserts ids only.
+- Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addendum 3 =
+  v0.64.1 results; Addendum 4 = XVC-C-08).
 
 ---
 
@@ -96,9 +112,11 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Phase 3 refinements:** sorted key index for payload fields (O(log n)
-   lookup), pre/post-filter planner (selectivity-based), `SearchRequest`-driven
-   search + `with_payload` hydration. Suite/probe gates for each step.
+1. **Phase 3 refinements (remaining):** sorted key index for payload fields
+   (O(log n) lookup), selectivity-based pre/post-filter planner.
+   `SearchRequest`-driven search + `with_payload` hydration landed
+   2026-10-08 (gate: `probe_search_request`). Suite/probe gates for each
+   step.
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -149,6 +167,11 @@ The extraction tree is final; what remains is capability work.
 - Types are `Vec[T]`/`Result[T, Err]`; after every write grep for
   `Vec<|Result<|Option<`.
 - **XVC-C-07 (open): pass Vec arguments BY VALUE to `Str::from_utf8`.**
+- **XVC-C-08 (open): a trailing scalar after a Vec-bearing field in a
+  `Vec[Struct]` element can read as uninitialized garbage.** Gate such reads
+  only in real-module probes (never in the suite mirror); repro
+  `docs/repro/xv-trailing-field-vec/`. Verify any layout workaround per unit
+  (the flag-first reorder was green in the bundle but segfaulted the suite).
 - Historical v0.64.0-era traps (C-01..C-06) are fixed; if any reappears,
   open a delta row instead of re-bisecting (details in the findings doc).
 - Keep numeric gates per build (suite/probes assert exact bits; red = build
@@ -158,6 +181,11 @@ The extraction tree is final; what remains is capability work.
   (PS 5.1 `Start-Process` ExitCode is unreliable).
 - WSL: default distro is `docker-desktop`; use `wsl.exe -d Ubuntu` for the
   toolchain (`~/.local/share/xiom/bin/xiom`).
+- Before trusting a red build, check machine health (`Get-CimInstance
+  Win32_OperatingSystem` free memory): a concurrent lane's benchmark once
+  starved the machine (free < 1 GB) and produced spurious miscompiles and
+  OutOfMemory interrupts in the shell. Re-run on a quiet machine before
+  filing anything.
 
 ## 5. Ecosystem status (2026-10-08)
 
@@ -179,8 +207,8 @@ The extraction tree is final; what remains is capability work.
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/7 fixed (v0.64.1); C-07 open |
-| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = v0.64.1 re-test results |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/8 fixed (v0.64.1); C-07 + C-08 open |
+| `docs/RELAY-COMPILER.md` | compiler | Addendum 3 = v0.64.1 re-test; Addendum 4 = XVC-C-08 |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still blocking M2 |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
@@ -205,27 +233,32 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-166/166 x2 (Windows + WSL), 7 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 8 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
 extraction waves, tree final: facade (src/engine.xi) <- orchestrator
 (src/engine/core.xi) <- xiom-core shim (src/core/shim.xi), plus payload/
 types/storage/query/durability modules; consumers call engine_* via
-`use xiom.vector.engine.core;`. FloatVal gates restored after the v0.64.1
-fix. Compiler: XVC-C-01..06 FIXED, XVC-C-07 OPEN (pass Vec by value to
-Str::from_utf8).
+`use xiom.vector.engine.core;`. SearchRequest wire + with_payload hydration
+(engine_search_request / search_with_request; gate probe_search_request).
+FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
+FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
+(trailing scalar after a Vec-bearing field can read garbage; repro
+docs/repro/xv-trailing-field-vec; gate such reads only in real-module
+probes).
 
 NEXT TASK (priority 1): Phase 3 refinements on the final tree -- sorted
-payload key index (O(log n) field lookup), selectivity-based pre/post-filter
-planner, SearchRequest-driven search + with_payload hydration. Add suite +
-probe gates for each, keep the numeric gates per build. Standby: M2
-file-backed WAL when stdlib lands fsync/fd-write/append-bytes (still
-stubs); HNSW hardening + recall harness; unwind candidates (C-04 SearchHits
-wrapper, C-01 direct dispatch).
+payload key index (O(log n) field lookup) and selectivity-based
+pre/post-filter planner. Add suite + probe gates for each, keep the numeric
+gates per build. Standby: M2 file-backed WAL when stdlib lands
+fsync/fd-write/append-bytes (still stubs); HNSW hardening + recall harness;
+unwind candidates (C-04 SearchHits wrapper, C-01 direct dispatch).
 
 Discipline: struct literals list every field; locals initialized; Vec by
-value to Str::from_utf8 (C-07); numeric gates per build; watchdogs + exit
-codes; suite x2 green before any wrap; update SESSION.md STATE + relay rows
-+ docs/PRODUCTION-READINESS.md at every wrap; commit signed at every step.
+value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
+probes (C-08); numeric gates per build; watchdogs + exit codes; check free
+memory before trusting a red build; suite x2 green before any wrap; update
+SESSION.md STATE + relay rows + docs/PRODUCTION-READINESS.md at every wrap;
+commit signed at every step.
 ```
