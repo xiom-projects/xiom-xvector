@@ -134,16 +134,32 @@ fn main() -> Int {
   fails = check(hnsw_find_node_pos(&graph, 100) == 99 && hnsw_find_node_pos(&graph, 999) == -1,
     "find_node_pos: 100 -> 99, missing -> -1", fails);
 
-  // diag: degree stats + reachability from the entry (position 0)
+  // diag: layer-0 degree stats, level distribution, reachability from entry
   var zero_deg: Int = 0;
   var max_deg: Int = 0;
   i = 0;
   while i < hnsw_size(&graph) {
-    var d = graph.deg[i];
+    var d = graph.deg[i * hnsw_layer_capacity()];
     if d == 0 { zero_deg = zero_deg + 1; }
     if d > max_deg { max_deg = d; }
     i = i + 1;
   }
+  var level_hist = Vec[Int].new();
+  var lh: Int = 0;
+  while lh < hnsw_layer_capacity() { level_hist.push(0); lh = lh + 1; }
+  i = 0;
+  while i < hnsw_size(&graph) {
+    var lv = graph.levels[i];
+    level_hist[lv] = level_hist[lv] + 1;
+    i = i + 1;
+  }
+  var lhs = "";
+  lh = 0;
+  while lh < hnsw_layer_capacity() {
+    if level_hist[lh] > 0 { lhs = lhs + "L" + int_to_str(lh) + "=" + int_to_str(level_hist[lh]) + " "; }
+    lh = lh + 1;
+  }
+  var top_level = graph.levels[graph.entry];
   var reach = Vec[Bool].new();
   i = 0;
   while i < hnsw_size(&graph) { reach.push(false); i = i + 1; }
@@ -154,9 +170,10 @@ fn main() -> Int {
   while frontier.len() > 0 {
     var cur = frontier[frontier.len() - 1];
     frontier.pop();
+    var crow = cur * hnsw_layer_capacity();
     var j = 0;
-    while j < graph.deg[cur] {
-      var nb = graph.adj[cur * graph.m + j];
+    while j < graph.deg[crow] {
+      var nb = graph.adj[crow * graph.m + j];
       if !reach[nb] {
         reach[nb] = true;
         reach_count = reach_count + 1;
@@ -165,12 +182,14 @@ fn main() -> Int {
       j = j + 1;
     }
   }
-  io.println("    diag graph: reachable=" + int_to_str(reach_count) + "/" + int_to_str(n)
-    + " zero_deg=" + int_to_str(zero_deg) + " max_deg=" + int_to_str(max_deg));
+  io.println("    diag graph: reachable(L0)=" + int_to_str(reach_count) + "/" + int_to_str(n)
+    + " zero_deg=" + int_to_str(zero_deg) + " max_deg=" + int_to_str(max_deg)
+    + " top_level=" + int_to_str(top_level) + " levels: " + lhs);
 
   // --- recall@10: ef=64 and ef=8 ---
   var hits64: Int = 0;
   var hits8: Int = 0;
+  var seen64: Int = 0;
   var qi: Int = 0;
   while qi < queries {
     var qc = Vec[Float32].new();
@@ -179,6 +198,7 @@ fn main() -> Int {
     var oracle = search_knn(&flat, &q, k, DistanceMetric.Euclidean);
     var approx64 = hnsw_search(&graph, &q, k, 64, DistanceMetric.Euclidean);
     var approx8 = hnsw_search(&graph, &q, k, 8, DistanceMetric.Euclidean);
+    seen64 = seen64 + hnsw_search_visited(&graph, &q, k, 64, DistanceMetric.Euclidean);
     hits64 = hits64 + hit_count(&oracle, &approx64, k);
     hits8 = hits8 + hit_count(&oracle, &approx8, k);
     if qi == 0 {
@@ -191,7 +211,8 @@ fn main() -> Int {
   }
   var denom: Int = queries * k;
   io.println("    diag recall@10 ef=64: " + int_to_str(hits64) + "/" + int_to_str(denom)
-    + "  ef=8: " + int_to_str(hits8) + "/" + int_to_str(denom));
+    + "  ef=8: " + int_to_str(hits8) + "/" + int_to_str(denom)
+    + "  avg_visited(ef=64)=" + int_to_str(seen64 / queries) + "/" + int_to_str(n));
   // Gate: ef=64 recall must be >= 85% (measured baseline documented in SPEC).
   fails = check(hits64 * 100 >= denom * 85, "recall@10 ef=64 >= 0.85", fails);
   fails = check(hits8 * 100 >= denom * 50, "recall@10 ef=8 >= 0.50", fails);
@@ -225,6 +246,42 @@ fn main() -> Int {
   var denom_cos: Int = qcos * k;
   io.println("    diag cosine recall@10 ef=64: " + int_to_str(hits_cos) + "/" + int_to_str(denom_cos));
   fails = check(hits_cos * 100 >= denom_cos * 60, "cosine recall@10 >= 0.60", fails);
+
+  // --- scaling sanity: n=800, 20 queries, Euclidean ---
+  var nbig: Int = 800;
+  var state3: Int = 135792468;
+  var flat3 = index_new(dim);
+  var graph3 = hnsw_new(16, 4.0);
+  i = 0;
+  while i < nbig {
+    var coords3 = Vec[Float32].new();
+    state3 = rand_coords(state3, dim, &mut coords3);
+    var x1 = vec_from_coords(&coords3);
+    var x2 = vec_from_coords(&coords3);
+    index_add(&mut flat3, i + 1, x1);
+    hnsw_insert(&mut graph3, i + 1, x2, DistanceMetric.Euclidean);
+    i = i + 1;
+  }
+  var hits3: Int = 0;
+  var seen3: Int = 0;
+  var q3n: Int = 20;
+  var qbig: Int = 0;
+  while qbig < q3n {
+    var qc3 = Vec[Float32].new();
+    state3 = rand_coords(state3, dim, &mut qc3);
+    var qb = vec_from_coords(&qc3);
+    var oracle3 = search_knn(&flat3, &qb, k, DistanceMetric.Euclidean);
+    var approx3 = hnsw_search(&graph3, &qb, k, 64, DistanceMetric.Euclidean);
+    seen3 = seen3 + hnsw_search_visited(&graph3, &qb, k, 64, DistanceMetric.Euclidean);
+    hits3 = hits3 + hit_count(&oracle3, &approx3, k);
+    qbig = qbig + 1;
+  }
+  var denom3: Int = q3n * k;
+  io.println("    diag n=800: recall@10 ef=64 " + int_to_str(hits3) + "/" + int_to_str(denom3)
+    + "  avg_visited=" + int_to_str(seen3 / q3n) + "/" + int_to_str(nbig)
+    + "  top_level=" + int_to_str(graph3.levels[graph3.entry]));
+  fails = check(hits3 * 100 >= denom3 * 80, "n=800 recall@10 ef=64 >= 0.80", fails);
+  fails = check(hnsw_size(&graph3) == nbig, "n=800 graph size", fails);
 
   // --- cold graph + dimension mismatch are safe ---
   var cold = hnsw_new(4, 4.0);
