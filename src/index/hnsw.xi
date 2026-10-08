@@ -368,6 +368,19 @@ fn hnsw_search_core(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: Dist
   return seen;
 }
 
+// Copy-insert variant for callers that must keep their vector value (the
+// engine feeds both the flat store and the graph from one upsert).
+pub fn hnsw_insert_ref(g: &mut HNSWGraph, id: Int, vec: &Vector, metric: DistanceMetric) {
+  var d: Int = vec.dimension as Int;
+  var copy = Vector.new(d);
+  var i: Int = 0;
+  while i < d {
+    copy.set(i, vec.get(i));
+    i = i + 1;
+  }
+  hnsw_insert(g, id, copy, metric);
+}
+
 // Best-first search. Returns up to k ascending-by-distance neighbors
 // (`ensures: result.len() <= k`); empty graph or dimension mismatch -> empty.
 pub fn hnsw_search(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: DistanceMetric) -> Vec[Neighbor]
