@@ -74,3 +74,5 @@ struct wrapper (C-04), IntVal/TextVal gating with FloatVal diagnostics
   run with `scripts\run-probe.ps1 tests\probes\probe_search_request.xi -Runs 2`).
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
   then the suite x2 + the probes, then re-pin in `SESSION.md`.
+- Soak / mixed-workload gate: `tests/probes/probe_soak_mixed.xi`
+  (600 deterministic ops with bookkeeping invariants + recovery).
