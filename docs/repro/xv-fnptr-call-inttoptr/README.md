@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+
+Status: **FIXED in v0.64.1** (2026-10-08 re-test): both probe.xi and probe_deref.xi compile and run exit 0.
 # XVC-C-01 repro: `&fn() -> T` parameter call miscompile
 
 Compiler: **v0.64.0** (Windows `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL

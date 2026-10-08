@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+
+Status: **STILL OPEN on v0.64.1** (2026-10-08 re-test): Windows clang invalid getelementptr indices; WSL LLVM verifier same at out/r07_lin.exe.ll:648. Pass the Vec by value.
 # XVC-C-07 repro: `Str::from_utf8(&Vec[UInt8])` emits invalid LLVM IR
 
 Compiler: **v0.64.0** (Windows; likely all platforms -- clang-stage bug).

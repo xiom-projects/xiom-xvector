@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+
+Status: **FIXED in v0.64.1** (2026-10-08 re-test): Windows 3/3 and WSL 9/9 fresh builds exact, including --sequential.
 # XVC-C-05 repro: Float32 ops lowered as integer bit-pattern arithmetic
 
 Compiler: **v0.64.0**. In `probe_failing.xi` (imports `xiom.vector.engine` via
