@@ -86,12 +86,16 @@ Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector 
 ## `xiom.vector.index.flat_index`
 `FlatIndex { store: VectorIndex }` -- exact brute-force baseline / correctness oracle. `flat_index_new/add/remove/size`; `flat_index_search(idx, query, k, metric)` `ensures: result.len() <= k` (delegates to `search_service.search_knn`).
 
-## `xiom.vector.index.hnsw`
-`HNSWNode { id: UInt64; neighbors: Vec[Neighbor] }`, `HNSWLayer`, `HNSWGraph { layers; max_neighbors; ml }`.
-- `hnsw_new(max_neighbors, ml)` `requires: max_neighbors > 0`, `ml > 0.0`.
-- `hnsw_insert(graph, id, vec)` -- level assignment, greedy descent, in-layer neighbour selection, bidirectional edges bounded by `max_neighbors`.
-- `hnsw_search(graph, query, k)` `requires: k > 0` `ensures: result.len() <= k` -- returns `Vec[Neighbor]`.
-- `hnsw_layer_count`, `hnsw_node_count`.
+## `xiom.vector.index.hnsw` (working layer-0 graph)
+Flat parallel arrays (no nested `Vec[Struct-with-Vec]` -- the AUDIT T001
+family): `HNSWGraph { ids: Vec[Int]; vectors: Vec[Vector]; adj: Vec[Int];
+deg: Vec[Int]; m: Int; ml: Float32; entry: Int }`; adjacency is row-major
+(`adj[pos*m+slot]`, live slots `0..deg[pos]`).
+- `hnsw_new(m, ml)` `requires: m > 0, ml > 0.0` (`ml` reserved for level assignment).
+- `hnsw_insert(graph, id, vec, metric)` -- exact-kNN build: brute-force the `m` nearest existing nodes, connect bidirectionally, prune a full block by replacing its farthest edge when the new one is closer. A dimension mismatch vs the first insert is ignored (the engine validates upstream).
+- `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- best-first beam, breadth = `max(k, ef)`, `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
+- `hnsw_size`, `hnsw_find_node_pos` (linear; id -> position map pending).
+- Recall harness: `tests/probes/probe_hnsw_recall.xi` (n=200, dim=8, LCG dataset): recall@10 300/300 at ef=64, 299/300 at ef=8, cosine 100/100 vs the flat oracle.
 
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to `types.metric` today.

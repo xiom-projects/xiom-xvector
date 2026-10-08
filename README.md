@@ -64,7 +64,7 @@ src/
 |-- payload/                  payload (+ sorted key index) - filter_ast - filter_eval
 |-- storage/                  vector_store - id_map
 |-- segment/                  segment_state - segment - manifest
-|-- index/                    ann_index - flat_index - hnsw
+|-- index/                    ann_index - flat_index - hnsw (+ recall harness)
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - filter_plan - topk_heap - search_service
 |-- durability/               wal - recovery - write_ahead_events

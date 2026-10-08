@@ -94,7 +94,8 @@ src/
 |-- index/
 |   |-- ann_index.xi      AnnIndexKind {Flat,Hnsw,Ivf} + AnnParams    [DONE]
 |   |-- flat_index.xi     exact brute-force baseline (truth oracle)   [DONE]
-|   `-- hnsw.xi           in-memory HNSW graph (insert + greedy search) [DONE]
+|   `-- hnsw.xi           working layer-0 graph (exact-kNN build + beam
+|                         search; recall harness vs flat oracle)        [DONE]
 |
 |-- distance/
 |   |-- cosine.xi         cosine kernel + similarity                  [DONE]
