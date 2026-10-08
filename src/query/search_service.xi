@@ -13,6 +13,7 @@ use xiom.vector.storage.vector_store;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.payload.filter_eval;
+use xiom.vector.query.filter_plan;
 
 pub type SearchResult = {
   id: Int;
@@ -61,10 +62,10 @@ pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMet
   return results;
 }
 
-// Filtered exact scan: evaluate the filter per candidate BEFORE the distance
-// compute (a pre-filter plan for the exact engine; a selectivity-based
-// pre/post planner is a later Phase 3 deliverable).
-pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
+// Pre-filter exact scan: evaluate the filter per candidate BEFORE the
+// distance compute. This is the fallback plan and the default for
+// un-estimable or low-selectivity filters.
+fn search_knn_filtered_scan(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
   requires: k > 0
   requires: idx.dim == query.dimension
   ensures: result.len() <= k
@@ -80,6 +81,42 @@ pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &V
     i = i + 1;
   }
   return results;
+}
+
+// Matching subset of a result list, order preserved.
+fn filter_results_by_payload(items: &Vec[SearchResult], payloads: &PayloadStore, filter: &FilterExpr) -> Vec[SearchResult] {
+  var out = Vec[SearchResult].new();
+  var i: Int = 0;
+  while i < items.len() {
+    if payload_store_matches(payloads, items[i].id, filter) {
+      out.push(SearchResult{ id: items[i].id, distance: items[i].distance });
+    }
+    i = i + 1;
+  }
+  return out;
+}
+
+// Selectivity-planned filtered exact top-k. Post-filter plan (chosen by
+// filter_plan.choose_filter_plan only for index-answerable filters whose
+// exact match count is >= k and a majority of the store): rank the whole
+// store (top-k), keep the matching subset. When that subset fills k it is
+// provably exact -- any matching point outside the global top-k is farther
+// than every point in it -- otherwise (uneven distance ties, or estimates
+// that overstate the boundary situation) fall back to the pre-filter scan.
+// Equal-distance ties may select different ids across plans; distances and
+// the k-bound are unaffected.
+pub fn search_knn_filtered(idx: &VectorIndex, payloads: &PayloadStore, query: &Vector, k: Int, metric: DistanceMetric, filter: &FilterExpr) -> Vec[SearchResult]
+  requires: k > 0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= k
+{
+  var plan: Int = choose_filter_plan(payloads, filter, idx.ids.len(), k);
+  if plan == filter_plan_post() {
+    var raw = search_knn(idx, query, k, metric);
+    var out = filter_results_by_payload(&raw, payloads, filter);
+    if out.len() == k { return out; }
+  }
+  return search_knn_filtered_scan(idx, payloads, query, k, metric, filter);
 }
 
 // ---- Payload hydration (SearchRequest.with_payload) ----
