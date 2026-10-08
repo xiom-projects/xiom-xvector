@@ -167,7 +167,13 @@ load, which the codec will replace.
 Gates: recall >= 0.85 (ef=64), >= 0.50 (ef=8), >= 0.60 (cosine), >= 0.80
 (n=800). Delete checks: tombstone semantics, idempotent delete, never
 returned, recall-after-delete, revive on re-insert, delete-all -> live 0 and
-empty search. Full run ~0.9s.
+empty search. Full run ~2.4s.
+
+Latency proxies: `hnsw_build_ops` counts construction distance ops (n=200:
+62,129 ops, bounded by 4*n^2) and `hnsw_search_visited` feeds a per-ef table
+(10 queries each): ef=8 -> 97/100 recall @ 63 visited; ef=16 -> 100/100 @
+84; ef=32 -> 100/100 @ 126; ef=64 -> 100/100 @ 171; ef=128 -> 100/100 @
+196 (of n=200).
 
 ## Current simplifications (and the production TODOs)
 
@@ -175,7 +181,7 @@ empty search. Full run ~0.9s.
 |------|---------------|----------------------|
 | Layers | **multi-layer** (8-layer capacity, geometric `ml`, greedy descent) | adaptive capacity / higher levels for very large n |
 | Build | **beam insertion honouring `ef_construction` + diversified pruning** | parallel/adaptive build, quantized distance |
-| Search | greedy descent + beam honouring `ef` | adaptive `ef`, latency budget |
+| Search | greedy descent + beam honouring `ef`; per-ef visited/recall table | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | **O(log n) sorted id map** (`id_keys`/`id_vals`; duplicates rejected) | unchanged |
 | Deletes | **tombstones + `hnsw_compact`** (rebuild from live nodes, reclaim) | background/automatic compaction policy |

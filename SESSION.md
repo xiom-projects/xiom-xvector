@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (23 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (24 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -17,13 +17,14 @@ graph + recall harness -> multi-layer HNSW -> HNSW tombstone deletes ->
 engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
-decoder hardening [XVC-C-10 found] -> mixed-workload soak).
+decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
++ release-prep drafts).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `027535f` (test: mixed-workload soak),
+**Repo:** private, no pushes. HEAD `5f9eada` (chore: release-prep drafts),
 then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
@@ -34,7 +35,7 @@ then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `027535f` + this wrap commit | this repo |
+| xvector | `5f9eada` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -156,6 +157,14 @@ then this wrap commit. Identity `Lefteris Notas
   final + chained recovery checks. ~2.5s; stress 4/4. NOTE: op/id/bucket
   selection uses LCG HIGH bits (low-bit residue 8 was unreachable -- the
   payload branch never ran; same degeneracy class as the level fix).
+- **Latency metrics + release-prep (slice 4/J):** `hnsw_build_ops`
+  (construction distance-op proxy; n=200: 62,129, bounded 4*n^2) and a
+  per-ef visited/recall table in the harness (ef=8 -> 97/100 @ 63 visited;
+  ef=16/32/64/128 -> 100/100 @ 84/126/171/196). Release-prep:
+  `scripts/ci.ps1` + `scripts/ci.sh` (full battery, aggregated exit; both
+  green end-to-end this pass), `VERSION` (0.1.0-dev), a SHA-pinned
+  `.github/workflows/ci.yml` draft (activates with self-hosted runners) and
+  `docs/RELEASE-CHECKLIST.md` (owner-gated flow).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -175,6 +184,11 @@ final extraction wave):**
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
   `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
   `probe_fuzz_codecs`, `probe_soak_mixed` (run via `scripts\run-probe.ps1`).
+- Per-ef tradeoff (n=200, 10 queries each): ef=8 -> 97/100 recall @ 63
+  visited; ef=16 -> 100/100 @ 84; ef=32 -> 100/100 @ 126; ef=64 -> 100/100
+  @ 171; ef=128 -> 100/100 @ 196; build work 62,129 distance ops.
+- Release battery: `scripts/ci.ps1` and `scripts/ci.sh` -> `ci: ALL GATES
+  GREEN` this pass on Windows and WSL (suite x2 + 16 probes x2 each).
 - WSL spot: `probe_soak_mixed` x2 + `probe_fuzz_codecs` x1 + the pad-loop
   repro probe + `probe_result_shapes` x2 + `probe_bind_semantics` x2 +
   `probe_engine_hnsw` x2 + `probe_hnsw_recall` x2 + `probe_filter_plan` x2 +
@@ -221,12 +235,12 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **HNSW harness latency metrics (slice 4) + release-prep drafts (J):**
-   per-ef visited counts / build-work proxy in the recall harness; then a
-   CI workflow with SHA-pinned actions, build-info/version stamp and a
-   release checklist (committed; publish stays owner-gated). Then E stretch
-   (multi-key / index-driven candidates). M2 stays parked until stdlib
-   fd/fsync lands (re-checked 2026-10-08: still stubs).
+1. **E stretch (slice 5): multi-key / index-driven candidate iteration**
+   with planner integration -- only if green. Release gate: when the owner
+   greenlights, follow `docs/RELEASE-CHECKLIST.md` (both batteries are
+   scripted: `scripts/ci.ps1` / `ci.sh`). M2 stays parked until stdlib
+   fd/fsync lands (re-checked 2026-10-08: still stubs); then M2 file-backed
+   WAL + kill-recovery harness first.
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -376,7 +390,8 @@ hnsw_decode strict graph codec; beam construction honouring
 ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
 pin probe; C-01 bind pin; HNSW+filter integration with exact fallback;
 deterministic fuzz gate + decoder hardening [XVC-C-10 found];
-mixed-workload soak harness).
+mixed-workload soak harness; latency metrics + release battery scripts +
+VERSION/checklist).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -387,14 +402,13 @@ bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
 pad step behind pad_adj_slots + strict bounds; repro
 docs/repro/xv-decode-pad-loop pinned at e0b1f7f).
 
-NEXT TASK (priority 1): HNSW harness latency metrics (slice 4) +
-release-prep drafts (J): per-ef visited counts / build-work proxy in the
-recall harness; CI workflow with SHA-pinned actions, build-info/version
-stamp, release checklist (committed; publish stays owner-gated). Then E
-stretch (multi-key / index-driven candidates). M2 standby until stdlib
-lands fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08).
-Keep the wrap discipline: suite x2 (Win+WSL), all 16 probes x2 (Win) +
-WSL spot, signed commits, docs updated.
+NEXT TASK (priority 1): E stretch (slice 5) -- multi-key / index-driven
+candidate iteration with planner integration, only if green. Release gate:
+follow docs/RELEASE-CHECKLIST.md when the owner greenlights (batteries are
+scripted: scripts/ci.ps1 / ci.sh). M2 standby until stdlib lands
+fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08). Keep
+the wrap discipline: suite x2 (Win+WSL), all 16 probes x2 (Win) + WSL
+spot, signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
