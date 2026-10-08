@@ -66,7 +66,7 @@ src/
 |-- segment/                  segment_state - segment - manifest
 |-- index/                    ann_index - flat_index - hnsw
 |-- distance/                 cosine - dot - l2
-|-- query/                    search_request - topk_heap - search_service
+|-- query/                    search_request - filter_plan - topk_heap - search_service
 |-- durability/               wal - recovery - write_ahead_events
 `-- api/                      vector_api (merged stub; facade lives in engine.xi)
 ```
