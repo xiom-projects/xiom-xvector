@@ -1,6 +1,9 @@
 module probe_debug_search
 
 use xiom.vector.engine;
+use xiom.vector.types.dense_vector;
+use xiom.vector.types.metric;
+use xiom.vector.query.search_service;
 use xiom.io;
 
 fn int_to_str(n: Int) -> Str {

@@ -8,6 +8,8 @@
 module probe_payload_recovery
 
 use xiom.vector.engine;
+use xiom.vector.types.dense_vector;
+use xiom.vector.types.metric;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.io;

@@ -8,6 +8,7 @@
 module probe_engine_import
 
 use xiom.vector.engine;
+use xiom.vector.types.dense_vector;
 use xiom.io;
 
 fn main() -> Int {

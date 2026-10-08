@@ -1,6 +1,9 @@
 module probe_bisect_a
 
 use xiom.vector.engine;
+use xiom.vector.types.dense_vector;
+use xiom.vector.types.metric;
+use xiom.vector.query.search_service;
 use xiom.io;
 use xiom.num.float;
 
