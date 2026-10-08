@@ -220,12 +220,14 @@ api.search
                          descent + beam, ef = ann.ef_search)
         3. filter (Phase 3): Hnsw -> ANN fetch (ef_search wide) then keep the
            matching subset; under-filled -> exact flat filtered scan. Flat ->
-           the planner:
-             scan -> evaluate FilterExpr per candidate BEFORE distance
-             post -> rank all via the flat scan, keep the matching subset;
-                     if it does not fill k, fall back to the scan
-           (post only for index-answerable filters with a known exact count
-            >= k and a majority of the store; query/filter_plan.xi)
+           the planner (pre/post/index):
+             scan  -> evaluate FilterExpr per candidate BEFORE distance
+             post  -> rank all via the flat scan, keep the matching subset;
+                      if it does not fill k, fall back to the scan
+             index -> Eq/Range/Exists candidates from the sorted payload
+                      index; distances only for matches (store id map)
+           (post for an exact k-or-more majority or a compound upper bound;
+            index for an exact count 0 or < total/4; query/filter_plan.xi)
         4. rerank: bounded top-K heap keeps <= k best by distance
         5. (Phase 3) hydrate: attach payloads when with_payload = true
         6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)

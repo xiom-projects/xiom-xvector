@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (24 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-08 (25 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -18,14 +18,14 @@ engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
 decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
-+ release-prep drafts).
++ release-prep drafts -> upsert fix + index-driven candidates).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `66cb739` (fix: upsert update-in-place),
-then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `f0066ba` (feat: index-driven
+candidates), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -35,7 +35,7 @@ then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `66cb739` + this wrap commit | this repo |
+| xvector | `f0066ba` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -172,6 +172,16 @@ then this wrap commit. Identity `Lefteris Notas
   vector. Now it updates in place (WAL replay matches live behavior).
   Regression gate in `probe_vector_store` (size stays, get_point/search
   see the NEW vector bits, recovery keeps the latest).
+- **Index-driven candidates + compound upper bounds (E stretch):** store
+  gains a sorted id -> slot map (O(log n) `index_get`/`index_add`/
+  `index_remove`, swap-remove updates the moved slot); `filter_plan` gains
+  plan 3 (index: exact Eq/Range/Exists candidates, incl.
+  `payload_store_index_field_ids`) and `filter_matching_upper` for And/Or/
+  Not (post when the bound is a majority, scan otherwise);
+  `search_knn_filtered` executes the index plan with distances only for
+  matches. Gate `probe_filter_plan` (20 checks: plan codes, upper bounds
+  And=3 Or=1 Not=2 In=-1, index equivalence bit-identical to the scan
+  reference).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
