@@ -33,7 +33,8 @@ $probes = @(
   "probe_soak_mixed",
   "probe_kill_recovery",
   "probe_wal_file",
-  "probe_range_search"
+  "probe_range_search",
+  "probe_batch_ops"
 )
 
 $failures = 0

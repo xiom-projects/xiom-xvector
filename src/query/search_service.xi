@@ -30,6 +30,14 @@ pub type SearchHits = {
   items: Vec[SearchResult];
 }
 
+// Batch-search wrapper (M-Q2): one SearchHits per query, order preserved.
+// A struct wrapper because a Result whose payload is a Vec of Vec-bearing
+// structs is the XVC-C-04/C-08 shape family (fixed, but the wrapper is the
+// proven, gated public shape -- mirrors SearchHits).
+pub type BatchHits = {
+  sets: Vec[SearchHits];
+}
+
 // Push a hit into a distance-sorted bounded list (shared by the exact and
 // filtered scans): insert sorted, then trim to k.
 fn results_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, k: Int) {
