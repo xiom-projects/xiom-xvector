@@ -200,7 +200,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   `SearchHits { items: Vec[SearchResult] }` -- the struct wrapper is
   retained deliberately (XVC-C-04 fixed in v0.64.1; zero-cost public API
   shape); unwrapping is a future API decision, not a compiler need.
-- [STOP] Batch upsert / batch search.
+- [OK] Batch upsert / batch search (`upsert_many` / `search_many` /
+  `delete_many` + `BatchHits`, M-Q2).
+- [OK] Pagination (M-Q3): `search_page` (offset) + `search_after` (after-id
+  cursor) over the (distance asc, id asc) total order; exact on Flat and
+  Hnsw; gate `probe_pagination` (22 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

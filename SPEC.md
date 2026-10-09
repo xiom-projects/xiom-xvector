@@ -26,7 +26,7 @@ packages/xiom-vector/
     |-- segment/{segment_state,segment,manifest,segment_file}.xi
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
-    |-- query/{search_request,filter_plan,topk_heap,search_service}.xi
+    |-- query/{search_request,filter_plan,topk_heap,search_service,pagination}.xi
     |-- durability/{wal,recovery,write_ahead_events,wal_file,manifest_file}.xi
     `-- api/vector_api.xi
 ```
@@ -154,6 +154,17 @@ Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits`/`Batch
 - `search_execute(idx, graph, query, k, metric, kind)` -- routes by `AnnIndexKind` (Flat/Ivf -> exact scan, Hnsw -> graph), lowers `Neighbor -> SearchResult`, `ensures: result.len() <= k`.
 - `hydrate_hits(items, payloads, with_payload) -> Vec[SearchHit]` -- attaches metadata when requested (`has_payload=false` + empty payload otherwise); `SearchHit { id; distance; payload; has_payload }`, wrapped as `HydratedHits { items }` for the request path (XVC-C-04 shape). The trailing `has_payload` after the Vec-bearing `payload` field was compiler finding XVC-C-08 (fixed in v0.64.2; the suite asserts the flags again, and the real-module probe stays the independent gate).
 - `filter_results_by_payload(items, payloads, filter) -> Vec[SearchResult]` -- matching subset, order preserved (shared by the flat post-filter plan and the engine's HNSW+filter path).
+
+## `xiom.vector.query.pagination` (M-Q3)
+Cursor pagination over exact search results. The paginated **total order** is
+`(distance ascending, id ascending)`: pages are stable within a fixed engine
+state (page N + page N+1 + ... reconstructs the ordered result set with no
+gaps or duplicates) and equal-distance ties are ordered by id ascending. The
+plain `search` path sorts by distance only (tie order unspecified); the
+paginated order is the documented contract, on Flat AND Hnsw alike (both
+kernels scan the raw store; ANN widening is M-P tuning).
+- `search_page_scan(idx, query, k, offset, metric) -> SearchHits` `requires: k > 0, offset >= 0, idx.dim == query.dimension` `ensures: result.items.len() <= k` -- ranks `[offset, offset+k)` of the ordered result set (bounded collector with the id tie-break; O(n * (offset+k)) scan).
+- `search_after_scan(idx, query, k, after_id, metric) -> Option[SearchHits]` `requires: k > 0, idx.dim == query.dimension` -- the next k ranks strictly after the CURRENT position of `after_id` (its live vector defines the cursor distance); `None` when the cursor id does not exist (e.g. deleted between pages). Gate: `tests/probes/probe_pagination.xi` (22 checks: page reconstruction, tie clusters, cursor walks, refusals, Flat/Hnsw parity, recovery).
 
 ## `xiom.vector.collection.schema`
 `enum NormalizationMode { Raw, L2Normalized }`; `PayloadFieldSpec { name; indexed }`; `CollectionSchema { dimension; metric; normalization; payload_fields }`. `schema_new(dim, metric)` `requires: is_valid_dimension(dim)` `ensures: result.dimension == dim`; `schema_set_normalization`, `schema_add_field`, `schema_dimension`.
@@ -335,6 +346,7 @@ wraps the names (SearchHits discipline).
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
 - `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (`Hnsw`: ANN fetch `ef_search` wide + matching subset, exact flat filtered fallback when under-filled; `Flat`: the planner scan), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`. Delete/Update records also carry the active collection id.
 - `engine_search_range(eng, query, radius, limit) -> Result[SearchHits, CoreError]` `requires: eng.created` -- exact range path (M-Q1): raw-store scan keeping `distance <= radius` (inclusive), distance-sorted ascending, bounded by `limit`; validates dim/limit/radius (negative radius or out-of-range limit -> `InvalidInput`); exact for both index kinds (ANN widening is M-P tuning). Gate `tests/probes/probe_range_search.xi`.
+- Pagination (M-Q3): `engine_search_page(eng, query, k, offset) -> Result[SearchHits, CoreError]` -- ranks `[offset, offset+k)` of the paginated total order (distance asc, id asc); validates dim/k/offset (negative offset / out-of-range k -> `InvalidInput`). `engine_search_after(eng, query, k, after_id) -> Result[SearchHits, CoreError]` -- the next k ranks strictly after the current position of `after_id`; a missing cursor id -> `Err(NotFound)`. Exact for both index kinds. Gate `tests/probes/probe_pagination.xi`.
 - Batch ops (M-Q2): `engine_upsert_many(eng, ids, vecs) -> Result[Int, CoreError]` (all-or-nothing validation BEFORE applying: non-empty, equal lengths, every dim matches; returns records applied; duplicate ids collapse); `engine_delete_many(eng, ids) -> Result[Int, CoreError]` (idempotent per id; returns actual removals; empty -> `InvalidInput`); `engine_search_many(eng, queries, k) -> Result[BatchHits, CoreError]` (validates all queries first; one result set per query, order preserved). Gate `tests/probes/probe_batch_ops.xi`.
 - `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- legacy single-collection replay (kept in `durability.recovery`; the engine now uses the registry path).
@@ -348,7 +360,8 @@ Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`)
 `drop_collection`, `list_collections`, `collection_count`, `set_index`,
 `compact_index`, `upsert`, `upsert_many`, `search`, `search_many`,
 `delete_point`, `delete_many`, `get_point`, `set_payload`, `get_payload`,
-`search_filtered`, `search_range`, `search_with_request`, `save_manifest`,
+`search_filtered`, `search_range`, `search_page`, `search_after`,
+`search_with_request`, `save_manifest`,
 `open_engine`, `seal_segment`, `restore_segment` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
