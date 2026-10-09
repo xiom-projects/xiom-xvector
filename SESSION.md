@@ -35,19 +35,20 @@ M-G bench harness + baseline [wal_persist O(L^2) fixed; native --icon]).
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `15e83e1` (file-WAL docs wrap; feature
-`c84ccbc` beneath), then this pass's commits (v0.64.2 re-test: workaround
-reverts + suite 169 + docs). Identity `Lefteris Notas
-<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `9fd0a06` (docs: M-G wrap) +
+this handoff commit. Recent slices: `5562f67` wal O(L^2) fix, `2a2e696`
+bench harness, `3d06d16` native --icon, `4552858`/`51db525` batch/range,
+`f3371e4` M-D1. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
+conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d9f146cb` (post-tag m244 fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
-| stdlib | lane HEAD `1b85edb` (0.64.3 + five-lane wishlist scoop, docs-only; durability primitives still stubs) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
-| packages | lane HEAD `6bb40bb0` (36 eco releases; `xiom.wal` + `xiom.btree` 0.1.0 in-tree; `xiom.vectors` extraction gate MET, awaiting owner greenlight) | `E:\xiom-packages\packages` |
-| xvector | `15e83e1` + this pass's commits | this repo |
+| compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
+| stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
+| xvector | `9fd0a06` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -492,11 +493,11 @@ signed commits, docs updated).
 
 ## 5. Ecosystem status (2026-10-09)
 
-- **stdlib:** current lane HEAD `1b85edb` = release 0.64.3 + the five-lane
-  wishlist scoop (docs-only; no durability movement). **Re-checked
-  2026-10-09: fsync/fdatasync, the fd path (`write_all` etc.),
-  `append_file_bytes`, `truncate`/`ftruncate` are still stubs; no
-  `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
+- **stdlib:** current lane HEAD `ed6d46c` (waves 98-99: iter/io/convert/
+  array M7 closure + crypto/hash/math clauses; release **0.64.3
+  registry-LIVE**). **Re-checked 2026-10-09: fsync/fdatasync, the fd path
+  (`write_all` etc.), `append_file_bytes`, `truncate`/`ftruncate` are still
+  stubs; no `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `io.rename` exists -- atomic
   temp+rename checkpoint hardening is available today (used by M-D1).
   Byte-exact file writes / CRLF-clean reads since 0.64.2.
@@ -504,9 +505,11 @@ signed commits, docs updated).
   install Windows + WSL). Re-test done: all relayed XVECTOR fixes verified
   (C-03/06/07/08), C-10..C-12 also green; workarounds reverted where
   applicable (Addendum 8). No residual reds from this lane.
-- **packages:** lane HEAD `6bb40bb0`; **36 eco releases** (`xiom.http` 0.1.4
-  published, `eco-v0.1.120`). **`xiom.wal` 0.1.0 and `xiom.btree` 0.1.0 are
-  in the tree** (`packages/xiom-wal` 21/21, `packages/xiom-btree` 22/22) --
+- **packages:** lane HEAD `26f7d0ae`; bindings batch 23 published
+  (`xiom.box2d` 0.2.0 + `xiom.imgui` 0.2.0, `eco-v0.1.123`); **36+ eco
+  releases** (`xiom.http` 0.1.4 published). **`xiom.wal` 0.1.0 and
+  `xiom.btree` 0.1.0 are in the tree** (`packages/xiom-wal` 21/21,
+  `packages/xiom-btree` 22/22) --
   pending ops scope + native-lane allowlist append. `xiom.wal` is the single
   WAL home (durable record shape + ORBITDB disk segment; `wal_flush` no-op
   on the same fsync gap); XVECTOR aligns its codec and consumes it when
@@ -551,10 +554,40 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
+Orientation: HEAD `9fd0a06` (docs: M-G wrap) + the handoff commit; clean
+tree; `git log --oneline -12` shows the recent slice commits. Lane pins:
+stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490` (installed
+compiler v0.64.2, tag c51170a6).
+
+Autonomous mode: arm a session goal with this objective (verbatim):
+"Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
+verified slice at a time, without further user prompting. Work the ordered
+slice backlog: D2 manifest file -> D3 multi-collection -> D4 segment files;
+M-Q3 pagination -> Q4 delete-by-filter -> Q5 index admin -> Q6 request
+extensions; M-G1 reference oracle; M-S1 HTTP service -> S2 config/limits/
+errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
+Re-check external lanes every pass (stdlib fsync/fd/append chain gates
+D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
+and pivot immediately when primitives land. Per slice: implement, extend
+probe/suite gates, run suite x2 + all probes x2 + bench smoke on Windows +
+WSL spot, update SPEC/ARCHITECTURE/SESSION/PRODUCTION-READINESS + checklist,
+commit signed (-s, identity lefterisnotas@gmail.com). Repo stays private; no
+pushes; never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. When the M-R release criteria are met (green
+batteries + kill-matrix + benchmark report + security checklist + SBOM +
+complete docs + v1.0.0-rc), report complete with the owner handoff summary
+so the owner can set up the public release and benchmark (PULSE-style).
+Report blocked only when no scheduled wait or non-gated slice can help."
+
+Safety: check free memory before heavy runs -- bench bring-up once hit
+multi-GB paging through the O(L^2) wal_persist (fixed in 5562f67); bench
+loops are now hard-capped and monitored. Never raise bench loop budgets
+without a memory monitor, and never leave a rebuilt binary from a red build.
+
 Toolchain (latest-tracking): compiler v0.64.2 installed on Windows
 (%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom, use
-`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD 82ac2f3 =
-release 0.64.3, pinned to compiler v0.64.2; durability primitives still
+`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD ed6d46c =
+release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
