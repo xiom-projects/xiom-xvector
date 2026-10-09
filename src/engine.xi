@@ -156,6 +156,19 @@ pub fn collection_count(eng: &VectorEngine) -> Int {
   return engine_collection_count(eng);
 }
 
+// ---- Index admin (M-Q5) ----
+
+// Per-collection statistics (config, points, payloads, graph occupancy).
+pub fn collection_stats(eng: &VectorEngine, name: Str) -> Result[CollectionStats, CoreError] {
+  return engine_collection_stats(eng, name);
+}
+
+// Rebuild the active collection's index from the flat store (Hnsw:
+// tombstones reclaimed; Flat: no-op) with build/compact statistics.
+pub fn rebuild_index(eng: &mut VectorEngine) -> Result[IndexStats, CoreError] {
+  return engine_rebuild_index(eng);
+}
+
 // ---- Segment files (M-D4) ----
 
 // Seal the active collection as an immutable segment file (vectors +

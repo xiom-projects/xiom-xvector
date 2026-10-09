@@ -36,6 +36,7 @@ probes=(
   probe_range_search
   probe_pagination
   probe_delete_filter
+  probe_index_admin
   probe_batch_ops
 )
 

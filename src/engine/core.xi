@@ -562,6 +562,117 @@ pub fn engine_compact_index(eng: &mut VectorEngine) -> Result[Int, CoreError]
   return Ok(before - after);
 }
 
+// ---- Index admin (M-Q5) ----
+
+// A collection's live statistics: config + point/payload counts + graph
+// occupancy (Hnsw: nodes = size incl. tombstones, tombstones = nodes -
+// live). `wal_lsn` is the shared WAL's current lsn (one log per engine).
+pub type CollectionStats = {
+  name: Str;
+  cid: Int;
+  dimension: Int;
+  metric: DistanceMetric;
+  index_kind: AnnIndexKind;
+  m: Int;
+  ef_construction: Int;
+  ef_search: Int;
+  points: Int;
+  payloads: Int;
+  nodes: Int;
+  tombstones: Int;
+  wal_lsn: Int;
+}
+
+// Statistics of the index an admin rebuild produced.
+pub type IndexStats = {
+  kind: AnnIndexKind;
+  points: Int;
+  nodes_before: Int;
+  nodes_after: Int;
+  reclaimed: Int;
+}
+
+fn stats_from_live(eng: &VectorEngine) -> CollectionStats {
+  var nodes: Int = 0;
+  var tombstones: Int = 0;
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    nodes = hnsw_size(&eng.graph);
+    tombstones = nodes - hnsw_live_count(&eng.graph);
+  }
+  return CollectionStats{
+    name: eng.active_name,
+    cid: eng.active_cid,
+    dimension: eng.dimension,
+    metric: eng.metric,
+    index_kind: eng.index_kind,
+    m: eng.ann.m,
+    ef_construction: eng.ann.ef_construction,
+    ef_search: eng.ann.ef_search,
+    points: engine_size(eng),
+    payloads: payload_store_len(&eng.payloads),
+    nodes: nodes,
+    tombstones: tombstones,
+    wal_lsn: engine_durable_lsn(eng),
+  };
+}
+
+fn stats_from_entry(eng: &VectorEngine, e: &CollectionEntry) -> CollectionStats {
+  var nodes: Int = 0;
+  var tombstones: Int = 0;
+  if e.index_kind == AnnIndexKind.Hnsw {
+    nodes = hnsw_size(&e.graph);
+    tombstones = nodes - hnsw_live_count(&e.graph);
+  }
+  return CollectionStats{
+    name: e.name,
+    cid: e.cid,
+    dimension: e.dimension,
+    metric: e.metric,
+    index_kind: e.index_kind,
+    m: e.ann.m,
+    ef_construction: e.ann.ef_construction,
+    ef_search: e.ann.ef_search,
+    points: e.store.ids.len(),
+    payloads: payload_store_len(&e.payloads),
+    nodes: nodes,
+    tombstones: tombstones,
+    wal_lsn: engine_durable_lsn(eng),
+  };
+}
+
+// Per-collection statistics (active collection from the live fields; any
+// parked collection from its registry entry, which is synced at park time).
+pub fn engine_collection_stats(eng: &VectorEngine, name: Str) -> Result[CollectionStats, CoreError] {
+  var idx = collection_find(eng, name);
+  if idx < 0 {
+    return Err(CoreError.NotFound);
+  }
+  if idx == eng.active_idx {
+    return Ok(stats_from_live(eng));
+  }
+  var e = eng.collections[idx];
+  return Ok(stats_from_entry(eng, &e));
+}
+
+// Rebuild the active collection's index from the flat store (the admin
+// path; compact_index remains the Int-returning compatibility wrapper).
+// Hnsw: fresh graph from the live nodes only -- tombstones reclaimed.
+// Flat: no-op with zeroed graph stats. Returns before/after/reclaimed.
+pub fn engine_rebuild_index(eng: &mut VectorEngine) -> Result[IndexStats, CoreError]
+  requires: eng.created
+{
+  var points = engine_size(eng);
+  if eng.index_kind != AnnIndexKind.Hnsw {
+    eng.graph = hnsw_new(16, 4.0);
+    return Ok(IndexStats{ kind: eng.index_kind, points: points, nodes_before: 0, nodes_after: 0, reclaimed: 0 });
+  }
+  var before: Int = hnsw_size(&eng.graph);
+  var fresh = hnsw_compact(&eng.graph, eng.metric);
+  eng.graph = fresh;
+  var after: Int = hnsw_size(&eng.graph);
+  return Ok(IndexStats{ kind: AnnIndexKind.Hnsw, points: points, nodes_before: before, nodes_after: after, reclaimed: before - after });
+}
+
 pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError]
   requires: eng.created
 {
