@@ -93,6 +93,8 @@ src/
 | `search_page(eng, query, k, offset)` | Offset pagination: ranks [offset, offset+k) of the (distance asc, id asc) total order; exact on Flat and Hnsw (M-Q3) |
 | `search_after(eng, query, k, after_id)` | Cursor pagination: the next k ranks strictly after `after_id` (live vector as cursor; `Err(NotFound)` when it no longer exists) (M-Q3) |
 | `delete_filter(eng, filter)` | Selective delete: remove every point matching a typed filter (planner-driven index candidates or scan; WAL-durable per point, tombstones + payload/index cleanup); nothing matching -> Ok(0) (M-Q4) |
+| `collection_stats(eng, name)` | Per-collection statistics: config, live points, payloads, Hnsw nodes/tombstones, WAL lsn (parked collections report from their entry; M-Q5) |
+| `rebuild_index(eng)` | Admin rebuild of the active collection's index with build/compact stats (Hnsw: tombstones reclaimed; Flat: no-op; M-Q5) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
 | `save_manifest(eng, path)` | Persist the whole collection registry (one entry per collection: name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2/D3) |
 | `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry entries override per-collection configs by name; the in-WAL manifests are the migration fallback (M-D2/D3) |

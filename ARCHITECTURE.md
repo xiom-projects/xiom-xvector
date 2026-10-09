@@ -295,6 +295,26 @@ into the collection read path (multi-segment scans, retention/pruning) is
 D5/D6; today seal/restore is the durable transport. Gate:
 `tests/probes/probe_segment_file.xi`.
 
+## 3d. Index admin (M-Q5)
+
+```
+api.collection_stats(eng, name)
+  `-> active collection: live fields (store/graph/config)
+      parked collection: registry entry (synced at park time)
+      -> CollectionStats { name; cid; dim; metric; index_kind; ANN params;
+                           points; payloads; nodes; tombstones; wal_lsn }
+
+api.rebuild_index(eng)
+  `-> Hnsw: fresh graph over LIVE nodes only (tombstones reclaimed)
+      Flat: no-op with zeroed graph stats
+      -> IndexStats { kind; points; nodes_before; nodes_after; reclaimed }
+```
+
+Stats never switch the active collection, so reporting is read-only. The
+rebuild is the admin recovery valve for a tombstone-heavy graph;
+`compact_index` remains the Int-returning compatibility wrapper over the
+same rebuild. Gate: `tests/probes/probe_index_admin.xi`.
+
 ## 4. Search path (top-k query)
 
 ```

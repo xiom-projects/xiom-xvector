@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (43 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (44 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -41,16 +41,18 @@ Mutable -> Sealing -> Sealed]) -> M-Q3 pagination [search_page (offset) +
 search_after (after-id cursor) over the (distance asc, id asc) total
 order; probe_pagination]) -> M-Q4 delete-by-filter [planner-driven
 selective delete (index candidates or scan), per-point WAL, tombstones +
-payload/index cleanup; probe_delete_filter]).
+payload/index cleanup; probe_delete_filter]) -> M-Q5 index admin
+[per-collection stats + admin rebuild_index (before/after/reclaimed);
+probe_index_admin]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `ac2535e` (feat: M-Q4
-delete-by-filter) + this handoff commit. Recent slices: `ac2535e` M-Q4
-(delete-by-filter), `4cda576` M-Q3 wrap, `32193a2` M-Q3 (pagination),
-`bd57ac2` M-D4 wrap, `7be7f36` M-D4 (segment files), `ba5ac3c` M-D3 wrap.
+**Repo:** private, no pushes; clean tree. HEAD `91d75fa` (feat: M-Q5
+index admin) + this handoff commit. Recent slices: `91d75fa` M-Q5 (index
+admin), `1ea8aa2` M-Q4 wrap, `ac2535e` M-Q4 (delete-by-filter), `4cda576`
+M-Q3 wrap, `32193a2` M-Q3 (pagination), `bd57ac2` M-D4 wrap.
 Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
 commits, DCO `git commit -s`.
 
@@ -61,7 +63,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `ac2535e` + this handoff commit | this repo |
+| xvector | `91d75fa` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -400,6 +402,19 @@ commits, DCO `git commit -s`.
   plans, idempotence, index cleanup, match-none/ match-all, lsn delta per
   removal, recovery + chained recovery, Hnsw tombstones + compaction +
   search exclusion, multi-collection isolation).
+- **M-Q5 index admin (2026-10-09):** `engine_collection_stats` + facade
+  `collection_stats` -- per-collection stats (name/cid/dim/metric/index
+  kind/ANN params, live points, payloads, Hnsw nodes + tombstones, shared
+  WAL lsn); the active collection reports from the live fields, parked
+  collections from their registry entries (no switching); unknown ->
+  Err(NotFound). `engine_rebuild_index` + facade `rebuild_index` -- admin
+  rebuild from the flat store with `IndexStats` (kind/points/nodes_before/
+  nodes_after/reclaimed): Hnsw = fresh graph over live nodes (tombstones
+  reclaimed), Flat = no-op with zeroed stats; `compact_index` stays the Int
+  wrapper. Gate `probe_index_admin` (20 checks: config/counts exactness,
+  tombstone accounting, rebuild stats/idempotence/search equality vs a
+  flat twin, parked-vs-live agreement, set_index transitions,
+  compact_index compat, lsn/points movement, recovery consistency).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -441,7 +456,10 @@ current tree):**
 - **M-Q4 delete-filter pass:** suite **171/171 x2** + **25 probes x2** + bench
   smoke (Windows + WSL), ALL GATES GREEN; new `probe_delete_filter`
   (26 checks) wired into both batteries; WSL spot x2 bit-identical.
-- All **25 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-Q5 index-admin pass:** suite **171/171 x2** + **26 probes x2** + bench
+  smoke (Windows + WSL), ALL GATES GREEN; new `probe_index_admin`
+  (20 checks) wired into both batteries; WSL spot x2 bit-identical.
+- All **26 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -449,7 +467,8 @@ current tree):**
   `probe_fuzz_codecs`, `probe_soak_mixed`, `probe_kill_recovery`,
   `probe_wal_file`, `probe_manifest_file`, `probe_collections`,
   `probe_segment_file`, `probe_range_search`, `probe_pagination`,
-  `probe_delete_filter`, `probe_batch_ops` (run via `scripts\run-probe.ps1`).
+  `probe_delete_filter`, `probe_index_admin`, `probe_batch_ops` (run via
+  `scripts\run-probe.ps1`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
   quick` green (Windows + WSL), wired into both CI batteries; baseline
   numbers in `docs/BENCHMARKS.md` (M-G).
@@ -509,9 +528,9 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-G2/G3
-   DONE.** Next per the backlog: Q5 index admin -> Q6 request extensions;
-   then M-S1 server & security, M-O observability. G1 (reference oracle)
+1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 +
+   M-G2/G3 DONE.** Next per the backlog: Q6 request extensions; then
+   M-S1 server & security, M-O observability. G1 (reference oracle)
    remains the open M-G item. D5/D6 (delta+fsync, retention) stay gated on
    the stdlib fsync chain.
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
@@ -681,7 +700,7 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `ac2535e` (feat: M-Q4 delete-by-filter) + the handoff
+Orientation: HEAD `91d75fa` (feat: M-Q5 index admin) + the handoff
 commit; clean tree; `git log --oneline -12` shows the recent slice commits.
 Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 (installed compiler v0.64.2, tag c51170a6).
@@ -689,7 +708,7 @@ Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: Q5 index admin -> Q6 request extensions;
+slice backlog: Q6 request extensions;
 M-G1 reference oracle; M-S1 HTTP service -> S2 config/limits/
 errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
@@ -717,7 +736,7 @@ release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 25 probes x2
+runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 26 probes x2
 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -771,8 +790,10 @@ offset + after-id cursor over the (distance asc, id asc) total order;
 exact tie order by id; gate `probe_pagination`, 22 checks); M-Q4
 delete-by-filter (planner-driven index-candidate or scan delete,
 per-point WAL + tombstones + payload/index cleanup; nothing matching ->
-Ok(0); gate `probe_delete_filter`, 26 checks) -- 25 probes,
-suite 171).
+Ok(0); gate `probe_delete_filter`, 26 checks); M-Q5 index admin
+(per-collection stats + `rebuild_index` with build/compact stats; parked
+entries report without switching; gate `probe_index_admin`, 20 checks)
+-- 26 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -785,15 +806,15 @@ bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
 NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
-M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-G2/G3 done; next: Q5
-index admin; then Q6, M-S server/security, M-O observability; G1
+M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-G2/G3 done; next:
+Q6 request extensions; then M-S server/security, M-O observability; G1
 reference oracle pending). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 25 probes x2 + bench smoke), signed commits, docs updated.
++ 26 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; `Str`
 params by value (XVC-C-13); numeric gates per build; watchdogs + exit

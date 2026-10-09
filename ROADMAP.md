@@ -208,6 +208,9 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 - [OK] Delete-by-filter (M-Q4): `delete_filter` -- planner-driven selective
   delete (index candidates or scan), WAL-durable per point with tombstones
   and payload/index cleanup; gate `probe_delete_filter` (26 checks).
+- [OK] Index admin (M-Q5): `collection_stats` (per-collection config +
+  counts + graph occupancy + lsn) and `rebuild_index` (admin rebuild with
+  before/after/reclaimed stats); gate `probe_index_admin` (20 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;
