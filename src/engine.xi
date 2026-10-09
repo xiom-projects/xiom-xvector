@@ -135,3 +135,18 @@ pub fn list_collections(eng: &VectorEngine) -> CollectionList {
 pub fn collection_count(eng: &VectorEngine) -> Int {
   return engine_collection_count(eng);
 }
+
+// ---- Segment files (M-D4) ----
+
+// Seal the active collection as an immutable segment file (vectors +
+// payloads + Hnsw graph codec; whole-file + atomic rename; lifecycle
+// Mutable -> Sealing -> Sealed).
+pub fn seal_segment(eng: &mut VectorEngine, seg_id: Int, path: Str) -> Result[Bool, CoreError] {
+  return engine_seal_segment(eng, seg_id, path);
+}
+
+// Restore the active collection's contents from a sealed segment file; the
+// WAL is re-checkpointed so a reopen replays the restored state.
+pub fn restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError] {
+  return engine_restore_segment(eng, path);
+}

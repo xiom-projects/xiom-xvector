@@ -25,6 +25,7 @@ use xiom.vector.payload.filter_ast;
 use xiom.vector.durability.wal;
 use xiom.vector.durability.write_ahead_events;
 use xiom.vector.durability.manifest_file;
+use xiom.vector.segment.segment_file;
 
 // ---- VectorEngine ----
 // The flat store is always maintained (source of truth for ids/vectors);
@@ -408,6 +409,60 @@ pub fn engine_manifest_save(eng: &mut VectorEngine, path: Str) -> Bool {
     i = i + 1;
   }
   return manifest_persist(&reg, path);
+}
+
+// Seal the active collection as an immutable segment file (M-D4): vectors +
+// payloads + the Hnsw graph codec, whole-file + atomic rename. The segment
+// lifecycle is driven through the real transition table
+// (Mutable -> Sealing -> Sealed) before the file is written.
+pub fn engine_seal_segment(eng: &mut VectorEngine, seg_id: Int, path: Str) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  if seg_id < 1 {
+    return Err(CoreError.InvalidInput("invalid segment id"));
+  }
+  var ss = sealed_segment_new(seg_id, eng.active_cid, eng.dimension, eng.metric, eng.index_kind, eng.ann);
+  if !sealed_segment_seal(&mut ss) {
+    return Err(CoreError.InvalidState("segment lifecycle transition failed"));
+  }
+  ss.store = eng.store;
+  ss.payloads = eng.payloads;
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    ss.graph = eng.graph;
+    ss.has_graph = true;
+  }
+  if !segment_file_persist(&ss, path) {
+    return Err(CoreError.IOFailure("segment persist failed"));
+  }
+  return Ok(true);
+}
+
+// Restore the active collection's contents from a sealed segment file
+// (M-D4). The segment must belong to the active collection (cid) and match
+// its dimension and metric. The WAL is re-checkpointed AFTER the swap, so a
+// reopen replays the restored state (durable before the ack).
+pub fn engine_restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  var ss = segment_file_load(path);
+  if !ss.valid {
+    return Err(CoreError.Corruption("segment file invalid"));
+  }
+  if ss.cid != eng.active_cid || ss.dim != eng.dimension || ss.metric != eng.metric {
+    return Err(CoreError.InvalidInput("segment does not match the active collection"));
+  }
+  eng.store = ss.store;
+  eng.payloads = ss.payloads;
+  var params = AnnParams{ m: ss.m, ef_construction: ss.ef_construction, ef_search: ss.ef_search };
+  if ss.kind == AnnIndexKind.Hnsw && ss.has_graph {
+    eng.graph = ss.graph;
+    eng.index_kind = AnnIndexKind.Hnsw;
+    eng.ann = params;
+  } else {
+    apply_index(&mut eng, ss.kind, params);
+  }
+  engine_checkpoint_from(eng, eng.wal.next_lsn);
+  return Ok(true);
 }
 
 // Apply an index configuration to the (already created) collection: Hnsw
@@ -985,7 +1040,17 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
     load_active(&mut eng, ai);
   }
   // 5. Checkpoint: every alive collection's data + its v2 manifest.
-  var out = wal_writer_resume(w.next_lsn);
+  engine_checkpoint_from(&mut eng, w.next_lsn);
+  return eng;
+}
+
+// Rewrite the WAL as a compacted checkpoint of the whole registry, resuming
+// LSNs from `base_lsn`: every collection's live points + payloads (record
+// value = cid) followed by one v2 manifest each. sync_active first, so the
+// active collection's entry matches the live fields.
+fn engine_checkpoint_from(eng: &mut VectorEngine, base_lsn: Int) {
+  sync_active(eng);
+  var out = wal_writer_resume(base_lsn);
   var c: Int = 0;
   while c < eng.collections.len() {
     var ce = eng.collections[c];
@@ -1009,7 +1074,6 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
     c2 = c2 + 1;
   }
   eng.wal = out;
-  return eng;
 }
 
 // Rebuild an engine from its WAL: manifest records define the collection
