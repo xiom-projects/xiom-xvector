@@ -168,7 +168,7 @@ api.upsert
   `-> engine_upsert
         1. validate: vec.dimension == collection.dimension   (reject early)
         2. WAL-before-ack: log_upsert -> wal_writer_append_payload
-           (key = point id, value = collection id,
+           (key = point id, value = ACTIVE collection id (D3 registry),
             payload = [dim, Float64-bits...] via vector_encode)
         3. apply: storage.index_add into the mutable store
         4. metrics: counter_inc(upserts)
@@ -193,31 +193,45 @@ the M2 step.
 ## 3a. Recovery path (reopen)
 
 ```
-engine_recover(w, dim, metric)
-  `-> recover_state(w, dim)          replay in LSN order:
-                                     Insert  -> store add (vector_decode)
-                                     Delete  -> store + payload removal
-                                     Update  -> payload set (payload_decode)
-                                     malformed payloads skipped
-      wal_writer_checkpoint_from(w, store, payloads)
-                                     compacted checkpoint log: every live
-                                     point + payload re-encoded with fresh
-                                     monotonic LSNs
+engine_recover(w, dim, metric) / engine_recover_file(w, path, dim, metric)
+  `-> registry build          ManifestUpdate records in LSN order:
+                              v1 legacy [1, dim, mc, kc, m, efc, efs]
+                                    -> "default" (cid 1)
+                              v2 config [2, name.., dim, mc, kc, m, efc, efs]
+                                    upsert by record value = cid
+                              v3 drop   [3, name..]  -> remove cid
+                              (no manifest at all -> caller dim/metric as
+                              the single "default" collection)
+      file overrides (recover_file only)
+                              manifest-file entries override configs BY NAME
+                              (the registry of record; the D2 first-entry
+                              migration rule covers single-collection logs)
+      routed replay           data records -> their collection's
+                              store/payloads (strict cid routing when any
+                              v2/v3 record is present; everything lands in
+                              the single collection otherwise, so legacy
+                              logs with arbitrary value fields replay)
+      per-collection indexes  Hnsw graphs rebuilt from each store
+                              (entry_apply_index)
+      checkpoint              compacted log: every alive collection's
+                              inserts + updates (record value = cid) + one
+                              v2 manifest each, fresh monotonic LSNs
 ```
 
-The checkpoint log alone reconstructs the store and its metadata, so a
-recovered engine is itself recoverable (chained reopen is covered by
-`test_recover_twice` / `test_recover_payloads_chained`). The durable
-collection registry now travels in `durability.manifest_file` (M-D2):
-`engine_manifest_save` persists the live config (name / dim / metric /
-index kind / ANN params) whole-file and atomically; `engine_recover_file`
-(facade `open_engine`) prefers the file registry, falls back to the in-WAL
-manifest (migration for pre-D2 logs, missing or corrupt files), then the
-caller's dim/metric. The file-backed reopen path remains `wal_load(path)`
--> `engine_recover`: load the longest complete-record prefix of a persisted
-checkpoint, then replay it (kill/reopen equality gated by
-`tests/probes/probe_wal_file.xi`; the registry matrix by
-`tests/probes/probe_manifest_file.xi`).
+The checkpoint log alone reconstructs every collection, so a recovered
+engine is itself recoverable (chained reopen gated by `probe_collections`
+and `probe_kill_recovery`). Threading note: the ACTIVE collection's state
+is materialized in the engine's top-level fields for the hot data paths;
+`collections` holds one full entry per collection and is refreshed by
+`sync_active` before switches and registry-wide reads (entry reads are
+snapshot copies -- a validated shape on v0.64.2). Switching therefore
+copies the active collection's state once; data operations never copy.
+The durable registry travels in `durability.manifest_file` (M-D2/D3):
+`save_manifest` persists the whole registry whole-file and atomically;
+`open_engine` = `wal_load` + `engine_recover_file`. File-backed reopen
+still loads the longest complete-record prefix first (kill/reopen equality
+gated by `tests/probes/probe_wal_file.xi`; the registry matrices by
+`tests/probes/probe_manifest_file.xi` and `tests/probes/probe_collections.xi`).
 
 ## 3b. Metadata write path (payloads)
 

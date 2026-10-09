@@ -144,9 +144,12 @@ Goal: a kill never costs an acknowledged write on the available path.
   load on open; migration fallback for the in-WAL manifest;
   `engine_manifest_save` + `engine_recover_file`/`open_engine`; gate
   `probe_manifest_file` (38 checks).
-- **D3 multi-collection runtime + APIs** -- named collections in the
-  engine, create/drop/list, per-collection isolation of stores/payloads/
-  indexes; manifest-backed (D2). Probe `probe_collections`.
+- **D3 multi-collection runtime + APIs -- DONE 2026-10-09** -- named
+  collections (create/select/drop/list), per-collection isolation of
+  stores/payloads/indexes, v2 config + v3 drop WAL records with cid-stamped
+  data, routed recovery + whole-registry checkpoint; manifest-backed (D2)
+  whole-registry `save_manifest`/`open_engine` (file-wins by name). Gate
+  `probe_collections` (41 checks); legacy `create_collection` -> "default".
 - **D4 segment files** -- sealed segments (vectors + payloads + HNSW codec)
   written whole-file + atomic rename; load-on-open; segment lifecycle wired
   to seal thresholds (P2 owns tuning). Probe `probe_segments_file`.
@@ -268,7 +271,7 @@ deep quantization + tiered storage, client SDKs.
 | 3 | Batch ops -- **DONE 2026-10-09** | Q2 | `probe_batch_ops` (14 checks) |
 | 4 | Benchmark harness + baseline | G2/G3 | `bench.ps1/bench.sh` green; `docs/BENCHMARKS.md` committed -- **DONE 2026-10-09** |
 | 5 | Manifest file -- **DONE 2026-10-09** | D2 | `probe_manifest_file` (38 checks) |
-| 6 | Multi-collection | D3/FR-1 | `probe_collections` |
+| 6 | Multi-collection -- **DONE 2026-10-09** | D3/FR-1 | `probe_collections` (41 checks) |
 | 7 | Pagination | Q3 | `probe_pagination` |
 | 8 | Delete-by-filter | Q4 | `probe_delete_filter` |
 | 9 | Reference oracle | G1 | `probe_reference_oracle` |

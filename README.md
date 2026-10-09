@@ -76,6 +76,8 @@ src/
 | Function | Description |
 |----------|-------------|
 | `create_collection(eng, dim, metric)` | Create the active collection; fixes dimension + metric |
+| `create_named_collection(eng, name, dim, metric)` | Create a named collection (1..64 chars of `[A-Za-z0-9_.-]`) with its own store/payloads/index config; makes it active (M-D3) |
+| `select_collection` / `drop_collection` / `list_collections` / `collection_count` | Registry ops: switch the active collection, WAL-durable drop, names in creation order, count (M-D3) |
 | `set_index(eng, kind, params)` | Select the ANN index: `Flat` (default) or `Hnsw` (validates params, builds the graph from the store) |
 | `compact_index(eng)` | Rebuild the ANN graph from live nodes (reclaims tombstones; returns the reclaimed count) |
 | `upsert(eng, point, vec)` | WAL-durable insert/update of a point (payload-encoded vector in the record) |
@@ -89,8 +91,8 @@ src/
 | `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |
 | `search_range(eng, query, radius, limit)` | Exact range search: every point with `distance <= radius` (inclusive), distance-sorted, at most `limit` items (M-Q1) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
-| `save_manifest(eng, name, path)` | Persist the active collection's durable registry entry (name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2) |
-| `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry governs the config; the in-WAL manifest is the migration fallback (M-D2) |
+| `save_manifest(eng, path)` | Persist the whole collection registry (one entry per collection: name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2/D3) |
+| `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry entries override per-collection configs by name; the in-WAL manifests are the migration fallback (M-D2/D3) |
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
 All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
@@ -107,7 +109,7 @@ is zero-cost and stable as public API).
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
 | WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; whole-file checkpoint on disk with torn-tail-safe load, `durability.wal_file`; `fsync`/append blocked on the stdlib fd-syscall gap) |
-| Collections / schema / validator | [YELLOW] In progress (single active collection) |
+| Collections / schema / validator | [YELLOW] In progress (multi-collection registry: create/select/drop/list, per-collection isolation + routed recovery, whole-registry manifest; schema/validator scaffold) |
 | Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
 | Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
 | Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; fsync/delta + segment files pending) |
