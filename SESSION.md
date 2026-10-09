@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (26 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (27 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -19,14 +19,14 @@ beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
 decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 + release-prep drafts -> upsert fix + index-driven candidates -> durable
-collection manifest).
+collection manifest -> HNSW update re-linking).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `8917cec` (feat: durable collection
-manifest), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `de3f6d7` (feat: HNSW update
+re-linking), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -36,7 +36,7 @@ manifest), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `8917cec` + this wrap commit | this repo |
+| xvector | `de3f6d7` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -190,6 +190,12 @@ manifest), then this wrap commit. Identity `Lefteris Notas
   manual `set_index`; `wal_writer_checkpoint_from` carries it forward, so
   chained recovery keeps the config; legacy/malformed logs fall back to the
   caller config + Flat. Gates in `probe_engine_hnsw` (23 checks).
+- **HNSW update re-linking:** re-inserting an existing id now refreshes the
+  node's edges for the new vector (per-layer beam through the old
+  structure + diversified replacement; connect factored into `beam_select`/
+  `apply_layer_edges`, construction behavior-identical). Gate: recall@10
+  200/200 after 60 in-place updates vs the flat oracle (`probe_hnsw_recall`,
+  size/live unchanged).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -260,13 +266,12 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **HNSW update-path edge refresh (slice 2):** re-link on existing-id
-   updates (documented TODO) with a recall-after-many-updates gate vs the
-   flat oracle. Then: kill-recovery acceptance script on the in-memory WAL
-   model (prefix-exactness after truncation), optional multi-key
-   intersection indexes, release gate via docs/RELEASE-CHECKLIST.md. M2
-   stays parked until stdlib fd/fsync lands (still stubs -- re-checked
-   2026-10-09 wave 95).
+1. **Kill-recovery acceptance script (slice 3):** truncate the in-memory
+   WAL at random points, recover, and assert the recovered state equals the
+   surviving prefix exactly; then optional multi-key intersection indexes
+   and the release gate via docs/RELEASE-CHECKLIST.md. M2 stays parked
+   until stdlib fd/fsync lands (still stubs -- re-checked 2026-10-09 wave
+   95).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
