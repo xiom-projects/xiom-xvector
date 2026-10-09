@@ -211,6 +211,10 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 - [OK] Index admin (M-Q5): `collection_stats` (per-collection config +
   counts + graph occupancy + lsn) and `rebuild_index` (admin rebuild with
   before/after/reclaimed stats); gate `probe_index_admin` (20 checks).
+- [OK] Request extensions (M-Q6): `SearchRequest` carries mode (knn/range),
+  radius, and offset/after-id pagination; `SearchBatchRequest` +
+  `search_batch_with_request` (ordered, all-or-nothing); gate extended
+  `probe_search_request` (24 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

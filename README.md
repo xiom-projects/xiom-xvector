@@ -95,7 +95,8 @@ src/
 | `delete_filter(eng, filter)` | Selective delete: remove every point matching a typed filter (planner-driven index candidates or scan; WAL-durable per point, tombstones + payload/index cleanup); nothing matching -> Ok(0) (M-Q4) |
 | `collection_stats(eng, name)` | Per-collection statistics: config, live points, payloads, Hnsw nodes/tombstones, WAL lsn (parked collections report from their entry; M-Q5) |
 | `rebuild_index(eng)` | Admin rebuild of the active collection's index with build/compact stats (Hnsw: tombstones reclaimed; Flat: no-op; M-Q5) |
-| `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
+| `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; M-Q6 adds `mode` (knn/range), `offset`/`after_id` pagination; returns `Result[HydratedHits, CoreError]` |
+| `search_batch_with_request(eng, batch)` | Batch requests (`SearchBatchRequest`): one hydrated result set per request, order preserved, all-or-nothing (M-Q6) |
 | `save_manifest(eng, path)` | Persist the whole collection registry (one entry per collection: name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2/D3) |
 | `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry entries override per-collection configs by name; the in-WAL manifests are the migration fallback (M-D2/D3) |
 | `seal_segment(eng, seg_id, path)` | Seal the active collection as an immutable segment file (vectors + payloads + Hnsw graph codec; atomic rename; M-D4) |

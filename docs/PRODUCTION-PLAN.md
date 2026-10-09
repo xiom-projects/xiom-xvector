@@ -198,8 +198,12 @@ Goal: the single-node query surface a modern DB is expected to have.
   before/after/reclaimed `IndexStats`; Hnsw fresh graph, Flat no-op;
   `compact_index` stays the Int wrapper). Gate `probe_index_admin`
   (20 checks).
-- **Q6 request surface extensions** -- `SearchRequest` carries
-  `mode` (knn/range), pagination, batch; metric/validation unchanged.
+- **Q6 request surface extensions -- DONE 2026-10-09** -- `SearchRequest`
+  carries `mode` (knn/range), `radius`, and knn `offset`/`after_id`
+  pagination (mutually exclusive; filters Knn-only); `SearchBatchRequest` +
+  `HydratedBatch` + `search_batch_with_request` (ordered, all-or-nothing);
+  metric/dimension/top_k validation unchanged. Gate `probe_search_request`
+  extended to 24 checks.
 
 Exit: probes for every path; suite mirrors where applicable; capability
 matrix rows green.
@@ -289,6 +293,7 @@ deep quantization + tiered storage, client SDKs.
 | 7 | Pagination -- **DONE 2026-10-09** | Q3 | `probe_pagination` (22 checks) |
 | 8 | Delete-by-filter -- **DONE 2026-10-09** | Q4 | `probe_delete_filter` (26 checks) |
 | 8b | Index admin + per-collection stats -- **DONE 2026-10-09** | Q5 | `probe_index_admin` (20 checks) |
+| 8c | Request extensions (mode/page/batch) -- **DONE 2026-10-09** | Q6 | `probe_search_request` (24 checks) |
 | 9 | Reference oracle | G1 | `probe_reference_oracle` |
 | 10 | HTTP skeleton + health | S1 | `probe_http_service` |
 | 11 | Config/limits/errors | S2 | service abuse probe |

@@ -66,8 +66,13 @@ needed) -> signed commit. Red build = rejection.
   lsn; parked entries report without switching) and `rebuild_index`
   (before/after/reclaimed stats; Hnsw fresh graph, Flat no-op);
   `probe_index_admin` (20 checks)
-- [ ] Q6 `SearchRequest` extensions (mode/page/batch) + validation; suite
-  mirrors updated
+- [x] Q6 `SearchRequest` extensions (mode/page/batch) + validation
+  **(done 2026-10-09)**: `SearchMode.Knn | Range` + radius; knn
+  `offset` / `after_id` pagination (mutually exclusive; no filters yet);
+  `SearchBatchRequest` + `search_batch_with_request` (ordered,
+  all-or-nothing); probe-only gate (`probe_search_request`, 24 checks;
+  suite mirror untouched -- the mirror is a standalone re-implementation
+  without range/pagination dispatch)
 
 ## M-S -- Server & security
 
