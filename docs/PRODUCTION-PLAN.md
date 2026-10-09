@@ -169,9 +169,11 @@ Goal: the single-node query surface a modern DB is expected to have.
   (inclusive radius, distance-sorted, limit-bounded); gate
   `probe_range_search`. ANN widening deferred to M-P tuning; request range
   mode folded into Q6.
-- **Q2 batch ops** -- `upsert_many` / `search_many` / `delete_many` with
-  amortized WAL writes and k-bounded results; probe incl. partial-failure
-  semantics (all-or-nothing per call, documented).
+- **Q2 batch ops -- DONE 2026-10-09**: `upsert_many` / `delete_many` /
+  `search_many` + `BatchHits`; all-or-nothing validation per call; gate
+  `probe_batch_ops`. (Records are WAL-appended per point; an amortized
+  batch-record format is a D5-era option, not required by the current
+  semantics.)
 - **Q3 pagination** -- stable `offset`/`after_id` paging over sorted hits
   with distance tie-breaking documented; probe for page consistency.
 - **Q4 delete-by-filter** -- planner-driven selective delete (index plan or
@@ -262,7 +264,7 @@ deep quantization + tiered storage, client SDKs.
 |---|---|---|---|
 | 1 | Atomic checkpoint (temp+rename) | D1 | `probe_wal_file` extension + suite x2 + probes x2 |
 | 2 | Range search -- **DONE 2026-10-09** (exact-first; ANN widening -> M-P) | Q1 | `probe_range_search` vs brute force |
-| 3 | Batch ops | Q2 | `probe_batch_ops` |
+| 3 | Batch ops -- **DONE 2026-10-09** | Q2 | `probe_batch_ops` (14 checks) |
 | 4 | Benchmark harness + baseline | G2/G3 | bench script green; `docs/BENCHMARKS.md` |
 | 5 | Manifest file | D2 | `probe_manifest_file` |
 | 6 | Multi-collection | D3/FR-1 | `probe_collections` |

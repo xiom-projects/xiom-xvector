@@ -39,8 +39,9 @@ needed) -> signed commit. Red build = rejection.
   engine/facade + `search_range_scan` kernel; exact on both index kinds;
   `probe_range_search` vs brute force. Request range mode folded into Q6;
   ANN widening deferred to M-P tuning.
-- [ ] Q2 batch ops: `upsert_many`/`search_many`/`delete_many`; amortized WAL;
-  `probe_batch_ops` incl. partial-failure semantics
+- [x] Q2 batch ops **(done 2026-10-09)**: `upsert_many`/`search_many`/
+  `delete_many` + `BatchHits`; all-or-nothing validation; `probe_batch_ops`
+  (14 checks) + suite mirror
 - [ ] Q3 pagination: stable offset/after-id paging + tie-break documented;
   `probe_pagination` (page consistency)
 - [ ] Q4 delete-by-filter: planner-driven selective delete + WAL + tombstone

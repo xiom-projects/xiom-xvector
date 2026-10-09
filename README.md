@@ -79,8 +79,11 @@ src/
 | `set_index(eng, kind, params)` | Select the ANN index: `Flat` (default) or `Hnsw` (validates params, builds the graph from the store) |
 | `compact_index(eng)` | Rebuild the ANN graph from live nodes (reclaims tombstones; returns the reclaimed count) |
 | `upsert(eng, point, vec)` | WAL-durable insert/update of a point (payload-encoded vector in the record) |
+| `upsert_many(eng, ids, vecs)` | Batch upsert: all-or-nothing validation, then WAL-durable per point; returns records applied |
 | `search(eng, query, k)` | Exact top-k nearest neighbours; returns `Result[SearchHits, CoreError]` (`SearchHits { items: Vec[SearchResult] }`) |
+| `search_many(eng, queries, k)` | Batch search: one result set per query in order (`BatchHits`); validates all queries first |
 | `delete_point(eng, point)` | Remove a point |
+| `delete_many(eng, ids)` | Batch delete: missing ids skipped; returns the number actually removed |
 | `get_point(eng, point)` | Fetch a stored vector by id |
 | `set_payload` / `get_payload` | WAL-durable metadata attach/replace and read |
 | `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |

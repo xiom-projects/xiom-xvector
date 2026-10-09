@@ -50,7 +50,8 @@ src/
 |                     SegmentId + PointId<->VectorId bridges
 |-- engine.xi       module xiom.vector.engine
 |                     public facade ONLY -- create_collection, set_index,
-|                     compact_index, upsert, search, delete_point,
+|                     compact_index, upsert, upsert_many, search,
+|                     search_many, delete_point, delete_many,
 |                     get_point, set_payload, get_payload,
 |                     search_filtered, search_range, search_with_request;
 |                     thin
@@ -59,8 +60,10 @@ src/
 |   `-- core.xi      module xiom.vector.engine.core
 |                     VectorEngine + engine_* orchestration -- engine_new,
 |                     engine_create_collection, engine_set_index,
-|                     engine_compact_index, engine_upsert, engine_search
-|                     (routes Flat/Hnsw), engine_delete,
+|                     engine_compact_index, engine_upsert,
+|                     engine_upsert_many, engine_search
+|                     (routes Flat/Hnsw), engine_search_many, engine_delete,
+|                     engine_delete_many,
 |                     engine_set_payload, engine_get_payload,
 |                     engine_search_filtered, engine_search_range,
 |                     engine_search_request,
@@ -272,6 +275,14 @@ it). The index kind does not change the result -- exact by construction for
 both Flat and Hnsw; an ANN-widened variant is M-P tuning, not a correctness
 change. Gate: `tests/probes/probe_range_search.xi` (72 radius x limit combos
 vs a local brute-force scan + boundary/error/reopen checks).
+
+Batch ops (`upsert_many` / `delete_many` / `search_many`, M-Q2) validate the
+whole batch BEFORE applying anything (non-empty, equal lengths, every
+dimension matches / k in range), then run the single-point path per element:
+upsert returns records applied (duplicate ids collapse like single upserts),
+delete is idempotent and returns actual removals, search returns `BatchHits`
+(one `SearchHits` per query, order preserved). Gate:
+`tests/probes/probe_batch_ops.xi`.
 
 ## 5. Reuse-from-core table
 
