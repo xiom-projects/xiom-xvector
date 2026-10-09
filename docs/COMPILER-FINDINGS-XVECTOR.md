@@ -15,6 +15,17 @@ All findings below were reported on v0.64.0, re-tested on v0.64.1, and
 re-tested again on v0.64.2 (2026-10-09); **XVC-C-08..C-12** were found later
 on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2.
 
+**Current status (compiler v0.64.2, 2026-10-09): no XVECTOR finding is
+open.** 12 findings total (C-01..C-12), each with a repro bundle under
+`docs/repro/`:
+
+| Range | Status |
+|---|---|
+| XVC-C-01..C-08, C-10 | **verified fixed** (C-01..C-06 in v0.64.1; C-07/C-08 in v0.64.2 after the repro re-runs; C-10 incidentally fixed in v0.64.2 -- inline pad shape no longer segfaults) |
+| XVC-C-11, C-12 | **fixed in context** (v0.64.2 re-test of the original failing unit: unguarded `read_file` Str content and 5-byte `read_file_bytes` both clean) |
+| XVC-C-09 | **repro green** on WSL + Windows; workaround retained (weaker re-test -- the crash lived in the compiled engine path, not the repro shape) |
+| retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard |
+
 Format: `| Date | Finding | Evidence | Workaround | Impact |`.
 Every finding carries a minimal repro bundle under `docs/repro/`.
 
@@ -40,7 +51,8 @@ probes green x2, WSL matrix 9/9 -- no new compiler regressions observed.
 Workarounds left in place (unwind candidates, not urgent): suite direct
 dispatch (C-01), predicate-based negative tests (C-02), `SearchHits`
 struct wrapper (C-04), IntVal/TextVal gating with FloatVal diagnostics
-(C-06). `Str::from_utf8` calls pass the Vec by value (C-07).
+(C-06). `Str::from_utf8` calls pass the Vec by value (C-07; reverted to the
+`&` spelling on v0.64.2 -- see the re-test section).
 
 ## Re-test on v0.64.2 (2026-10-09) -- all relayed XVECTOR fixes verified
 
@@ -102,6 +114,10 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   XVC-C-08 fixed in v0.64.2, the suite asserts the flags again too;
   run with `scripts\run-probe.ps1 tests\probes\probe_search_request.xi -Runs 2`).
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
-  then the suite x2 + the probes, then re-pin in `SESSION.md`.
+  then the suite x2 + the probes, then re-pin in `SESSION.md` (done for
+  v0.64.2 on 2026-10-09 -- see the re-test section).
+- Relay state: `docs/RELAY-COMPILER.md` Addenda 1-8 (8 = v0.64.2 re-test +
+  workaround reverts). No open asks from this lane; C-01/C-02/C-04 stay as
+  deliberate lane choices.
 - Soak / mixed-workload gate: `tests/probes/probe_soak_mixed.xi`
   (600 deterministic ops with bookkeeping invariants + recovery).

@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (31 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (32 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -22,7 +22,8 @@ decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 collection manifest -> HNSW update re-linking -> kill-recovery acceptance ->
 multi-key intersections -> file-backed WAL whole-file checkpoint [XVC-C-11/C-12
 found] -> v0.64.2 re-test: C-03/C-06/C-07/C-08 verified fixed, C-07/C-08
-workarounds reverted, C-10..C-12 re-tested green).
+workarounds reverted, C-10..C-12 re-tested green -> wishlist refresh
+(stdlib 0.64.3 re-check; xiom.wal/xiom.btree in-tree; relays updated)).
 
 ---
 
@@ -37,9 +38,9 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.2** (installed 2026-10-09; tag `c51170a6`; Win 19:00 / WSL 18:37) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
-| stdlib | lane HEAD `d54929d` (wave 97, 2026-10-09); the consumed release for the v0.64.1 re-test was **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
-| packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
+| compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d9f146cb` (post-tag m244 fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
+| stdlib | lane HEAD `82ac2f3` = release **0.64.3** (pinned to compiler v0.64.2); wave 97 = `d54929d` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| packages | lane HEAD `b52028b9` (36 eco releases; `xiom.http` 0.1.4 published); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate (NOT consumed yet) | `E:\xiom-packages\packages` |
 | xvector | `15e83e1` + this pass's commits | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
@@ -257,7 +258,7 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
   scorecard, **70 % today**; recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
-`d54929d`; latest re-verification = v0.64.2 re-test pass with the
+`82ac2f3` = 0.64.3; latest re-verification = v0.64.2 re-test pass with the
 workarounds reverted):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
@@ -331,9 +332,11 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
 
 1. **M2 durable-on-disk -- partly landed (whole-file WAL); fsync/append
    still stdlib-gated.** `durability.wal_file` (whole-file checkpoint +
-   torn-tail-safe load + kill/reopen gate) shipped 2026-10-09. Remaining
-   M2 path: stdlib `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
-   `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on the lane -- re-check
+   torn-tail-safe load + kill/reopen gate) shipped 2026-10-09. Non-gated
+   hardening available now: `io.rename` exists, so `wal_persist` can move to
+   write-temp + rename (atomic checkpoint) -- queued next. Remaining M2
+   path: stdlib `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
+   `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on 0.64.3 -- re-check
    each pass), then a delta append log, file-backed segment files, a
    separate manifest file, and the file-level kill test. Pivot immediately
    when the stdlib gap lands. NOTE: stdlib 0.64.2 made file writes
@@ -429,21 +432,28 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
 
 ## 5. Ecosystem status (2026-10-09)
 
-- **stdlib:** consumed release for the v0.64.1 re-test was **0.64.2**
-  (`4dd8844`: byte-exact file writes, CRLF-clean reads, `fs_remove` added,
-  iter contracts extended); the lane has since advanced to `d54929d`
-  (wave 97, 2026-10-09) and builds consume `E:\xiom-lang\stdlib` directly,
-  so re-check `git -C E:\xiom-lang\stdlib log -1` each pass.
-  **fsync/fd-write/append-bytes still stubs** (wishlist rows 1-3) --
-  whole-file WAL workaround shipped, delta log still gated.
+- **stdlib:** current lane HEAD `82ac2f3` = release **0.64.3** (pinned to
+  compiler v0.64.2; wire waves 93-97, contract %, no durability primitives).
+  **Re-checked 2026-10-09: fsync/fdatasync, the fd path (`write_all` etc.),
+  `append_file_bytes`, `truncate`/`ftruncate` are still stubs; no
+  `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
+  `docs/STDLIB-WISHLIST-XVECTOR.md`). `io.rename` exists -- atomic
+  temp+rename checkpoint hardening is available today. Byte-exact file
+  writes / CRLF-clean reads since 0.64.2.
 - **compiler:** **v0.64.2 installed** (2026-10-09; tag `c51170a6`; nine-tool
   install Windows + WSL). Re-test done: all relayed XVECTOR fixes verified
   (C-03/06/07/08), C-10..C-12 also green; workarounds reverted where
   applicable (Addendum 8). No residual reds from this lane.
-- **packages:** names frozen (`xiom.vectors`/`xiom.wal`/`xiom.ann`);
-  bindings lane: blas-class placeholders only, no SIMD package planned;
-  `xiom.metrics` planned for Phase 10; `xiom.kv` gated on C-PULSE-10 +
-  fsync. New names get ops scope + allowlist at build-green.
+- **packages:** lane HEAD `b52028b9`; **36 eco releases** (`xiom.http` 0.1.4
+  published, `eco-v0.1.120`). **`xiom.wal` 0.1.0 and `xiom.btree` 0.1.0 are
+  in the tree** (`packages/xiom-wal` 21/21 `137a8200`, `packages/xiom-btree`
+  22/22 `c78fe78a`) -- the packages lane's remaining gate is an ops scope +
+  native-lane allowlist append. `xiom.wal` is the single WAL home (durable
+  record shape + ORBITDB disk segment; `wal_flush` no-op on the same fsync
+  gap); XVECTOR aligns its codec and consumes it when published. No
+  `xiom.vectors`/`xiom.ann` dirs yet (names frozen; extraction unblocked
+  technically). `xiom.metrics` planned for Phase 10; `xiom.kv` gated on
+  C-PULSE-10 + fsync.
 - Registry ready: `xiom.http` 0.1.1, `xiom.jwt` 0.2.0, `xiom.rate` 0.2.0,
   `xiom.metrics` 0.2.0, `xiom.router` 0.1.0, `xiom.http.middleware` 0.1.0,
   `xiom.session` 0.1.0, `xiom.static` 0.1.0, `xiom.kv` 0.1.0. Read
@@ -457,8 +467,8 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
 | `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.2: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-8 (8 = v0.64.2 re-test + workaround reverts) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
-| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still gating M2 delta log |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
+| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-09 on 0.64.3: fsync/fd/append + f32-bits + truncate + flush_stdout all still open |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09: `xiom.wal`/`xiom.btree` in-tree (ops-allowlist gate); vectors/ann extraction unblocked |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 70 %; recompute every wrap |
 
@@ -477,8 +487,9 @@ stays PRIVATE; no pushes. Identity "Lefteris Notas
 
 Toolchain (latest-tracking): compiler v0.64.2 installed on Windows
 (%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom, use
-`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD d54929d;
-consumed release 0.64.2 = 4dd8844, /mnt/e/... in WSL); XIOM_RUNTIME_DIR
+`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD 82ac2f3 =
+release 0.64.3, pinned to compiler v0.64.2; durability primitives still
+stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
 runs probes. Green baseline: suite 169/169 x2 (Windows + WSL), 18 probes x2

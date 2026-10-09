@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
 
-Status: **FIXED in v0.64.1** (2026-10-08 re-test): 	ests/probes/probe_floatval_roundtrip.xi green 3/3 Windows + 2/2 WSL.
+Status: **FIXED in v0.64.1** (2026-10-08 re-test): tests/probes/probe_floatval_roundtrip.xi green 3/3 Windows + 2/2 WSL (re-verified on v0.64.2).
 # XVC-C-06 repro: Float32 enum payloads read as 0 in some builds
 
 Compiler: **v0.64.0** (Windows; WSL reported the same family via XVC-C-05).

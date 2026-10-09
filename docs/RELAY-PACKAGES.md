@@ -29,3 +29,26 @@ same problem space and we should build one shared layer, not two forks):**
 
 **Ask:** confirm/reshape the three proposed names and their scope, and flag
 overlap with `xiom-durable`/`xiom-snapshot`/`xiom-kv` before publishing.
+
+**Addendum (2026-10-09): name freeze actioned; `xiom.wal` + `xiom.btree`
+now in-tree; extraction gates met on the XVECTOR side.**
+
+- `xiom.wal` 0.1.0 exists (`packages/xiom-wal`, tests 21/21, `137a8200`;
+  durable record shape + ORBITDB disk segment; `wal_flush` no-op until the
+  stdlib fsync row lands) -- pending ops scope + native-lane allowlist.
+  XVECTOR aligns its value codec (`[dim, f32-bits...]` fits the record
+  payload field) and consumes the package when published; no competing WAL.
+- `xiom.btree` 0.1.0 in-tree (`packages/xiom-btree`, 22/22, `c78fe78a`;
+  same ops gate) -- watch for future metadata/index use on our side.
+- `xiom.vectors` / `xiom.ann`: names frozen; the XVECTOR hardening gate is
+  **met** -- reference tree final, **169-check suite + 18 probes** green x2
+  on Windows + WSL (compiler v0.64.2), HNSW tombstones / compaction /
+  strict codec / update re-linking / recall harness in place. Extraction can
+  proceed through the porter flow on the owner's greenlight.
+- Lane status noted: 36 eco releases, `xiom.http` 0.1.4 published
+  (`eco-v0.1.120`), repinned v0.64.2. Adoption notes unchanged
+  (`xiom.metrics` Phase 10; `xiom.kv` gated on C-PULSE-10 + fsync).
+
+**Ask:** ping XVECTOR when the `xiom.wal` ops allowlist clears -- the lane
+wants the first `source-roots` consumer pass (C-PULSE-02) against the
+published package.
