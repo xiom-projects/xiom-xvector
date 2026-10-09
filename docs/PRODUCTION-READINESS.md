@@ -33,11 +33,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 84 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
+| I | Testing & verification | 9 | 92 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x84 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.42 -> 75 %**.
+0.08x84 + 0.10x25 + 0.05x20 + 0.09x92 + 0.08x48 = **75.96 -> 76 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -180,8 +180,8 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 86 %
-Done: 171-check conformance suite (x2 Windows + WSL), 20 probes, build-time
+### I. Testing & verification -- 92 %
+Done: 171-check conformance suite (x2 Windows + WSL), 27 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
@@ -189,11 +189,15 @@ deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
 (`probe_kill_recovery`), the file-WAL gate
 (`probe_wal_file`: roundtrip, kill/reopen, truncation sweep, atomic swap,
 **1200-record scale guard**), the **benchmark harness + baseline**
-(`docs/BENCHMARKS.md`; bench smoke wired into both CI batteries), and
+(`docs/BENCHMARKS.md`; bench smoke wired into both CI batteries), the
+**reference-oracle cross-check** (`probe_reference_oracle`: independent
+Float64 oracle vs the kernels + axioms + all ranked/paged/cursor/range/
+Hnsw search paths; deviations at Float32-ulp scale, bit-identical
+Windows/WSL), and
 the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 (C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
 workarounds reverted; the suite asserts trailing-field flags again.
-Remaining: reference oracle cross-check, CI runner activation.
+Remaining: CI runner activation.
 
 ### J. Ecosystem & release engineering -- 48 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
@@ -571,6 +575,20 @@ extraction with the packages lane.
   re-implementation and stays untouched). F 82 -> 84; overall 75.26 ->
   75.42 -> 75 %. Evidence: full batteries (suite 171/171 x2 + 26 probes x2
   + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-sixth pass):** M-G1 reference oracle --
+  `probe_reference_oracle` (22 checks): an independent Float64 oracle
+  cross-checks the three kernels pairwise (780 seeded pairs each;
+  per-build deviations at Float32-ulp scale -- cosine 1.70e-07, dot
+  9.83e-07, euclidean 5.06e-07, bit-identical Windows/WSL), the metric
+  axioms (exact symmetry; self-distance l2==0 / cosine~0 / dot==-|v|^2;
+  euclidean triangle inequality; cosine [0,2] + exact x2 scale
+  invariance; zero-vector guard == 1.0), and the ranked/page/cursor/range/
+  Hnsw paths vs the oracle ranking (top-5 rank exact per metric,
+  inclusive-range subset at a midpoint radius, engine-distance boundary
+  inclusion, Hnsw recall@5 == 5/5 + distance fidelity). Batteries now 27
+  probes. I 86 -> 92; overall 75.42 -> 75.96 -> 76 %. Evidence: full
+  batteries (suite 171/171 x2 + 27 probes x2 + bench smoke, Windows +
+  WSL), ALL GATES GREEN.
 
 ## Update rule
 

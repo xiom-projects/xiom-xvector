@@ -215,6 +215,10 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   radius, and offset/after-id pagination; `SearchBatchRequest` +
   `search_batch_with_request` (ordered, all-or-nothing); gate extended
   `probe_search_request` (24 checks).
+- [OK] Reference-oracle cross-check (M-G1): independent Float64 oracle vs
+  the three kernels (pairwise deviations at Float32-ulp scale), metric
+  axioms, and the ranked/paged/cursor/range/Hnsw search paths on seeded
+  vectors; gate `probe_reference_oracle` (22 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

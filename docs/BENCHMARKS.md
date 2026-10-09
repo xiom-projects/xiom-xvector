@@ -37,6 +37,11 @@ honesty rule from `docs/PRODUCTION-PLAN.md` §5).
 - **Inputs:** deterministic LCG; the same mode reproduces identical data.
 - **Memory safety:** all loop budgets are hard-capped; the harness is
   monitored during development. A full medium run peaks ~287 MB RSS.
+- **Kernel fidelity (M-G1):** `probe_reference_oracle` cross-checks the
+  distance kernels against an independent Float64 oracle on seeded data;
+  measured deviations are Float32-ulp scale and bit-identical across
+  platforms (cosine 1.70e-07, dot 9.83e-07, euclidean 5.06e-07), so the
+  measured numbers below are kernel-faithful, not kernel-dependent.
 
 ## Baseline (2026-10-09)
 

@@ -117,10 +117,12 @@ fan-out + merge.
 
 Goal: every later number is measured, not assumed.
 
-- **G1 reference-oracle cross-check** -- an independent in-repo oracle
-  (Float64 reference math + metric identities/axioms: symmetry, triangle
-  bounds, self-distance, normalization; randomized vectors, deterministic
-  seeds) vs the engine kernels. Probe `probe_reference_oracle`.
+- **G1 reference-oracle cross-check -- DONE 2026-10-09** -- an independent
+  in-repo oracle (Float64 reference math + metric identities/axioms:
+  symmetry, triangle bounds, self-distance, normalization; randomized
+  vectors, deterministic seeds) vs the engine kernels and search paths.
+  Gate `probe_reference_oracle` (22 checks; deviations at Float32-ulp
+  scale, bit-identical Windows/WSL).
 - **G2 benchmark harness** (`bench/`) -- **DONE 2026-10-09**: deterministic
   workloads (ingest, KNN per metric/ef, filtered, range, batch, recovery),
   integer JSON + human report, CI smoke; `scripts/bench.ps1`/`.sh` twins.
@@ -294,7 +296,7 @@ deep quantization + tiered storage, client SDKs.
 | 8 | Delete-by-filter -- **DONE 2026-10-09** | Q4 | `probe_delete_filter` (26 checks) |
 | 8b | Index admin + per-collection stats -- **DONE 2026-10-09** | Q5 | `probe_index_admin` (20 checks) |
 | 8c | Request extensions (mode/page/batch) -- **DONE 2026-10-09** | Q6 | `probe_search_request` (24 checks) |
-| 9 | Reference oracle | G1 | `probe_reference_oracle` |
+| 9 | Reference oracle -- **DONE 2026-10-09** | G1 | `probe_reference_oracle` (22 checks) |
 | 10 | HTTP skeleton + health | S1 | `probe_http_service` |
 | 11 | Config/limits/errors | S2 | service abuse probe |
 | 12 | Auth | S3 | auth probe (reject/accept, scopes) |
