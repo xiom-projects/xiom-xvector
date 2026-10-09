@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (45 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (46 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -45,18 +45,20 @@ payload/index cleanup; probe_delete_filter]) -> M-Q5 index admin
 [per-collection stats + admin rebuild_index (before/after/reclaimed);
 probe_index_admin]) -> M-Q6 request extensions [SearchRequest mode
 (knn/range) + offset/after-id pagination; SearchBatchRequest +
-search_batch_with_request; probe_search_request extended]).
+search_batch_with_request; probe_search_request extended]) -> M-G1
+reference oracle [independent Float64 oracle vs kernels + axioms + all
+ranked/paged/cursor/range/Hnsw paths; probe_reference_oracle]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `2647d2f` (feat: M-Q6
-request extensions) + this handoff commit. Recent slices: `2647d2f` M-Q6
-(request extensions), `7014d86` M-Q5 wrap, `91d75fa` M-Q5 (index admin),
-`1ea8aa2` M-Q4 wrap, `ac2535e` M-Q4 (delete-by-filter), `4cda576` M-Q3
-wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
-commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `3b01fb0` (test: M-G1
+reference oracle) + this handoff commit. Recent slices: `3b01fb0` M-G1
+(reference oracle), `d01eba1` M-Q6 wrap, `2647d2f` M-Q6 (request
+extensions), `7014d86` M-Q5 wrap, `91d75fa` M-Q5 (index admin), `1ea8aa2`
+M-Q4 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
+conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -65,7 +67,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `2647d2f` + this handoff commit | this repo |
+| xvector | `3b01fb0` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -430,14 +432,27 @@ commits, DCO `git commit -s`.
   `probe_search_request` extended to 24 checks (range radii 0.5/1.0
   inclusive + hydration, range refusals, page/cursor dispatch matching
   the kernels, mutex + filter refusals, batch order/empty/abort).
+- **M-G1 reference oracle (2026-10-09):** new `probe_reference_oracle`
+  (22 checks) -- an INDEPENDENT Float64 oracle (own loops over the raw
+  Float32 storage, `math.sqrt` in Float64, no `vector_distance` calls):
+  pairwise kernel agreement for cosine/dot/euclidean (780 seeded pairs
+  each; measured deviations at Float32-ulp scale: 1.70e-07 / 9.83e-07 /
+  5.06e-07, bit-identical Windows/WSL), metric axioms (exact symmetry;
+  self-distance l2==0 / cosine~0 / dot==-|v|^2; euclidean triangle
+  inequality on engine values; cosine bounds [0,2] + exact x2 scale
+  invariance; zero-vector cosine guard == 1.0), and the ranked search
+  paths vs the oracle ranking (top-5 rank exact per metric; hit
+  distances within tolerance; page ranks 5..12; cursor ranks 7..14;
+  inclusive-range subset at a midpoint radius + engine-distance boundary
+  inclusion; Hnsw recall@5 == 5/5 + distance fidelity).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **72 % today**; recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
-`ed6d46c` = 0.64.3; latest re-verification = M-D2 manifest pass on the
-current tree):**
+`ed6d46c` = 0.64.3; latest re-verification = M-G1 reference-oracle pass on
+the current tree):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
   (the new-module import gate: `xiom.vector.engine` + `xiom.vector.engine.core`
@@ -479,7 +494,11 @@ current tree):**
   extended 10 -> 24 checks (probe-only gate; suite mirror untouched --
   the mirror is a standalone re-implementation); WSL spot x2
   bit-identical.
-- All **26 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-G1 reference-oracle pass:** suite **171/171 x2** + **27 probes x2** +
+  bench smoke (Windows + WSL), ALL GATES GREEN; new
+  `probe_reference_oracle` (22 checks) wired into both batteries; WSL
+  spot x2 bit-identical (same Float32-ulp deviations).
+- All **27 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -487,8 +506,8 @@ current tree):**
   `probe_fuzz_codecs`, `probe_soak_mixed`, `probe_kill_recovery`,
   `probe_wal_file`, `probe_manifest_file`, `probe_collections`,
   `probe_segment_file`, `probe_range_search`, `probe_pagination`,
-  `probe_delete_filter`, `probe_index_admin`, `probe_batch_ops` (run via
-  `scripts\run-probe.ps1`).
+  `probe_delete_filter`, `probe_index_admin`, `probe_reference_oracle`,
+  `probe_batch_ops` (run via `scripts\run-probe.ps1`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
   quick` green (Windows + WSL), wired into both CI batteries; baseline
   numbers in `docs/BENCHMARKS.md` (M-G).
@@ -549,9 +568,11 @@ verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
 1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6
-   + M-G2/G3 DONE -- the M-Q backlog is complete.** Next: M-G1 reference
-   oracle; then M-S1 server & security, M-O observability. D5/D6
-   (delta+fsync, retention) stay gated on the stdlib fsync chain.
+   + M-G1 + M-G2/G3 DONE -- the M-Q and M-G backlogs are complete.**
+   Next: M-S1 server & security (HTTP skeleton -> S2 config/limits/errors
+   -> S3 auth -> S4 security pass + SBOM), then M-O observability
+   (metrics/health/logs/runbook). D5/D6 (delta+fsync, retention) stay
+   gated on the stdlib fsync chain.
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -719,7 +740,7 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `2647d2f` (feat: M-Q6 request extensions) + the handoff
+Orientation: HEAD `3b01fb0` (test: M-G1 reference oracle) + the handoff
 commit; clean tree; `git log --oneline -12` shows the recent slice commits.
 Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 (installed compiler v0.64.2, tag c51170a6).
@@ -727,8 +748,7 @@ Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: M-G1 reference oracle;
-M-S1 HTTP service -> S2 config/limits/
+slice backlog: M-S1 HTTP service -> S2 config/limits/
 errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
@@ -755,7 +775,7 @@ release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 26 probes x2
+runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 27 probes x2
 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -814,8 +834,11 @@ Ok(0); gate `probe_delete_filter`, 26 checks); M-Q5 index admin
 entries report without switching; gate `probe_index_admin`, 20 checks);
 M-Q6 request extensions (SearchRequest mode knn/range + radius + offset/
 after-id pagination; SearchBatchRequest + search_batch_with_request
-ordered all-or-nothing; gate probe_search_request, 24 checks) -- 26
-probes, suite 171).
+ordered all-or-nothing; gate probe_search_request, 24 checks); M-G1
+reference oracle (independent Float64 oracle vs the kernels + axioms +
+all ranked/paged/cursor/range/Hnsw paths; deviations at Float32-ulp
+scale, bit-identical Win/WSL; gate probe_reference_oracle, 22 checks)
+-- 27 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -828,15 +851,15 @@ bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
 NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
-M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G2/G3 done --
-the M-Q backlog is complete; next: M-G1 reference oracle; then M-S
-server/security, M-O observability). Non-gated work proceeds while the stdlib
+M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G1 + M-G2/G3
+done -- the M-Q and M-G backlogs are complete; next: M-S1 server &
+security, then S2-S4, M-O observability). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 26 probes x2 + bench smoke), signed commits, docs updated.
++ 27 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; `Str`
 params by value (XVC-C-13); numeric gates per build; watchdogs + exit

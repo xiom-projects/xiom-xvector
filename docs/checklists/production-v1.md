@@ -10,8 +10,10 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-G -- Truth & measurement
 
-- [ ] G1 reference-oracle cross-check: independent Float64 oracle + metric
-  identities/axioms; randomized deterministic vectors; `probe_reference_oracle`
+- [x] G1 reference-oracle cross-check **(done 2026-10-09)**: independent
+  Float64 oracle + metric identities/axioms; randomized deterministic
+  vectors; `probe_reference_oracle` (22 checks: pairwise kernels 780 pairs
+  x3 metrics, axioms, ranked/page/cursor/range/Hnsw vs the oracle)
 - [x] G2 benchmark harness **(done 2026-10-09)**: `bench/bench_main.xi` +
   `scripts/bench.ps1/.sh` + CI smoke (W1-W7, JSON, stage diagnostics)
 - [x] G3 baseline report **(done 2026-10-09)**: `docs/BENCHMARKS.md`

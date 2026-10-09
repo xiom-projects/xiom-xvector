@@ -51,6 +51,19 @@ Implemented today: `DistanceMetric` + the three distances + `vector_distance` (m
   manifest and the manifest file (D2). `Str` parameters are always by value
   (`&Str` mislowers on v0.64.2 -- XVC-C-13).
 - `metric_name(m) -> Str`.
+- Reference oracle (M-G1, `tests/probes/probe_reference_oracle.xi`): an
+  INDEPENDENT Float64 oracle (its own loops over the raw Float32 storage,
+  `math.sqrt` in Float64, no `vector_distance` calls) cross-checks all
+  three kernels pairwise (780 seeded pairs each; per-build deviation
+  reports -- cosine ~1.7e-7, dot ~9.8e-7, euclidean ~5.1e-7 on v0.64.2,
+  bit-identical Windows/WSL), the metric axioms (exact symmetry,
+  self-distance `l2==0` / `cosine~0` / `dot==-|v|^2`, euclidean triangle
+  inequality, cosine bounds `[0,2]` + exact x2 scale invariance,
+  zero-vector guard `== 1.0`), and the ranked/paged/cursor/range/Hnsw
+  search paths vs the oracle ranking on deterministic seeded vectors
+  (top-5 rank exact per metric, inclusive-range subset at a midpoint
+  radius, engine-distance boundary inclusion, Hnsw recall@5 == 5/5 +
+  oracle distance fidelity).
 
 ## `xiom.vector.types.neighbor` (extracted module)
 Implemented today: `Neighbor` + `neighbor_new` (neighbor_closer pending).
