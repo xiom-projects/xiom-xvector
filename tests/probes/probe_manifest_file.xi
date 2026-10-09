@@ -215,7 +215,8 @@ fn main() -> Int {
     "atomic: partial temp cannot damage the target", fails);
   match io.remove_file(pm + ".tmp") { Ok(_) => {} Err(_) => { fails = fails + 1; } }
 
-  // Engine save: a live Hnsw+Cosine config persisted through the facade.
+  // Engine save: a live Hnsw+Cosine config persisted through the facade
+  // (D3: the whole registry; a legacy create names the collection "default").
   var eng = engine_new();
   create_collection(&mut eng, dim, DistanceMetric.Cosine);
   var s: Int = 991117;
@@ -227,9 +228,9 @@ fn main() -> Int {
     i = i + 1;
   }
   set_index(&mut eng, AnnIndexKind.Hnsw, hnsw_params());
-  fails = check(save_manifest(&eng, "live", pm), "engine save: manifest written", fails);
+  fails = check(save_manifest(&mut eng, pm), "engine save: manifest written", fails);
   var lre = manifest_load(pm);
-  var eng_ok: Bool = lre.valid && lre.entries.len() == 1 && lre.entries[0].name == "live";
+  var eng_ok: Bool = lre.valid && lre.entries.len() == 1 && lre.entries[0].name == "default";
   if eng_ok {
     eng_ok = lre.entries[0].dim == dim
       && lre.entries[0].metric == DistanceMetric.Cosine

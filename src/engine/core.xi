@@ -11,6 +11,7 @@ module xiom.vector.engine.core
 // engine.core <- engine facade).
 
 use xiom.vector.core.shim;
+use xiom.string.slice;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.types.neighbor;
@@ -22,13 +23,20 @@ use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.durability.wal;
-use xiom.vector.durability.recovery;
 use xiom.vector.durability.write_ahead_events;
 use xiom.vector.durability.manifest_file;
 
 // ---- VectorEngine ----
 // The flat store is always maintained (source of truth for ids/vectors);
 // when `index_kind` is Hnsw, `graph` mirrors it for approximate search.
+//
+// D3 (multi-collection): the top-level fields materialize the ACTIVE
+// collection; `collections` holds one full entry per collection in creation
+// (cid) order -- the active collection's entry is refreshed from the live
+// fields by `sync_active` before any registry-wide read or a switch. Data
+// ops (upsert/search/...) only touch the live fields; `active_cid` is the
+// collection id stamped into WAL data records and `active_name` names it in
+// v2 manifest records.
 pub type VectorEngine = {
   store: VectorIndex;
   graph: HNSWGraph;
@@ -42,6 +50,30 @@ pub type VectorEngine = {
   deletes: Counter;
   next_collection: Int;
   payloads: PayloadStore;
+  collections: Vec[CollectionEntry];
+  active_idx: Int;
+  active_cid: Int;
+  active_name: Str;
+}
+
+// One named collection's full state (registry entry). The active collection
+// is also materialized in the VectorEngine's top-level fields.
+pub type CollectionEntry = {
+  cid: Int;
+  name: Str;
+  store: VectorIndex;
+  payloads: PayloadStore;
+  graph: HNSWGraph;
+  index_kind: AnnIndexKind;
+  ann: AnnParams;
+  dimension: Int;
+  metric: DistanceMetric;
+}
+
+// The registry names list (struct wrapper, the SearchHits discipline:
+// Result-free Vec[Str] payloads stay behind a named shape).
+pub type CollectionList = {
+  names: Vec[Str];
 }
 
 pub fn engine_new() -> VectorEngine {
@@ -58,17 +90,27 @@ pub fn engine_new() -> VectorEngine {
     deletes: counter_new("vector.deletes"),
     next_collection: 1,
     payloads: payload_store_new(),
+    collections: Vec[CollectionEntry].new(),
+    active_idx: -1,
+    active_cid: 0,
+    active_name: "",
   };
 }
 
-// ---- Collection manifest (durable config) ----
-// The active collection's configuration travels in the WAL as a
-// ManifestUpdate record so engine_recover restores it without a manual
-// set_index. Layout: [version=1, dim, metric_code, kind_code, m,
-// ef_construction, ef_search]. Malformed / pre-manifest logs fall back to
-// the caller's dim/metric with a Flat collection.
-pub type CollectionManifest = {
+// ---- Collection registry (durable config, D3) ----
+// The registry maps collection ids to names + configuration. It travels in
+// the WAL as ManifestUpdate records in three payload families:
+//   v1 legacy: [1, dim, mc, kc, m, efc, efs]              (no name; cid 1)
+//   v2 config: [2, name_len, name..., dim, mc, kc, m, efc, efs]
+//                                                         (record value = cid)
+//   v3 drop:   [3, name_len, name...]                     (record value = cid)
+// and in the manifest file (D2) as one `<name> <dim> <mc> <kc> <m> <efc>
+// <efs>` line per collection. Malformed records are ignored; legacy v1
+// records upsert the canonical "default" collection (cid 1).
+pub type ManifestInfo = {
   valid: Bool;
+  version: Int;
+  name: Str;
   dim: Int;
   metric: DistanceMetric;
   kind: AnnIndexKind;
@@ -77,9 +119,11 @@ pub type CollectionManifest = {
   ef_search: Int;
 }
 
-fn empty_manifest() -> CollectionManifest {
-  return CollectionManifest{
+fn empty_manifest_info() -> ManifestInfo {
+  return ManifestInfo{
     valid: false,
+    version: 0,
+    name: "",
     dim: 0,
     metric: DistanceMetric.Euclidean,
     kind: AnnIndexKind.Flat,
@@ -89,79 +133,280 @@ fn empty_manifest() -> CollectionManifest {
   };
 }
 
-fn parse_manifest(words: &Vec[Int]) -> CollectionManifest {
-  var mf = empty_manifest();
-  if words.len() != 7 { return mf; }
-  if words[0] != 1 { return mf; }
-  var d: Int = words[1];
-  if d < 1 { return mf; }
-  var mc: Int = words[2];
-  if mc < 1 || mc > 3 { return mf; }
-  var kc: Int = words[3];
-  if kc < 1 || kc > 3 { return mf; }
-  var p = AnnParams{ m: words[4], ef_construction: words[5], ef_search: words[6] };
-  if !ann_params_valid(&p) { return mf; }
-  mf.dim = d;
-  if mc == 1 { mf.metric = DistanceMetric.Cosine; } elif mc == 2 { mf.metric = DistanceMetric.DotProduct; } else { mf.metric = DistanceMetric.Euclidean; }
-  if kc == 1 { mf.kind = AnnIndexKind.Flat; } elif kc == 2 { mf.kind = AnnIndexKind.Hnsw; } else { mf.kind = AnnIndexKind.Ivf; }
-  mf.m = p.m;
-  mf.ef_construction = p.ef_construction;
-  mf.ef_search = p.ef_search;
-  mf.valid = true;
+fn parse_manifest_info(words: &Vec[Int]) -> ManifestInfo {
+  var mf = empty_manifest_info();
+  if words.len() < 1 { return mf; }
+  var ver: Int = words[0];
+  if ver == 1 {
+    if words.len() != 7 { return mf; }
+    var d: Int = words[1];
+    var mc: Int = words[2];
+    var kc: Int = words[3];
+    if d < 1 || mc < 1 || mc > 3 || kc < 1 || kc > 3 { return mf; }
+    var p = AnnParams{ m: words[4], ef_construction: words[5], ef_search: words[6] };
+    if !ann_params_valid(&p) { return mf; }
+    mf.name = "default";
+    mf.dim = d;
+    mf.metric = metric_from_code(mc);
+    mf.kind = ann_kind_from_code(kc);
+    mf.m = p.m;
+    mf.ef_construction = p.ef_construction;
+    mf.ef_search = p.ef_search;
+    mf.valid = true;
+    mf.version = 1;
+    return mf;
+  }
+  if ver == 2 {
+    if words.len() < 3 { return mf; }
+    var nlen: Int = words[1];
+    if nlen < 1 || nlen > 64 { return mf; }
+    if words.len() != 8 + nlen { return mf; }
+    var nb = Vec[UInt8].new();
+    var i: Int = 0;
+    while i < nlen {
+      var b: Int = words[2 + i];
+      if b < 0 || b > 255 { return mf; }
+      nb.push(b as UInt8);
+      i = i + 1;
+    }
+    var nm = Str::from_utf8(&nb);
+    if !manifest_name_valid(nm) { return mf; }
+    var d2: Int = words[2 + nlen];
+    var mc2: Int = words[3 + nlen];
+    var kc2: Int = words[4 + nlen];
+    if d2 < 1 || mc2 < 1 || mc2 > 3 || kc2 < 1 || kc2 > 3 { return mf; }
+    var p2 = AnnParams{ m: words[5 + nlen], ef_construction: words[6 + nlen], ef_search: words[7 + nlen] };
+    if !ann_params_valid(&p2) { return mf; }
+    mf.name = nm;
+    mf.dim = d2;
+    mf.metric = metric_from_code(mc2);
+    mf.kind = ann_kind_from_code(kc2);
+    mf.m = p2.m;
+    mf.ef_construction = p2.ef_construction;
+    mf.ef_search = p2.ef_search;
+    mf.valid = true;
+    mf.version = 2;
+    return mf;
+  }
+  if ver == 3 {
+    if words.len() < 3 { return mf; }
+    var nlen3: Int = words[1];
+    if nlen3 < 1 || nlen3 > 64 { return mf; }
+    if words.len() != 2 + nlen3 { return mf; }
+    var nb3 = Vec[UInt8].new();
+    var i3: Int = 0;
+    while i3 < nlen3 {
+      var b3: Int = words[2 + i3];
+      if b3 < 0 || b3 > 255 { return mf; }
+      nb3.push(b3 as UInt8);
+      i3 = i3 + 1;
+    }
+    var nm3 = Str::from_utf8(&nb3);
+    if !manifest_name_valid(nm3) { return mf; }
+    mf.name = nm3;
+    mf.valid = true;
+    mf.version = 3;
+    return mf;
+  }
   return mf;
 }
 
-fn last_manifest(w: &WalWriter) -> CollectionManifest {
-  var out = empty_manifest();
-  var i: Int = w.records.len() - 1;
-  var found: Bool = false;
-  while i >= 0 && !found {
-    if w.records[i].op == WalOpKind.ManifestUpdate {
-      out = parse_manifest(&w.records[i].payload);
-      found = true;
-    }
-    i = i - 1;
-  }
-  return out;
-}
-
-fn log_manifest(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
+// v2 config record words (record value carries the collection id).
+fn manifest_words(name: Str, dim: Int, metric: DistanceMetric, kind: AnnIndexKind, params: AnnParams) -> Vec[Int] {
   var words = Vec[Int].new();
-  words.push(1);
-  words.push(eng.dimension);
-  words.push(metric_code(eng.metric));
+  words.push(2);
+  var nb = slice.str_bytes(name);
+  words.push(nb.len());
+  var i: Int = 0;
+  while i < nb.len() {
+    words.push(nb[i] as Int);
+    i = i + 1;
+  }
+  words.push(dim);
+  words.push(metric_code(metric));
   words.push(ann_kind_code(kind));
   words.push(params.m);
   words.push(params.ef_construction);
   words.push(params.ef_search);
-  wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, 0, words);
+  return words;
 }
 
-// A registry entry (manifest file) as the in-WAL CollectionManifest shape, so
-// both recovery sources feed the same apply path.
-fn manifest_from_entry(e: &RegistryEntry) -> CollectionManifest {
-  var mf = empty_manifest();
-  mf.valid = true;
-  mf.dim = e.dim;
-  mf.metric = e.metric;
-  mf.kind = e.kind;
-  mf.m = e.m;
-  mf.ef_construction = e.ef_construction;
-  mf.ef_search = e.ef_search;
-  return mf;
+fn log_manifest(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
+  var words = manifest_words(eng.active_name, eng.dimension, eng.metric, kind, params);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, eng.active_cid, words);
 }
 
-// Persist the active collection's configuration to a manifest file (M-D2):
-// one registry entry (name + dim/metric/index kind/params) written whole-file
-// and swapped in atomically. The caller supplies the collection name until
-// the multi-collection runtime (D3) owns the registry. False when the name /
-// config is invalid or the write fails (target file untouched).
-pub fn engine_manifest_save(eng: &VectorEngine, name: Str, path: Str) -> Bool
-  requires: eng.created
-{
+// Snapshot the live (active) collection into its registry entry. Called
+// before any registry-wide read and before switching away; entry reads are
+// copies (validated on v0.64.2), so this is a plain read-modify-write-back.
+fn sync_active(eng: &mut VectorEngine) {
+  if eng.active_idx < 0 { return; }
+  var i: Int = eng.active_idx;
+  var e = eng.collections[i];
+  e.cid = eng.active_cid;
+  e.name = eng.active_name;
+  e.store = eng.store;
+  e.payloads = eng.payloads;
+  e.graph = eng.graph;
+  e.index_kind = eng.index_kind;
+  e.ann = eng.ann;
+  e.dimension = eng.dimension;
+  e.metric = eng.metric;
+  eng.collections[i] = e;
+}
+
+// Materialize registry entry `idx` as the live active collection.
+fn load_active(eng: &mut VectorEngine, idx: Int) {
+  var e = eng.collections[idx];
+  eng.store = e.store;
+  eng.payloads = e.payloads;
+  eng.graph = e.graph;
+  eng.index_kind = e.index_kind;
+  eng.ann = e.ann;
+  eng.dimension = e.dimension;
+  eng.metric = e.metric;
+  eng.created = true;
+  eng.active_idx = idx;
+  eng.active_cid = e.cid;
+  eng.active_name = e.name;
+}
+
+// Forget the live view (dropping the last collection leaves an engine that
+// is ready for a fresh create).
+fn reset_active(eng: &mut VectorEngine) {
+  eng.store = index_new(1);
+  eng.graph = hnsw_new(16, 4.0);
+  eng.index_kind = AnnIndexKind.Flat;
+  eng.ann = ann_params_default();
+  eng.metric = DistanceMetric.Euclidean;
+  eng.dimension = 0;
+  eng.created = false;
+  eng.payloads = payload_store_new();
+  eng.active_idx = -1;
+  eng.active_cid = 0;
+  eng.active_name = "";
+}
+
+fn collection_find(eng: &VectorEngine, name: Str) -> Int {
+  var i: Int = 0;
+  while i < eng.collections.len() {
+    if eng.collections[i].name == name { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+pub fn engine_collection_count(eng: &VectorEngine) -> Int {
+  return eng.collections.len();
+}
+
+pub fn engine_list_collections(eng: &VectorEngine) -> CollectionList {
+  var names = Vec[Str].new();
+  var i: Int = 0;
+  while i < eng.collections.len() {
+    names.push(eng.collections[i].name);
+    i = i + 1;
+  }
+  return CollectionList{ names: names };
+}
+
+// Create a named collection (empty), make it active, and append its v2
+// manifest record first (WAL-before-ack). Rejects invalid or duplicate
+// names and invalid dimensions; the previous active collection is parked
+// with its state intact.
+pub fn engine_create_named(eng: &mut VectorEngine, name: Str, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError] {
+  if !is_valid_dimension(dim) {
+    return Err(CoreError.InvalidInput("dimension out of range"));
+  }
+  if !manifest_name_valid(name) {
+    return Err(CoreError.InvalidInput("invalid collection name"));
+  }
+  if collection_find(eng, name) >= 0 {
+    return Err(CoreError.InvalidInput("collection exists"));
+  }
+  var cid: Int = eng.next_collection;
+  eng.next_collection = eng.next_collection + 1;
+  var params = ann_params_default();
+  var words = manifest_words(name, dim, metric, AnnIndexKind.Flat, params);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, cid, words);
+  sync_active(eng);
+  var e = CollectionEntry{
+    cid: cid,
+    name: name,
+    store: index_new(dim),
+    payloads: payload_store_new(),
+    graph: hnsw_new(16, 4.0),
+    index_kind: AnnIndexKind.Flat,
+    ann: params,
+    dimension: dim,
+    metric: metric,
+  };
+  eng.collections.push(e);
+  load_active(eng, eng.collections.len() - 1);
+  return Ok(collection_id(cid));
+}
+
+// Make a named collection active (no-op when it already is).
+pub fn engine_select(eng: &mut VectorEngine, name: Str) -> Result[Bool, CoreError] {
+  var idx = collection_find(eng, name);
+  if idx < 0 {
+    return Err(CoreError.InvalidInput("collection not found"));
+  }
+  if idx == eng.active_idx {
+    return Ok(true);
+  }
+  sync_active(eng);
+  load_active(eng, idx);
+  return Ok(true);
+}
+
+// Drop a named collection: log the v3 drop record first (WAL-before-ack),
+// remove the entry, and fix the active view (select the first remaining
+// collection when the dropped one was active).
+pub fn engine_drop(eng: &mut VectorEngine, name: Str) -> Result[Bool, CoreError] {
+  var idx = collection_find(eng, name);
+  if idx < 0 {
+    return Err(CoreError.InvalidInput("collection not found"));
+  }
+  var cid: Int = eng.collections[idx].cid;
+  var words = Vec[Int].new();
+  words.push(3);
+  var nb = slice.str_bytes(name);
+  words.push(nb.len());
+  var i: Int = 0;
+  while i < nb.len() {
+    words.push(nb[i] as Int);
+    i = i + 1;
+  }
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, cid, words);
+  var j: Int = idx;
+  while j < eng.collections.len() - 1 {
+    eng.collections[j] = eng.collections[j + 1];
+    j = j + 1;
+  }
+  eng.collections.pop();
+  if idx == eng.active_idx {
+    reset_active(eng);
+    if eng.collections.len() > 0 {
+      load_active(eng, 0);
+    }
+  } elif idx < eng.active_idx {
+    eng.active_idx = eng.active_idx - 1;
+  }
+  return Ok(true);
+}
+
+// Persist the whole registry (one entry per collection, cid order): whole-
+// file + atomic rename via the D2 manifest-file codec. False on IO error.
+pub fn engine_manifest_save(eng: &mut VectorEngine, path: Str) -> Bool {
+  sync_active(eng);
   var reg = registry_new();
-  var e = registry_entry_new(name, eng.dimension, eng.metric, eng.index_kind, eng.ann);
-  registry_add(&mut reg, e);
+  var i: Int = 0;
+  while i < eng.collections.len() {
+    var e = eng.collections[i];
+    registry_add(&mut reg, registry_entry_new(e.name, e.dimension, e.metric, e.index_kind, e.ann));
+    i = i + 1;
+  }
   return manifest_persist(&reg, path);
 }
 
@@ -188,24 +433,43 @@ fn apply_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
   eng.ann = params;
 }
 
+// The registry-entry form of the same operation (used for parked
+// collections during recovery).
+fn entry_apply_index(e: &mut CollectionEntry, kind: AnnIndexKind, params: AnnParams) {
+  if kind == AnnIndexKind.Hnsw {
+    var g = hnsw_new(params.m, 4.0);
+    hnsw_set_ef_construction(&mut g, params.ef_construction);
+    var i: Int = 0;
+    while i < e.store.ids.len() {
+      var pid = e.store.ids[i];
+      var pv = e.store.vectors[i];
+      hnsw_insert_ref(&mut g, pid, &pv, e.metric);
+      i = i + 1;
+    }
+    e.graph = g;
+  } else {
+    e.graph = hnsw_new(16, 4.0);
+  }
+  e.index_kind = kind;
+  e.ann = params;
+}
+
+// Legacy single-collection entry point: (re)creates the canonical "default"
+// collection through the registry path. Multi-collection callers use
+// engine_create_named.
 pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError]
   requires: dim >= 1
 {
   if !is_valid_dimension(dim) {
     return Err(CoreError.InvalidInput("dimension out of range"));
   }
-  eng.store = index_new(dim);
-  eng.graph = hnsw_new(16, 4.0);
-  eng.index_kind = AnnIndexKind.Flat;
-  eng.ann = ann_params_default();
-  eng.dimension = dim;
-  eng.metric = metric;
-  eng.created = true;
-  eng.payloads = payload_store_new();
-  log_manifest(eng, AnnIndexKind.Flat, ann_params_default());
-  var id = collection_id(eng.next_collection);
-  eng.next_collection = eng.next_collection + 1;
-  return Ok(id);
+  if collection_find(eng, "default") >= 0 {
+    match engine_drop(eng, "default") {
+      Ok(_) => {}
+      Err(_) => {}
+    }
+  }
+  return engine_create_named(eng, "default", dim, metric);
 }
 
 // Select the ANN index for the active collection. Hnsw validates its params
@@ -248,7 +512,7 @@ pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[
     return Err(CoreError.InvalidInput("dimension mismatch"));
   }
   var payload = vector_encode(&vec);
-  log_upsert(&mut eng.wal, 1, point, payload);
+  log_upsert(&mut eng.wal, eng.active_cid, point, payload);
   if eng.index_kind == AnnIndexKind.Hnsw {
     hnsw_insert_ref(&mut eng.graph, point, &vec, eng.metric);
   }
@@ -290,7 +554,7 @@ pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Searc
 pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
   requires: eng.created
 {
-  log_delete(&mut eng.wal, 1, point);
+  log_delete(&mut eng.wal, eng.active_cid, point);
   var ok = index_remove(&mut eng.store, point);
   if eng.index_kind == AnnIndexKind.Hnsw {
     hnsw_delete(&mut eng.graph, point);
@@ -396,7 +660,7 @@ pub fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) 
   match index_get(&eng.store, point) {
     Some(_) => {
       var words = payload_encode(&payload);
-      log_payload_set(&mut eng.wal, 1, point, words);
+      log_payload_set(&mut eng.wal, eng.active_cid, point, words);
       payload_store_put(&mut eng.payloads, point, payload);
       return Ok(true);
     }
@@ -521,56 +785,251 @@ pub fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
 }
 
-// Shared recovery: the manifest `mf` (when valid) governs dim/metric/index
-// kind/params -- the caller's dim/metric are the fallback for pre-manifest
-// logs -- then the log replays into a fresh store + payload store, the
-// configured index is applied, and a compacted checkpoint log (inserts +
-// updates + the manifest) is written so the recovered engine is itself
-// recoverable. LSNs stay monotonic.
-fn engine_recover_with(w: &WalWriter, dim: Int, metric: DistanceMetric, mf: CollectionManifest) -> VectorEngine
-  requires: dim > 0
-{
-  var eff_dim: Int = dim;
-  var eff_metric: DistanceMetric = metric;
-  if mf.valid {
-    eff_dim = mf.dim;
-    eff_metric = mf.metric;
+// ---- Multi-collection recovery (D3) ----
+
+// Recovery-time registry entry (ManifestInfo + cid + liveness).
+pub type MetaEntry = {
+  cid: Int;
+  name: Str;
+  alive: Bool;
+  dim: Int;
+  metric: DistanceMetric;
+  kind: AnnIndexKind;
+  m: Int;
+  ef_construction: Int;
+  ef_search: Int;
+}
+
+fn meta_find_cid(metas: &Vec[MetaEntry], cid: Int) -> Int {
+  var i: Int = 0;
+  while i < metas.len() {
+    if metas[i].cid == cid { return i; }
+    i = i + 1;
   }
+  return -1;
+}
+
+fn meta_find_name(metas: &Vec[MetaEntry], name: Str) -> Int {
+  var i: Int = 0;
+  while i < metas.len() {
+    if metas[i].name == name { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+fn meta_upsert(metas: &mut Vec[MetaEntry], m: MetaEntry) {
+  var idx = meta_find_cid(metas, m.cid);
+  if idx < 0 {
+    metas.push(m);
+  } else {
+    metas[idx] = m;
+  }
+}
+
+fn meta_from_info(mi: &ManifestInfo, cid: Int) -> MetaEntry {
+  return MetaEntry{
+    cid: cid,
+    name: mi.name,
+    alive: true,
+    dim: mi.dim,
+    metric: mi.metric,
+    kind: mi.kind,
+    m: mi.m,
+    ef_construction: mi.ef_construction,
+    ef_search: mi.ef_search,
+  };
+}
+
+// Replay a WAL across the collection registry: manifest records build the
+// set (v1 legacy -> "default"/cid 1; v2 upsert; v3 drop), data records route
+// by collection id when the log carries v2/v3 records (D3 strict mode) and
+// land in the single collection otherwise (legacy logs, where the value
+// field is not meaningful). A valid manifest file (`file_reg`) overrides
+// configs by collection name -- with the D2 first-entry migration rule for
+// single-collection logs. Returns an engine with the first alive collection
+// active and a fresh checkpoint WAL carrying every alive collection.
+fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file_reg: &CollectionRegistry) -> VectorEngine {
+  // 1. Metas from manifest records.
+  var metas = Vec[MetaEntry].new();
+  var strict: Bool = false;
+  var i: Int = 0;
+  while i < w.records.len() {
+    if w.records[i].op == WalOpKind.ManifestUpdate {
+      var mi = parse_manifest_info(&w.records[i].payload);
+      if mi.valid {
+        if mi.version == 1 {
+          meta_upsert(&mut metas, meta_from_info(&mi, 1));
+        } elif mi.version == 2 {
+          strict = true;
+          var cid2: Int = w.records[i].value;
+          if cid2 < 1 { cid2 = 1; }
+          meta_upsert(&mut metas, meta_from_info(&mi, cid2));
+        } elif mi.version == 3 {
+          strict = true;
+          var di = meta_find_cid(&metas, w.records[i].value);
+          if di >= 0 {
+            var md = metas[di];
+            md.alive = false;
+            metas[di] = md;
+          }
+        }
+      }
+    }
+    i = i + 1;
+  }
+  if metas.len() == 0 {
+    var lm = MetaEntry{
+      cid: 1,
+      name: "default",
+      alive: true,
+      dim: dim,
+      metric: metric,
+      kind: AnnIndexKind.Flat,
+      m: 16,
+      ef_construction: 200,
+      ef_search: 64,
+    };
+    metas.push(lm);
+  }
+  // 2. Manifest-file overrides (by name; D2 migration for single logs).
+  if file_reg.valid && file_reg.entries.len() >= 1 {
+    var fi: Int = 0;
+    while fi < file_reg.entries.len() {
+      var fe = file_reg.entries[fi];
+      var oi = meta_find_name(&metas, fe.name);
+      if oi < 0 && metas.len() == 1 { oi = 0; }
+      if oi >= 0 {
+        var mm = metas[oi];
+        mm.name = fe.name;
+        mm.dim = fe.dim;
+        mm.metric = fe.metric;
+        mm.kind = fe.kind;
+        mm.m = fe.m;
+        mm.ef_construction = fe.ef_construction;
+        mm.ef_search = fe.ef_search;
+        metas[oi] = mm;
+      }
+      fi = fi + 1;
+    }
+  }
+  // 3. Per-collection stores + routed replay.
+  var stores = Vec[VectorIndex].new();
+  var pls = Vec[PayloadStore].new();
+  var mi3: Int = 0;
+  while mi3 < metas.len() {
+    stores.push(index_new(metas[mi3].dim));
+    pls.push(payload_store_new());
+    mi3 = mi3 + 1;
+  }
+  var ri: Int = 0;
+  while ri < w.records.len() {
+    var op = w.records[ri].op;
+    var si: Int = -1;
+    if strict {
+      si = meta_find_cid(&metas, w.records[ri].value);
+      if si >= 0 && !metas[si].alive { si = -1; }
+    } else {
+      si = 0;
+    }
+    if si >= 0 {
+      if op == WalOpKind.Insert {
+        match vector_decode(&w.records[ri].payload) {
+          Some(v) => {
+            if v.dimension == metas[si].dim {
+              index_add(&mut stores[si], w.records[ri].key, v);
+            }
+          }
+          None => {}
+        }
+      } elif op == WalOpKind.Delete {
+        index_remove(&mut stores[si], w.records[ri].key);
+        payload_store_remove(&mut pls[si], w.records[ri].key);
+      } elif op == WalOpKind.Update {
+        match payload_decode(&w.records[ri].payload) {
+          Some(p) => { payload_store_put(&mut pls[si], w.records[ri].key, p); }
+          None => {}
+        }
+      }
+    }
+    ri = ri + 1;
+  }
+  // 4. Entries for every alive meta; the first alive becomes active.
   var eng = engine_new();
-  var st = recover_state(w, eff_dim);
-  eng.store = st.store;
-  eng.payloads = st.payloads;
-  eng.dimension = eff_dim;
-  eng.metric = eff_metric;
-  eng.created = true;
-  if mf.valid {
-    var params = AnnParams{ m: mf.m, ef_construction: mf.ef_construction, ef_search: mf.ef_search };
-    apply_index(&mut eng, mf.kind, params);
+  var entries = Vec[CollectionEntry].new();
+  var ai: Int = -1;
+  var k: Int = 0;
+  while k < metas.len() {
+    var mk = metas[k];
+    if mk.alive {
+      var e = CollectionEntry{
+        cid: mk.cid,
+        name: mk.name,
+        store: stores[k],
+        payloads: pls[k],
+        graph: hnsw_new(16, 4.0),
+        index_kind: mk.kind,
+        ann: AnnParams{ m: mk.m, ef_construction: mk.ef_construction, ef_search: mk.ef_search },
+        dimension: mk.dim,
+        metric: mk.metric,
+      };
+      var params = AnnParams{ m: mk.m, ef_construction: mk.ef_construction, ef_search: mk.ef_search };
+      entry_apply_index(&mut e, mk.kind, params);
+      if ai < 0 { ai = entries.len(); }
+      entries.push(e);
+    }
+    k = k + 1;
   }
-  eng.wal = wal_writer_checkpoint_from(w, &eng.store, &eng.payloads);
+  eng.collections = entries;
+  if ai >= 0 {
+    load_active(&mut eng, ai);
+  }
+  // 5. Checkpoint: every alive collection's data + its v2 manifest.
+  var out = wal_writer_resume(w.next_lsn);
+  var c: Int = 0;
+  while c < eng.collections.len() {
+    var ce = eng.collections[c];
+    var di2: Int = 0;
+    while di2 < ce.store.ids.len() {
+      wal_writer_append_payload(&mut out, WalOpKind.Insert, ce.store.ids[di2], ce.cid, vector_encode(&ce.store.vectors[di2]));
+      di2 = di2 + 1;
+    }
+    var pi: Int = 0;
+    while pi < ce.payloads.entries.len() {
+      wal_writer_append_payload(&mut out, WalOpKind.Update, ce.payloads.entries[pi].id, ce.cid, payload_encode(&ce.payloads.entries[pi].payload));
+      pi = pi + 1;
+    }
+    c = c + 1;
+  }
+  var c2: Int = 0;
+  while c2 < eng.collections.len() {
+    var ce2 = eng.collections[c2];
+    var words2 = manifest_words(ce2.name, ce2.dimension, ce2.metric, ce2.index_kind, ce2.ann);
+    wal_writer_append_payload(&mut out, WalOpKind.ManifestUpdate, 0, ce2.cid, words2);
+    c2 = c2 + 1;
+  }
+  eng.wal = out;
   return eng;
 }
 
-// Rebuild an engine from its WAL, with the latest in-WAL collection manifest
-// (when present) governing the configuration.
+// Rebuild an engine from its WAL: manifest records define the collection
+// registry (legacy v1 -> "default"; no manifest -> caller config), data
+// records replay into their collection, and a fresh checkpoint carries every
+// alive collection. LSNs stay monotonic.
 pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
-  return engine_recover_with(w, dim, metric, last_manifest(w));
+  var empty_reg = CollectionRegistry{ valid: false, version: 0, entries: Vec[RegistryEntry].new() };
+  return engine_recover_registry(w, dim, metric, &empty_reg);
 }
 
-// Open from disk (M-D2): the manifest file's first registry entry governs the
-// collection config when the file is valid and non-empty (the registry of
-// record); otherwise the in-WAL manifest is the migration fallback (pre-D2
-// logs, or a missing/corrupt file) and finally the caller's dim/metric
-// applies. The WAL itself is replayed and re-checkpointed exactly like
-// engine_recover.
+// Open from disk (M-D2/D3): the manifest file's registry overrides per-
+// collection configs by name (registry of record); without it (or when a
+// name is absent) the in-WAL manifests govern, and the caller's dim/metric
+// are the last resort for logs with no manifest at all.
 pub fn engine_recover_file(w: &WalWriter, path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
   var reg = manifest_load(path);
-  if reg.valid && reg.entries.len() >= 1 {
-    return engine_recover_with(w, dim, metric, manifest_from_entry(&reg.entries[0]));
-  }
-  return engine_recover_with(w, dim, metric, last_manifest(w));
+  return engine_recover_registry(w, dim, metric, &reg);
 }
