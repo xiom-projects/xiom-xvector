@@ -3,9 +3,14 @@
 
 # XVC-C-11 / XVC-C-12 -- unit-context file-read defects on v0.64.1
 
-**Status: OPEN (found 2026-10-09 by the XVECTOR file-WAL work; Windows and WSL
-behave the same). Both are context-sensitive, like the XVC-C-08 family: the
-SAME stdlib call works in a minimal unit and breaks in another unit.**
+**Status: re-tested GREEN in the original context unit on compiler v0.64.2**
+(2026-10-09: a copy of `probe_wal_file`'s unit read an 11-byte file via
+`io.read_file` + `slice.str_bytes` with length 11 and an unguarded 5-byte
+`io.read_file_bytes` with length 5 -- both clean; the failing shape is gone).
+Both were context-sensitive on v0.64.1, like the XVC-C-08 family: the SAME
+stdlib call worked in a minimal unit and broke in another unit. The lane
+keeps its byte-wise parser and `file_size < 25` guard as defense in depth
+(both are strict-by-design, not solely workarounds).
 
 ## What was observed
 

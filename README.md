@@ -88,8 +88,8 @@ src/
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
 All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
-wrapper is required by compiler finding XVC-C-04
-(`Result[Vec[non-scalar]]` payloads lose element fields on v0.64.0).
+wrapper is retained deliberately (XVC-C-04 was fixed in v0.64.1; the shape
+is zero-cost and stable as public API).
 
 ## Production Readiness
 | Capability | Status |

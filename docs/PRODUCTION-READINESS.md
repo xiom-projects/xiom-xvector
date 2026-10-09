@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-09 (post file-backed WAL; E complete)
+- **As of:** 2026-10-09 (post v0.64.2 re-test; E complete)
 - **Overall:** **70 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -31,11 +31,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 83 | release-grade | reference oracle, CI runners |
+| I | Testing & verification | 9 | 84 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x63 + 0.08x100 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x83 + 0.08x48 = **70.33 -> 70 %**.
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **70.42 -> 70 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -136,14 +136,17 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 83 %
-Done: 168-check conformance suite (x2 Windows + WSL), 18 probes, build-time
+### I. Testing & verification -- 84 %
+Done: 169-check conformance suite (x2 Windows + WSL), 18 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
 (`probe_soak_mixed`), the kill-recovery acceptance
-(`probe_kill_recovery`), and the file-WAL gate
-(`probe_wal_file`: live-WAL roundtrip, kill/reopen, truncation sweep).
+(`probe_kill_recovery`), the file-WAL gate
+(`probe_wal_file`: live-WAL roundtrip, kill/reopen, truncation sweep), and
+the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
+(C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
+workarounds reverted; the suite asserts trailing-field flags again.
 Remaining: reference oracle cross-check, CI runner activation.
 
 ### J. Ecosystem & release engineering -- 48 %
@@ -392,6 +395,19 @@ extraction with the packages lane.
   `docs/repro/xv-stdlib-file-read-defects/`. D 60 -> 63, I 82 -> 83;
   overall 69.64 -> 70 %. Evidence: full batteries via ci.ps1 / ci.sh
   (suite 168/168 x2 + 18 probes x2, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (thirty-first pass):** v0.64.2 re-test + workaround reverts
+  -- compiler v0.64.2 (tag `c51170a6`) installed Windows + WSL; every repro
+  bundle re-run and the full batteries green. **C-03** (suite W004 count 0)
+  and **C-06** (pinned FloatVal probe) stay fixed; **C-07 FIXED** --
+  `Str::from_utf8(&Vec[UInt8])` valid again, payload codec + suite mirror
+  reverted to the `&` spelling; **C-08 FIXED** -- trailing-scalar repro
+  exit 0, all 14 variants green, suite hydration mirror restored and
+  asserting the trailing flags (168 -> 169 checks); **C-10 FIXED** (inline
+  pad shape no longer segfaults; hygiene kept); **C-11/C-12 re-tested
+  green in a copy of the original failing unit** (defense in depth kept);
+  **C-09 repro green on WSL + Windows** (pattern kept; weaker re-test).
+  I 83 -> 84; overall 70.33 -> 70 %. Evidence: suite 169/169 x2 + 18 probes
+  x2, Windows + WSL, ALL GATES GREEN.
 
 ## Update rule
 

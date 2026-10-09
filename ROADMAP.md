@@ -162,9 +162,9 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 **Deliverables:**
 - [OK] `vector_api` facade: `create_collection`, `upsert`, `search`, `delete_point`, `get_point`.
 - [OK] `search` returns `Result[SearchHits, CoreError]` where
-  `SearchHits { items: Vec[SearchResult] }` -- the struct wrapper is required
-  by compiler finding XVC-C-04 (`Result[Vec[non-scalar]]` loses element
-  fields on v0.64.0); unwrap when fixed.
+  `SearchHits { items: Vec[SearchResult] }` -- the struct wrapper is
+  retained deliberately (XVC-C-04 fixed in v0.64.1; zero-cost public API
+  shape); unwrapping is a future API decision, not a compiler need.
 - [STOP] Batch upsert / batch search.
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
@@ -320,10 +320,10 @@ not assumed; this phase turns a working engine into an operable one.
 
 **22 contracts (requires/ensures)** applied to helper functions in the test file.
 These mirror the contracts in `engine/core.xi` and the standalone modules.
-Note the XVC-C-02 caveat: on v0.64.0 a runtime `requires` violation aborts with
-exit 0, so the suite must never call a contracted function out of contract
-(the invalid-dimension test exercises the `is_valid_dimension` predicate
-instead).
+Note the contract style: a runtime `requires` violation aborts the process
+(exit 1 since the v0.64.1 fix; it exited 0 on v0.64.0), so the suite must
+never call a contracted function out of contract (the invalid-dimension test
+exercises the `is_valid_dimension` predicate instead).
 
 Functions with contracts (20 functions, 22 clauses):
 - `vector_new` : `requires: dim > 0`
