@@ -81,5 +81,16 @@ pub fn wal_writer_checkpoint_from(w: &WalWriter, idx: &VectorIndex, payloads: &P
     wal_writer_append_payload(&mut out, WalOpKind.Update, payloads.entries[j].id, 1, payload_encode(&payloads.entries[j].payload));
     j = j + 1;
   }
+  // Carry the latest collection manifest forward so chained recovery
+  // preserves the collection configuration (dim/metric/index kind/params).
+  var mi: Int = w.records.len() - 1;
+  var found: Bool = false;
+  while mi >= 0 && !found {
+    if w.records[mi].op == WalOpKind.ManifestUpdate {
+      wal_writer_append_payload(&mut out, WalOpKind.ManifestUpdate, w.records[mi].key, w.records[mi].value, w.records[mi].payload);
+      found = true;
+    }
+    mi = mi - 1;
+  }
   return out;
 }

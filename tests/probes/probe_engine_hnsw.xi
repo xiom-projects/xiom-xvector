@@ -15,6 +15,9 @@ use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
+use xiom.vector.storage.vector_store;
+use xiom.vector.durability.wal;
+use xiom.vector.durability.write_ahead_events;
 use xiom.vector.query.search_service;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
@@ -337,12 +340,16 @@ fn main() -> Int {
   }
 
   // --- recover rebuilds the flat store; Hnsw re-applies ---
+  // --- recover rebuilds the flat store; the manifest restores the config ---
+  match set_index(&mut ann, AnnIndexKind.Hnsw, ann_params_default()) {
+    Ok(_) => {}
+    Err(_) => { fails = fails + 1; }
+  }
   var rec = engine_recover(&ann.wal, dim, DistanceMetric.Euclidean);
   fails = check(engine_size(&rec) == n - 1, "engine_recover rebuilds the store (149, point 8 deleted)", fails);
-  match set_index(&mut rec, AnnIndexKind.Hnsw, ann_params_default()) {
-    Ok(ok) => { fails = check(ok && hnsw_size(&rec.graph) == n - 1, "recovered engine re-applies Hnsw (graph 149)", fails); }
-    Err(_) => { fails = check(false, "recovered set_index(Hnsw) -> Ok", fails); }
-  }
+  fails = check(rec.index_kind == AnnIndexKind.Hnsw && hnsw_size(&rec.graph) == n - 1
+    && rec.ann.ef_search == 64,
+    "manifest: recover restores Hnsw without set_index (graph 149)", fails);
   var hits_rec: Int = 0;
   q = 0;
   while q < 5 {
@@ -355,6 +362,42 @@ fn main() -> Int {
     q = q + 1;
   }
   fails = check(hits_rec * 100 >= 5 * k * 80, "recovered Hnsw engine recall@10 >= 0.80", fails);
+
+  // --- chained recovery keeps the manifest (checkpoint carries it) ---
+  var rec2 = engine_recover(&rec.wal, dim, DistanceMetric.Euclidean);
+  fails = check(rec2.index_kind == AnnIndexKind.Hnsw && hnsw_size(&rec2.graph) == n - 1
+    && engine_size(&rec2) == n - 1,
+    "chained recovery keeps the Hnsw config (graph 149)", fails);
+
+  // --- legacy WAL without a manifest -> caller config + Flat fallback ---
+  var wleg = wal_writer_new();
+  var lv = Vector.new(2);
+  lv.set(0, 1.0);
+  lv.set(1, 0.0);
+  log_upsert(&mut wleg, 0, 7, vector_encode(&lv));
+  var lrec = engine_recover(&wleg, 2, DistanceMetric.Euclidean);
+  fails = check(lrec.index_kind == AnnIndexKind.Flat && engine_size(&lrec) == 1
+    && lrec.dimension == 2,
+    "legacy WAL (no manifest) -> Flat fallback with caller config", fails);
+
+  // --- malformed manifest is ignored -> Flat fallback ---
+  var wbad = wal_writer_new();
+  var bv = Vector.new(2);
+  bv.set(0, 1.0);
+  bv.set(1, 0.0);
+  log_upsert(&mut wbad, 0, 9, vector_encode(&bv));
+  var badw = Vec[Int].new();
+  badw.push(1);
+  badw.push(2);
+  badw.push(99);
+  badw.push(2);
+  badw.push(16);
+  badw.push(200);
+  badw.push(64);
+  wal_writer_append_payload(&mut wbad, WalOpKind.ManifestUpdate, 0, 0, badw);
+  var brec = engine_recover(&wbad, 2, DistanceMetric.Euclidean);
+  fails = check(brec.index_kind == AnnIndexKind.Flat && engine_size(&brec) == 1,
+    "malformed manifest ignored -> Flat fallback", fails);
 
   io.println("");
   io.println("probe_engine_hnsw: " + int_to_str(fails) + " failed checks");

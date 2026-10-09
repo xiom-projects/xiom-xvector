@@ -60,6 +60,117 @@ pub fn engine_new() -> VectorEngine {
   };
 }
 
+// ---- Collection manifest (durable config) ----
+// The active collection's configuration travels in the WAL as a
+// ManifestUpdate record so engine_recover restores it without a manual
+// set_index. Layout: [version=1, dim, metric_code, kind_code, m,
+// ef_construction, ef_search]. Malformed / pre-manifest logs fall back to
+// the caller's dim/metric with a Flat collection.
+pub type CollectionManifest = {
+  valid: Bool;
+  dim: Int;
+  metric: DistanceMetric;
+  kind: AnnIndexKind;
+  m: Int;
+  ef_construction: Int;
+  ef_search: Int;
+}
+
+fn empty_manifest() -> CollectionManifest {
+  return CollectionManifest{
+    valid: false,
+    dim: 0,
+    metric: DistanceMetric.Euclidean,
+    kind: AnnIndexKind.Flat,
+    m: 0,
+    ef_construction: 0,
+    ef_search: 0,
+  };
+}
+
+fn metric_code(m: DistanceMetric) -> Int {
+  if m == DistanceMetric.Cosine { return 1; }
+  if m == DistanceMetric.DotProduct { return 2; }
+  return 3;
+}
+
+fn kind_code(k: AnnIndexKind) -> Int {
+  if k == AnnIndexKind.Flat { return 1; }
+  if k == AnnIndexKind.Hnsw { return 2; }
+  return 3;
+}
+
+fn parse_manifest(words: &Vec[Int]) -> CollectionManifest {
+  var mf = empty_manifest();
+  if words.len() != 7 { return mf; }
+  if words[0] != 1 { return mf; }
+  var d: Int = words[1];
+  if d < 1 { return mf; }
+  var mc: Int = words[2];
+  if mc < 1 || mc > 3 { return mf; }
+  var kc: Int = words[3];
+  if kc < 1 || kc > 3 { return mf; }
+  var p = AnnParams{ m: words[4], ef_construction: words[5], ef_search: words[6] };
+  if !ann_params_valid(&p) { return mf; }
+  mf.dim = d;
+  if mc == 1 { mf.metric = DistanceMetric.Cosine; } elif mc == 2 { mf.metric = DistanceMetric.DotProduct; } else { mf.metric = DistanceMetric.Euclidean; }
+  if kc == 1 { mf.kind = AnnIndexKind.Flat; } elif kc == 2 { mf.kind = AnnIndexKind.Hnsw; } else { mf.kind = AnnIndexKind.Ivf; }
+  mf.m = p.m;
+  mf.ef_construction = p.ef_construction;
+  mf.ef_search = p.ef_search;
+  mf.valid = true;
+  return mf;
+}
+
+fn last_manifest(w: &WalWriter) -> CollectionManifest {
+  var out = empty_manifest();
+  var i: Int = w.records.len() - 1;
+  var found: Bool = false;
+  while i >= 0 && !found {
+    if w.records[i].op == WalOpKind.ManifestUpdate {
+      out = parse_manifest(&w.records[i].payload);
+      found = true;
+    }
+    i = i - 1;
+  }
+  return out;
+}
+
+fn log_manifest(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
+  var words = Vec[Int].new();
+  words.push(1);
+  words.push(eng.dimension);
+  words.push(metric_code(eng.metric));
+  words.push(kind_code(kind));
+  words.push(params.m);
+  words.push(params.ef_construction);
+  words.push(params.ef_search);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, 0, words);
+}
+
+// Apply an index configuration to the (already created) collection: Hnsw
+// builds the graph from the flat store; anything else resets the graph.
+// Build into a local then assign once (XVC-C-09: repeated cross-module
+// access to eng.graph inside the loop crashed the WSL build).
+fn apply_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
+  if kind == AnnIndexKind.Hnsw {
+    var g = hnsw_new(params.m, 4.0);
+    hnsw_set_ef_construction(&mut g, params.ef_construction);
+    var i: Int = 0;
+    while i < eng.store.ids.len() {
+      var pid = eng.store.ids[i];
+      var pv = eng.store.vectors[i];
+      hnsw_insert_ref(&mut g, pid, &pv, eng.metric);
+      i = i + 1;
+    }
+    eng.graph = g;
+  } else {
+    eng.graph = hnsw_new(16, 4.0);
+  }
+  eng.index_kind = kind;
+  eng.ann = params;
+}
+
 pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError]
   requires: dim >= 1
 {
@@ -74,6 +185,7 @@ pub fn engine_create_collection(eng: &mut VectorEngine, dim: Int, metric: Distan
   eng.metric = metric;
   eng.created = true;
   eng.payloads = payload_store_new();
+  log_manifest(eng, AnnIndexKind.Flat, ann_params_default());
   var id = collection_id(eng.next_collection);
   eng.next_collection = eng.next_collection + 1;
   return Ok(id);
@@ -90,25 +202,9 @@ pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnP
     if !ann_params_valid(&params) {
       return Err(CoreError.InvalidInput("invalid ann params"));
     }
-    // Build into a local graph, then assign once: repeated cross-module
-    // access to eng.graph inside the loop crashed the WSL build of this
-    // function after the id-map fields landed (Windows green); the local
-    // form is verified on both platforms.
-    var g = hnsw_new(params.m, 4.0);
-    hnsw_set_ef_construction(&mut g, params.ef_construction);
-    var i: Int = 0;
-    while i < eng.store.ids.len() {
-      var pid = eng.store.ids[i];
-      var pv = eng.store.vectors[i];
-      hnsw_insert_ref(&mut g, pid, &pv, eng.metric);
-      i = i + 1;
-    }
-    eng.graph = g;
-  } else {
-    eng.graph = hnsw_new(16, 4.0);
   }
-  eng.index_kind = kind;
-  eng.ann = params;
+  apply_index(eng, kind, params);
+  log_manifest(eng, kind, params);
   return Ok(true);
 }
 
@@ -302,19 +398,33 @@ pub fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
 }
 
-// Rebuild an engine from its WAL: replay the log into a fresh store + payload
-// store, then write a compacted checkpoint log (so the recovered engine is
-// itself recoverable). LSNs stay monotonic; dimension/metric are restored.
+// Rebuild an engine from its WAL: the latest collection manifest (when
+// present) governs dim/metric/index kind/params -- the caller's dim/metric
+// are the fallback for pre-manifest logs -- then the log replays into a
+// fresh store + payload store, the configured index is applied, and a
+// compacted checkpoint log (inserts + updates + the manifest) is written so
+// the recovered engine is itself recoverable. LSNs stay monotonic.
 pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
   requires: dim > 0
 {
+  var mf = last_manifest(w);
+  var eff_dim: Int = dim;
+  var eff_metric: DistanceMetric = metric;
+  if mf.valid {
+    eff_dim = mf.dim;
+    eff_metric = mf.metric;
+  }
   var eng = engine_new();
-  var st = recover_state(w, dim);
+  var st = recover_state(w, eff_dim);
   eng.store = st.store;
   eng.payloads = st.payloads;
-  eng.dimension = dim;
-  eng.metric = metric;
+  eng.dimension = eff_dim;
+  eng.metric = eff_metric;
   eng.created = true;
+  if mf.valid {
+    var params = AnnParams{ m: mf.m, ef_construction: mf.ef_construction, ef_search: mf.ef_search };
+    apply_index(&mut eng, mf.kind, params);
+  }
   eng.wal = wal_writer_checkpoint_from(w, &eng.store, &eng.payloads);
   return eng;
 }
