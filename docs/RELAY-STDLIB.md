@@ -36,3 +36,21 @@ v0.64.0/m194); SHA-256/HMAC usable env-free.
 **Ask:** confirm the fd/fsync surface shape you plan (fd-based vs path-based)
 so XVECTOR can target it; the lane will re-test and re-pin as soon as any of
 rows 1–3 land.
+
+**Addendum (2026-10-09): re-check on stdlib 0.64.3 -- all six rows still open.**
+
+Re-checked the lane at HEAD `82ac2f3` (release 0.64.3, pinned to compiler
+v0.64.2): `fsync`/`fdatasync` (`os/fs_ffi.xi:238/:246`), the fd path
+(`sync_io.xi:28/:80/:88`), `append_file_bytes` (absent; `append_file` is
+Str-only at `io/io.xi:268`), `truncate`/`ftruncate` (`fs_ffi.xi:151/:160`),
+`f32_bits`/`bits_to_f32` (absent), and `flush_stdout` (`io/io.xi:906`,
+empty) are unchanged. Row 1 remains the top blocker (the M2 delta log).
+
+Notes for the lane: (a) the 2026-10-09 `io.read_file` Str-content and
+tiny-read defects were compiler lowering bugs, fixed in compiler v0.64.2 --
+no stdlib action needed; (b) byte-exact writes / CRLF-clean reads since
+0.64.2 confirmed on our side; (c) `io.rename` exists -- XVECTOR will use
+temp+rename for atomic WAL checkpoints while fsync is pending (so the ask
+is narrower than before: fsync + append-bytes are the critical pair).
+The `xiom.wal` package (packages lane) is gated on the same fsync row --
+one primitive unblocks three consumers.
