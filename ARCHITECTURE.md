@@ -225,8 +225,9 @@ api.search
              scan  -> evaluate FilterExpr per candidate BEFORE distance
              post  -> rank all via the flat scan, keep the matching subset;
                       if it does not fill k, fall back to the scan
-             index -> Eq/Range/Exists candidates from the sorted payload
-                      index; distances only for matches (store id map)
+             index -> Eq/Range/Exists candidates (and And-of-those
+                      intersections) from the sorted payload index;
+                      distances only for matches (store id map)
            (post for an exact k-or-more majority or a compound upper bound;
             index for an exact count 0 or < total/4; query/filter_plan.xi)
         4. rerank: bounded top-K heap keeps <= k best by distance

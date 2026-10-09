@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (28 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (29 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -19,14 +19,15 @@ beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
 decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 + release-prep drafts -> upsert fix + index-driven candidates -> durable
-collection manifest -> HNSW update re-linking -> kill-recovery acceptance).
+collection manifest -> HNSW update re-linking -> kill-recovery acceptance ->
+multi-key intersections).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `5041fc1` (test: kill-recovery
-acceptance), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `63dd1ea` (feat: multi-key
+intersections), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -36,7 +37,7 @@ acceptance), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `5041fc1` + this wrap commit | this repo |
+| xvector | `63dd1ea` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -203,6 +204,14 @@ acceptance), then this wrap commit. Identity `Lefteris Notas
   checkpoint log (28 records); full recovery equals the live engine; empty
   log and corrupt-final-record cases hold. ~120ms; both batteries now run
   17 probes.
+- **Multi-key intersections:** the index plan serves And of indexable
+  clauses (Eq/Range/Exists) via per-clause candidate intersection;
+  `choose_filter_plan` routes answerable compounds to the index when the
+  upper bound is selective or < k (`filter_index_answerable`). Gate:
+  planner probe 23 checks (And(grp=1,tier=1) -> index, {1,5} bit-identical;
+  disjoint -> empty). NOTE (compiler quirk): a private helper with two
+  `&Vec[Int]` params reported T001 undefined-second-parameter in three
+  shapes; the intersection is inlined in the And arm.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -274,12 +283,13 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **WAL model complete; stdlib-gated remains.** Optional: multi-key
-   intersection indexes (And-of-Eq candidate intersection). M2 file-backed
-   WAL + file-level kill test stay parked until stdlib lands
-   fsync/fd-write/append-bytes (re-checked 2026-10-09 wave 95: still
-   stubs). Release: follow docs/RELEASE-CHECKLIST.md when the owner
-   greenlights (batteries: scripts/ci.ps1 / ci.sh, 17 probes).
+1. **Priority list complete (2026-10-09).** All five slices plus the
+   release-prep drafts are done; remaining work is externally gated: M2
+   file-backed WAL + file-level kill test (stdlib fsync/fd-write/append-
+   bytes still stubs -- re-checked 2026-10-09 wave 95), public
+   release/runners/rulesets (owner; `docs/RELEASE-CHECKLIST.md`). Optional
+   extras: reference oracle cross-check; adaptive ef/latency budget.
+   Re-check the stdlib lane each pass and pivot to M2 when it lands.
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -345,6 +355,10 @@ The extraction tree is final; what remains is capability work.
   strict decode (`m <= 512`, `count <= words.len()`); repro
   `docs/repro/xv-decode-pad-loop/` (pinned `e0b1f7f`); general gate
   `probe_fuzz_codecs`.
+- **filter_plan helper quirk (loud T001, not silent):** a private helper
+  with two `&Vec[Int]` parameters can report `undefined variable` for its
+  second parameter (three shapes tried, v0.64.1); inline the logic or use
+  single-parameter helpers in `filter_plan.xi`.
 - Historical v0.64.0-era traps (C-01..C-06) are fixed; if any reappears,
   open a delta row instead of re-bisecting (details in the findings doc).
 - Keep numeric gates per build (suite/probes assert exact bits; red = build
@@ -442,13 +456,13 @@ bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
 pad step behind pad_adj_slots + strict bounds; repro
 docs/repro/xv-decode-pad-loop pinned at e0b1f7f).
 
-NEXT TASK (priority 1): optional multi-key intersection indexes (And-of-Eq
-candidate intersection); M2 file-backed WAL + file-level kill test stay
-parked until stdlib lands fsync/fd-write/append-bytes (re-checked
-2026-10-09 wave 95: still stubs). Release gate: docs/RELEASE-CHECKLIST.md
-when the owner greenlights. Keep the wrap discipline: full batteries
-(scripts/ci.ps1 + ci.sh, suite x2 + 17 probes x2), signed commits, docs
-updated.
+NEXT TASK (priority 1): priority list complete -- remaining work is
+externally gated. M2 file-backed WAL + file-level kill test await the
+stdlib fd/fsync gap (re-checked 2026-10-09 wave 95: still stubs); public
+release/runners/rulesets await the owner (docs/RELEASE-CHECKLIST.md).
+Optional extras: reference oracle cross-check, adaptive ef/latency budget.
+Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
++ 17 probes x2), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
