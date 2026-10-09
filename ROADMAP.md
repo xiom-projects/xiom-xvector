@@ -14,6 +14,14 @@ Legend: [OK] **Done** - [YELLOW] **In progress** - [ORANGE] **Scaffold** (types 
 > **Progress tracking:** `docs/PRODUCTION-READINESS.md` holds the weighted
 > percentage-to-production scorecard (updated every wrap). This file is the
 > phase plan; that file is the measurement.
+>
+> **Production programme (2026-10-09):** `docs/PRODUCTION-PLAN.md` is the
+> v1.0 flagship execution plan (milestones M-G truth/benchmark, M-D on-disk
+> durability, M-Q query surface, M-S server/security, M-O observability,
+> M-P performance/scale, M-R release + owner handoff) with the ordered
+> slice backlog; `docs/requirements/production-v1.md` is the intake and
+> `docs/checklists/production-v1.md` the execution checklist. Phase
+> statuses below were refreshed 2026-10-09; sequencing follows the plan.
 
 ---
 
@@ -42,10 +50,9 @@ measure approximate recall against; this phase is the source of truth.
 **Deliverables:**
 - [OK] Hierarchical layer graph (`HNSWGraph`, `HNSWLayer`, `HNSWNode`).
 - [OK] Randomized level assignment (LCG-based) parameterized by `ml`.
-- [OK] Greedy descent search + brute-force in-layer neighbour selection.
+- [OK] `ef`-parameterized greedy descent + layer-0 beam search (multi-layer).
 - [OK] Bidirectional edge maintenance bounded by `max_neighbors`.
-- [YELLOW] Remaining: heuristic neighbour pruning, `ef`-parameterized beam search,
-  metric-agnostic traversal (currently euclidean internally).
+- [OK] Beam construction honouring `ef_construction` + diversified pruning (`select_diverse`); metric-agnostic traversal.
 
 **Exit criteria:** HNSW returns high-recall results with `result.len() <= k`, with
 the structural gaps tracked into Phase 4.
@@ -77,8 +84,15 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
   (`payload_encode`/`payload_decode`, `WalOpKind.Update` records) and replayed
   by `recover_state`; the checkpoint log carries them, so chained reopen keeps
   metadata.
-- [ORANGE] Durable `manifest` (`ManifestUpdate` records) -- types exist, not
-  persisted (needs the same fsync/byte-append primitives).
+- [OK] Whole-file WAL checkpoint on disk (`durability.wal_file`:
+  `wal_persist` + torn-tail-safe `wal_load`; gate `probe_wal_file`) --
+  atomic temp+rename hardening queued (D1 in the production plan).
+- [OK] In-WAL collection manifest (`ManifestUpdate` records) -- dim/metric/
+  index kind/params survive `engine_recover` and checkpoints.
+- [STOP] Delta append + `fsync` on commit -- **blocked on the stdlib
+  fd-syscall gap** (re-checked 2026-10-09 on 0.64.3; see
+  `docs/STDLIB-WISHLIST-XVECTOR.md`). `wal_writer_flush` remains an
+  in-memory LSN marker. Gated slice D5.
 
 **Exit criteria:** a process kill mid-write loses no acknowledged data; recovery
 replays the WAL to `manifest.last_lsn` and reconstructs identical indexes.
@@ -93,7 +107,7 @@ search-identical -> delete -> reopen-again -> LSN continuity) green x2 on
 Windows and WSL. The WAL is still in-memory; file-backed segments wait on the
 stdlib fsync/append primitives.
 
-## Phase 3 -- Payload & metadata filtering [YELLOW] In progress
+## Phase 3 -- Payload & metadata filtering [OK] Done
 
 **Goal:** Filtered search (`search WHERE color = 'red' AND price IN [..]`).
 
@@ -102,8 +116,8 @@ stdlib fsync/append primitives.
 - [OK] `FilterExpr` AST (Eq/Range/Exists/In/And/Or/Not) + constructors.
 - [OK] `filter_eval`: full typed evaluation (Eq within-type exact; Range inclusive with Int->Float32 promotion; In membership; Exists) + no-payload semantics (value predicates false; `Not` true).
 - [OK] Engine integration: `PayloadStore` (id -> payload, swap-remove), `engine_set_payload` / `engine_get_payload`, `search_filtered` / `engine_search_filtered` (pre-filter exact scan, `k`-bounded), delete removes metadata.
-- [YELLOW] Typed value comparison done via linear scans; **sorted key index for O(log n) field lookup** still open.
-- [STOP] Pre-filter vs post-filter planner (filter before/after ANN by selectivity).
+- [OK] Sorted key index for O(log n) field lookup (exists/count/Eq/Range windows).
+- [OK] Pre/post-filter planner by selectivity + index-driven candidates + compound And-of-indexable intersections.
 
 **Exit criteria:** filtered KNN returns only matching points, and the planner
 chooses pre- vs post-filter by selectivity without changing results.
@@ -120,18 +134,22 @@ metadata, payload replay, chained reopen, torn record skip). Payloads are
 WAL-durable, FloatVal included (float gates restored after the v0.64.1 fix
 of XVC-C-06; the FloatVal roundtrip pin probe guards it).
 
-## Phase 4 -- HNSW hardening [STOP] Not started
+## Phase 4 -- HNSW hardening [OK] Done
 
 **Goal:** Turn the simplified HNSW into a production-grade, tunable index.
 
 **Deliverables:**
-- [STOP] Heuristic neighbour selection (RNG pruning) for better recall.
-- [STOP] `ef_construction` / `ef_search` beam widths honoured from `AnnParams`.
-- [STOP] Delete + tombstone handling in the graph.
-- [STOP] Recall/latency benchmarks vs the flat oracle.
+- [OK] Diversified neighbour selection/pruning (`select_diverse`).
+- [OK] `ef_construction` / `ef_search` beam widths honoured from `AnnParams`.
+- [OK] Delete + tombstone handling in the graph (routers kept, revive on re-insert, `hnsw_compact`).
+- [OK] Recall/latency benchmarks vs the flat oracle (per-ef visited/recall table, build-work proxy).
+- [OK] Engine wiring, strict graph codec (`hnsw_encode/decode`), sorted id map, update re-linking.
 
 **Exit criteria:** recall@k meets targets against the flat oracle across the
 tuning ranges, and `ef`/`M` parameters measurably move recall and latency.
+**Met** (n=200: 300/300 at ef=64; n=800: 200/200; after delete/compaction
+and 60 in-place updates 200/200; gates `probe_hnsw_recall`,
+`probe_engine_hnsw`, `probe_hnsw_codec`).
 
 **Why this phase matters:** the Phase 1 graph is correct but simplified; this
 phase is where recall, tunability, and deletes become production-ready.
@@ -248,11 +266,11 @@ not assumed; this phase turns a working engine into an operable one.
 | Flat exact search + top-K | [OK] Done |
 | In-memory HNSW | [OK] Done |
 | Engine orchestration + API facade | [OK] Done |
-| WAL write path | [YELLOW] In progress |
-| Collections / schema / validator | [YELLOW] In progress |
-| Payload + filtering | [ORANGE] Scaffold |
-| Segments + manifest + recovery | [ORANGE] Scaffold |
-| IVF / PQ / disk / SIMD / distributed | [STOP] Not started |
+| WAL write path | [YELLOW] In progress -- whole-file checkpoint + torn-tail load done; delta/fsync gated on stdlib |
+| Collections / schema / validator | [YELLOW] In progress -- single active collection; multi-collection is M-D3 |
+| Payload + filtering | [OK] Done |
+| Segments + manifest + recovery | [YELLOW] In progress -- in-WAL manifest + segments scaffold; segment files are M-D4 |
+| IVF / PQ / disk / SIMD / distributed | [STOP] v1.1/v2 per the production plan |
 
 ## Milestone summary
 
@@ -297,7 +315,10 @@ not assumed; this phase turns a working engine into an operable one.
 
 ## Test coverage (`tests/test_conformance.xi`)
 
-**136 tests** across 13 categories exercising the full public surface:
+> **Historical snapshot** (the table below counts 136 tests as of
+> 2026-10-08). Current: **169 checks** (the v0.64.2 re-test restored the
+> hydration mirror test) + **18 probes** x2 on Windows + WSL. See
+> `tests/test_conformance.xi` and `tests/probes/`.
 
 | # | Category | Tests | Coverage |
 |---|----------|-------|----------|

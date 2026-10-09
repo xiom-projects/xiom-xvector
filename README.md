@@ -96,7 +96,7 @@ is zero-cost and stable as public API).
 |-----------|--------|
 | Dense vector math (dot/cosine/euclidean/normalize/...) | [OK] Done |
 | Distance metrics + dispatch | [OK] Done |
-| Flat exact KNN + range search | [OK] Done |
+| Flat exact KNN (range surface: plan M-Q1) | [OK] Done |
 | In-memory HNSW graph (insert + greedy search) | [OK] Done |
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
@@ -107,7 +107,11 @@ is zero-cost and stable as public API).
 | Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; separate durable manifest file pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
-Full detail in [`ROADMAP.md`](ROADMAP.md).
+Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme
+(milestones, ordered slice backlog, benchmark/security/release plans, owner
+handoff) is in [`docs/PRODUCTION-PLAN.md`](docs/PRODUCTION-PLAN.md) with the
+requirements intake in
+[`docs/requirements/production-v1.md`](docs/requirements/production-v1.md).
 
 ## Dependencies
 - `xiom-std` -- standard library

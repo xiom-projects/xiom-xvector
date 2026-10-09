@@ -6,7 +6,9 @@
 **How far is xiom-xvector from a production-grade vector database?**
 This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
-the missing work.
+the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
+M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
+`docs/requirements/production-v1.md`.
 
 - **As of:** 2026-10-09 (post v0.64.2 re-test; E complete)
 - **Overall:** **70 %** (weighted; see method)
