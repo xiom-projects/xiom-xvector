@@ -19,6 +19,7 @@ use xiom.vector.storage.vector_store;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
 use xiom.vector.query.search_service;
+use xiom.vector.query.pagination;
 use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
@@ -789,6 +790,45 @@ pub fn engine_search_range(eng: &VectorEngine, query: &Vector, radius: Float32, 
   }
   var hits = search_range_scan(&eng.store, query, radius, limit, eng.metric);
   return Ok(SearchHits{ items: hits });
+}
+
+// Offset pagination (M-Q3): ranks [offset, offset+k) of the exact total
+// order (distance ascending, id ascending). Exact for both index kinds
+// (raw-store scan; ANN widening is M-P tuning). Negative offset and
+// out-of-range k are rejected loudly.
+pub fn engine_search_page(eng: &VectorEngine, query: &Vector, k: Int, offset: Int) -> Result[SearchHits, CoreError]
+  requires: eng.created
+{
+  if query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  if offset < 0 {
+    return Err(CoreError.InvalidInput("offset must be >= 0"));
+  }
+  return Ok(search_page_scan(&eng.store, query, k, offset, eng.metric));
+}
+
+// Cursor pagination (M-Q3): the next k ranks strictly after the current
+// position of `after_id` in the same total order. Err(NotFound) when the
+// cursor id does not exist (e.g. deleted between pages) -- restarting is
+// the caller's policy.
+pub fn engine_search_after(eng: &VectorEngine, query: &Vector, k: Int, after_id: Int) -> Result[SearchHits, CoreError]
+  requires: eng.created
+{
+  if query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  var page = search_after_scan(&eng.store, query, k, after_id, eng.metric);
+  match page {
+    Some(h) => { return Ok(h); }
+    None => { return Err(CoreError.NotFound); }
+  }
 }
 
 // Request-driven search: honors the request's top_k, filter, and

@@ -86,6 +86,18 @@ pub fn search_range(eng: &VectorEngine, query: &Vector, radius: Float32, limit: 
   return engine_search_range(eng, query, radius, limit);
 }
 
+// Offset pagination (M-Q3): ranks [offset, offset+k) of the paginated total
+// order (distance ascending, id ascending; exact on Flat AND Hnsw).
+pub fn search_page(eng: &VectorEngine, query: &Vector, k: Int, offset: Int) -> Result[SearchHits, CoreError] {
+  return engine_search_page(eng, query, k, offset);
+}
+
+// Cursor pagination (M-Q3): the next k ranks strictly after `after_id`
+// (Err(NotFound) when the cursor id does not exist).
+pub fn search_after(eng: &VectorEngine, query: &Vector, k: Int, after_id: Int) -> Result[SearchHits, CoreError] {
+  return engine_search_after(eng, query, k, after_id);
+}
+
 // Request-driven search: top_k/filter/with_payload come from the request.
 // The active collection's metric governs (mismatching request metric -> Err).
 pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError] {
