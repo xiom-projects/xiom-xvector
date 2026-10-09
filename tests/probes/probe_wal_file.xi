@@ -339,6 +339,26 @@ fn main() -> Int {
   io.write_file_bytes(pg, &ebytes);
   fails = check(wal_load(pg).records.len() == 0, "empty file -> empty log", fails);
 
+  // Scale guard for the LINEAR byte builder (M-G bench finding): a
+  // 1200-record checkpoint must round-trip exactly and quickly -- the old
+  // O(L^2) string builder thrashed at this size.
+  var bigw = wal_writer_new();
+  var bi: Int = 1;
+  var last_lsn: Int = 0;
+  while bi <= 1200 {
+    var bp = Vec[Int].new();
+    bp.push(bi); bp.push(bi * 2); bp.push(bi * 3); bp.push(4);
+    last_lsn = wal_writer_append_payload(&mut bigw, WalOpKind.Insert, bi, 1, bp);
+    bi = bi + 1;
+  }
+  var pbig = "out/wal_probe_big.txt";
+  fails = check(last_lsn == 1200, "scale: 1200 appends keep LSN continuity", fails);
+  fails = check(wal_persist(&bigw, pbig), "scale: persist 1200 records", fails);
+  var bigl = wal_load(pbig);
+  fails = check(bigl.records.len() == 1200, "scale: 1200 records load back", fails);
+  fails = check(wal_matches_file(&bigw, pbig), "scale: 1200-record roundtrip exact", fails);
+  io.remove_file(pbig);
+
   io.println("    diag: records=" + int_to_str(nrec_full) + " file_bytes=" + int_to_str(fb.len()));
   io.remove_file(pa);
   io.remove_file(pb);
