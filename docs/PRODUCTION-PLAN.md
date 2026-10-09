@@ -191,8 +191,13 @@ Goal: the single-node query surface a modern DB is expected to have.
   index cleanup; ids collected before mutation + applied ascending (plan-
   independent WAL); nothing matching -> Ok(0). Gate `probe_delete_filter`
   (26 checks).
-- **Q5 per-collection stats + index admin** -- size/live counts, index
-  kind/params, build/compact stats, `rebuild_index`; probe.
+- **Q5 per-collection stats + index admin -- DONE 2026-10-09** --
+  `collection_stats` (config, live points, payloads, Hnsw nodes +
+  tombstones, shared WAL lsn; active from live fields, parked from
+  registry entries) and `rebuild_index` (admin rebuild with
+  before/after/reclaimed `IndexStats`; Hnsw fresh graph, Flat no-op;
+  `compact_index` stays the Int wrapper). Gate `probe_index_admin`
+  (20 checks).
 - **Q6 request surface extensions** -- `SearchRequest` carries
   `mode` (knn/range), pagination, batch; metric/validation unchanged.
 
@@ -283,6 +288,7 @@ deep quantization + tiered storage, client SDKs.
 | 6 | Multi-collection -- **DONE 2026-10-09** | D3/FR-1 | `probe_collections` (41 checks) |
 | 7 | Pagination -- **DONE 2026-10-09** | Q3 | `probe_pagination` (22 checks) |
 | 8 | Delete-by-filter -- **DONE 2026-10-09** | Q4 | `probe_delete_filter` (26 checks) |
+| 8b | Index admin + per-collection stats -- **DONE 2026-10-09** | Q5 | `probe_index_admin` (20 checks) |
 | 9 | Reference oracle | G1 | `probe_reference_oracle` |
 | 10 | HTTP skeleton + health | S1 | `probe_http_service` |
 | 11 | Config/limits/errors | S2 | service abuse probe |

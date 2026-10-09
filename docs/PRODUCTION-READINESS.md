@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 80 | buildable | version endpoint; request-level pagination (Q6) |
+| F | API & query surface | 8 | 82 | buildable | version endpoint; request-level pagination (Q6) |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x80 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.10 -> 75 %**.
+0.08x82 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.26 -> 75 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -158,7 +158,8 @@ and the multi-collection registry surface (M-D3: `create_named_collection`/
 order; gate `probe_pagination`), and selective delete-by-filter (M-Q4:
 `delete_filter` -- planner-driven index candidates or scan, WAL-durable
 per point, tombstones + payload/index cleanup; gate
-`probe_delete_filter`).
+`probe_delete_filter`), and per-collection stats + the admin rebuild
+(M-Q5: `collection_stats` / `rebuild_index`; gate `probe_index_admin`).
 Remaining: version endpoint for the future service; request-level
 pagination fields (Q6).
 
@@ -548,6 +549,16 @@ extraction with the packages lane.
   now 25 probes). F 78 -> 80; overall 74.94 -> 75.10 -> 75 %. Evidence:
   full batteries (suite 171/171 x2 + 25 probes x2 + bench smoke, Windows
   + WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-fourth pass):** M-Q5 index admin --
+  `engine_collection_stats` / `collection_stats` (per-collection config,
+  live points, payloads, Hnsw nodes + tombstones, shared WAL lsn; active
+  from the live fields, parked from registry entries) and
+  `engine_rebuild_index` / `rebuild_index` (admin rebuild with
+  kind/points/nodes_before/nodes_after/reclaimed stats; Hnsw fresh graph
+  over live nodes, Flat no-op; compact_index stays the Int wrapper). Gate
+  `probe_index_admin` (20 checks; batteries now 26 probes). F 80 -> 82;
+  overall 75.10 -> 75.26 -> 75 %. Evidence: full batteries (suite 171/171
+  x2 + 26 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

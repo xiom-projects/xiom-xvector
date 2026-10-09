@@ -20,7 +20,8 @@ exact Flat scan and HNSW ANN; exact range search
 sorted); pagination (`search_page` offset + `search_after` after-id cursor
 over the distance/id total order, exact on both index kinds); selective
 delete-by-filter (`delete_filter` -- typed filter, planner-driven,
-WAL-durable); typed
+WAL-durable); per-collection stats + index admin (`collection_stats` /
+`rebuild_index`); typed
 payload filters with a selectivity planner; payload
 hydration; whole-file WAL checkpoint + recover. Multi-collection registry:
 `create_named_collection`/`select_collection`/`drop_collection`/

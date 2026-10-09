@@ -61,8 +61,11 @@ needed) -> signed commit. Red build = rejection.
   `delete_filter` -- planner-driven (index candidates for Eq/Range/Exists/
   And, scan for In/Or/Not), per-point WAL + tombstones + payload/index
   cleanup, Ok(0) on no match; `probe_delete_filter` (26 checks)
-- [ ] Q5 per-collection stats + index admin (`rebuild_index`, build/compact
-  stats); `probe_index_admin`
+- [x] Q5 per-collection stats + index admin **(done 2026-10-09)**:
+  `collection_stats` (config + points + payloads + Hnsw nodes/tombstones +
+  lsn; parked entries report without switching) and `rebuild_index`
+  (before/after/reclaimed stats; Hnsw fresh graph, Flat no-op);
+  `probe_index_admin` (20 checks)
 - [ ] Q6 `SearchRequest` extensions (mode/page/batch) + validation; suite
   mirrors updated
 
