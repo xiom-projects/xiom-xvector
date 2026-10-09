@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (34 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (35 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -25,7 +25,8 @@ found] -> v0.64.2 re-test: C-03/C-06/C-07/C-08 verified fixed, C-07/C-08
 workarounds reverted, C-10..C-12 re-tested green -> wishlist refresh
 (stdlib 0.64.3 re-check; xiom.wal/xiom.btree in-tree; relays updated) ->
 production programme kickoff: requirements + v1.0 plan + checklist ->
-M-D1 atomic WAL checkpoint (temp + io.rename; kill injection).
+M-D1 atomic WAL checkpoint (temp + io.rename; kill injection) ->
+consumer handshakes (PULSE + ORBITDB integration files; bindings relay)).
 
 ---
 
@@ -267,6 +268,14 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
   staged-complete temp and partial temp both leave the previous checkpoint
   intact; completed persist advances the file). Evidence: probe x2 +
   full batteries both platforms.
+- **Consumer handshakes (2026-10-09):** `docs/PULSE-INTEGRATION.md` and
+  `docs/ORBITDB-INTEGRATION.md` written (API surface + snippets, build/link
+  contract + platform matrix, pin/stability + on-disk layout,
+  findings/lifecycle incl. C-PULSE-14 RSS notes, conformance proposals,
+  cross-asks). PULSE will build `probe_pkg_xvector`; ORBITDB the hybrid
+  `probe_hybrid` (1k rows + vectors, join integrity after kill/reopen +
+  repair). Bindings relay: accelerators stay GATED (sole unscheduled
+  sector).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -466,7 +475,10 @@ signed commits, docs updated).
   published. No `xiom.vectors`/`xiom.ann` dirs yet (names frozen);
   wishlist ledger (2026-10-09): **`xiom.vectors` extraction gate MET,
   awaiting owner greenlight**, then the porter flow. `xiom.metrics` planned
-  for Phase 10; `xiom.kv` gated on C-PULSE-10 + fsync.
+  for Phase 10; `xiom.kv` gated on C-PULSE-10 + fsync. Bindings relay
+  (2026-10-09): blas-class accelerators stay **GATED** (incubating
+  placeholders, no timeline; pilot complete through batch 22) -- sole
+  unscheduled sector; M-P3 stays seam-first.
 - Registry ready: `xiom.http` 0.1.1, `xiom.jwt` 0.2.0, `xiom.rate` 0.2.0,
   `xiom.metrics` 0.2.0, `xiom.router` 0.1.0, `xiom.http.middleware` 0.1.0,
   `xiom.session` 0.1.0, `xiom.static` 0.1.0, `xiom.kv` 0.1.0. Read
@@ -482,6 +494,8 @@ signed commits, docs updated).
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-09 on 0.64.3: fsync/fd/append + f32-bits + truncate + flush_stdout all still open |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09: `xiom.wal`/`xiom.btree` in-tree (ops-allowlist gate); `xiom.vectors` gate MET awaiting owner greenlight |
+| `docs/PULSE-INTEGRATION.md` | PULSE (consumer) | written 2026-10-09; PULSE builds `probe_pkg_xvector` from it |
+| `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 70 %; recompute every wrap |
 

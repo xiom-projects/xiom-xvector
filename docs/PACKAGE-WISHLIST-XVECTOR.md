@@ -52,7 +52,7 @@ before that).
 | `xiom.metrics` 0.2.0 | **Planned** for Phase 10 observability (latency/recall histograms). | PULSE adopted it 2026-10-07 (labeled counters + latency preset + exposition); XVECTOR currently has an inline `Counter` only. | nothing intrinsic; adopt when the first metric surface lands (Phase 10), wire `source-roots` per C-PULSE-02 |
 | `xiom.kv` 0.1.0 | **Candidate** segment metadata / manifest store; **not adopted now**. | PULSE: `kv_get` returned address-like Str on WSL Linux v0.64.0 (C-PULSE-10; Windows green); packages lane repinned v0.64.2 (io rows re-tested); XVECTOR additionally needs fsync before any KV store can back a durable manifest. | C-PULSE-10 (Linux `kv_get`) + the stdlib fsync gap (`STDLIB-WISHLIST-XVECTOR.md`) |
 | `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | ops scope + allowlist before publish |
-| `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **Watch** for the Phase 10 SIMD/kernel path; the portable `xiom.vectors` API stays the contract, bindings are drop-in accelerators. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | not scheduled (Phase 9/10); needs the bindings-lane worktree |
+| `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **GATED** -- bindings relay 2026-10-09: verified incubating placeholders (tests unknown, no timeline); when built they mirror the `xiom.vectors` contract, never define it; no SIMD kernel package from that lane; pilot complete through batch 22, so **accelerators are the sole unscheduled sector**. The portable `xiom.vectors` API stays the contract. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | gated on the bindings lane scheduling (no date) |
 | `xiom.simd`-class (no exact name found) | If a pure-XIOM SIMD/vector intrinsic package appears, XVECTOR will adopt it for distance kernels; if not, `xiom.ann`/`xiom.vectors` kernels stay scalar. | `xiom-blas`/`xiom-openblas` are bindings, not pure-XIOM kernels; no `xiom-simd` in the tree. | future; coordinate with packages lane before proposing a second kernel package |
 
 ## Bindings lane reply (2026-10-08, relayed via packages)
@@ -76,6 +76,14 @@ XVECTOR consequence: nothing to adopt or block on today; the portable
 `xiom.vectors` API remains the only contract we depend on, and the `xiom.wal`
 coordination stays with the native/packages lanes (ORBITDB is the second
 user).
+
+**Addendum (2026-10-09, inbound relay):** the accelerator row **stays
+GATED** -- `xiom-blas`/`xiom-eigen`/`xiom-openblas` are verified incubating
+placeholders (tests unknown, no timeline); when built they mirror the
+`xiom.vectors` contract, never define it. No SIMD kernel package from that
+lane; the bindings pilot is complete through batch 22, so accelerators are
+the sole unscheduled sector. XVECTOR's SIMD path (M-P3) therefore stays
+seam-first with pure-XIOM kernels.
 
 ## Packages lane reply (2026-10-08)
 
