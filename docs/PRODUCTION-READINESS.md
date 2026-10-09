@@ -33,11 +33,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 73 | buildable | pagination, version endpoint |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 84 | release-grade | reference oracle, CI runners |
+| I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x65 + 0.08x100 +
-0.08x73 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **71.26 -> 71 %**.
+0.08x73 + 0.10x10 + 0.05x20 + 0.09x86 + 0.08x48 = **71.44 -> 71 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -146,14 +146,16 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 84 %
-Done: 169-check conformance suite (x2 Windows + WSL), 18 probes, build-time
+### I. Testing & verification -- 86 %
+Done: 171-check conformance suite (x2 Windows + WSL), 20 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
 (`probe_soak_mixed`), the kill-recovery acceptance
 (`probe_kill_recovery`), the file-WAL gate
-(`probe_wal_file`: live-WAL roundtrip, kill/reopen, truncation sweep), and
+(`probe_wal_file`: roundtrip, kill/reopen, truncation sweep, atomic swap,
+**1200-record scale guard**), the **benchmark harness + baseline**
+(`docs/BENCHMARKS.md`; bench smoke wired into both CI batteries), and
 the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 (C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
 workarounds reverted; the suite asserts trailing-field flags again.
@@ -445,6 +447,17 @@ extraction with the packages lane.
   added (170 -> 171). F 70 -> 73; overall 71.02 -> 71.26 -> 71 %. Evidence:
   full batteries (suite 171/171 x2 + 20 probes x2, Windows + WSL), ALL
   GATES GREEN.
+- **2026-10-09 (thirty-eighth pass):** M-G benchmark harness + baseline --
+  `bench/bench_main.xi` (deterministic W1-W7 workloads, integer JSON,
+  group-calibrated sampling, hard-capped budgets, `XV_BENCH_STAGE`
+  diagnostics) + `scripts/bench.ps1/.sh`; **bench smoke wired into both CI
+  batteries**; baseline committed in `docs/BENCHMARKS.md`. Found and fixed
+  the **O(L^2) `wal_persist` string builder** (linear `append_bytes`; the
+  builder drove multi-GB paging during bring-up); `probe_wal_file` +4
+  scale checks (1200 records). Native `--icon` embedding wired
+  (`scripts/build.ps1` + `images/xvector-icon.ico`). I 84 -> 86; overall
+  71.26 -> 71.44 -> 71 %. Evidence: full batteries (suite 171/171 x2 + 20
+  probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

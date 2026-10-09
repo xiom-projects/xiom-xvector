@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (37 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (38 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -28,7 +28,8 @@ production programme kickoff: requirements + v1.0 plan + checklist ->
 M-D1 atomic WAL checkpoint (temp + io.rename; kill injection) ->
 consumer handshakes (PULSE + ORBITDB integration files; bindings relay) ->
 M-Q1 exact range search (kernel + engine + facade + probe) ->
-M-Q2 batch ops (upsert_many / delete_many / search_many + BatchHits)).
+M-Q2 batch ops (upsert_many / delete_many / search_many + BatchHits) ->
+M-G bench harness + baseline [wal_persist O(L^2) fixed; native --icon]).
 
 ---
 
@@ -292,6 +293,20 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
   duplicate ids collapse; facade + engine paths. Gate `probe_batch_ops`
   (14 checks incl. recover equality and the Hnsw batch path); suite mirror
   test added (170 -> 171).
+- **M-G benchmark harness + baseline (2026-10-09):** `bench/bench_main.xi`
+  -- deterministic workloads (W1 ingest, W2 flat knn, W3 HNSW build/recall
+  per ef, W4 filtered, W5 batch, W6 range, W7 recovery), integer-only JSON
+  report at `out/bench_report.json`, group-calibrated per-op sampling,
+  hard-capped loop budgets, `XV_BENCH_STAGE` diagnostics; runners
+  `scripts/bench.ps1` / `bench.sh`; **bench smoke (quick) wired into both
+  CI batteries**. Baseline committed in `docs/BENCHMARKS.md` (n=5000
+  dim-4: flat knn p50 10.7 ms; HNSW ef=32 p50 0.44 ms recall 1.000;
+  filtered Eq 1.13 ms; recovery 12.6 s). **Fixed the `wal_persist` O(L^2)
+  string builder** (linear `append_bytes`; the builder drove multi-GB
+  paging during harness bring-up -- all loops now capped + monitored);
+  `probe_wal_file` +4 scale checks (1200-record roundtrip). Native `--icon`
+  embedding wired in `scripts/build.ps1` + `images/xvector-icon.ico`
+  (compiler m214/v0.64.2; rcedit workaround retired).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -320,6 +335,9 @@ workarounds reverted):**
   `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
   `probe_fuzz_codecs`, `probe_soak_mixed`, `probe_kill_recovery`,
   `probe_wal_file`, `probe_range_search`, `probe_batch_ops` (run via `scripts\run-probe.ps1`).
+- Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
+  quick` green (Windows + WSL), wired into both CI batteries; baseline
+  numbers in `docs/BENCHMARKS.md` (M-G).
 - Per-ef tradeoff (n=200, 10 queries each): ef=8 -> 97/100 recall @ 63
   visited; ef=16 -> 100/100 @ 84; ef=32 -> 100/100 @ 126; ef=64 -> 100/100
   @ 171; ef=128 -> 100/100 @ 196; build work 62,129 distance ops.
@@ -376,9 +394,10 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 DONE (atomic checkpoint).** Next per the backlog: M-Q1 range
-   search -> M-Q2 batch ops -> M-G2/G3 bench harness + baseline -> D2
-   manifest file -> D3 multi-collection -> D4 segment files.
+1. **M-D1 + M-Q1 + M-Q2 + M-G2/G3 DONE.** Next per the backlog: D2
+   manifest file -> D3 multi-collection -> D4 segment files; then M-S1
+   server & security, M-O observability; Q3-Q6 continue the query surface.
+   G1 (reference oracle) remains the open M-G item.
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -540,7 +559,7 @@ stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
 runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 20 probes x2
-(Windows) + WSL spot.
+(Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -572,7 +591,10 @@ checkpoints via temp+io.rename (7 fault-injection checks); M-Q1 exact range
 search (`search_range` facade/engine + `search_range_scan` kernel; gate
 `probe_range_search`: 11 checks); M-Q2 batch ops (`upsert_many`/
 `delete_many`/`search_many` + `BatchHits`; gate `probe_batch_ops`: 14
-checks) -- 20 probes, suite 171).
+checks); M-G bench harness + baseline (`docs/BENCHMARKS.md`; bench smoke in
+both batteries) [found + fixed the O(L^2) `wal_persist`; linear builder now
+scale-guarded]; native `--icon` embedding wired (images/xvector-icon.ico)
+-- 20 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -583,16 +605,16 @@ Retained workarounds (deliberate): SearchHits wrapper (C-04), suite direct
 dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12).
 
-NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 atomic
-checkpoint + M-Q1 range search + M-Q2 batch ops done; next: M-G bench
-harness + baseline, then D2 manifest / D3 multi-collection / D4 segment
-files; M-Q3..Q6 continue the query surface). Non-gated work proceeds while the stdlib
+NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-Q1 +
+M-Q2 + M-G2/G3 done; next: D2 manifest file, D3 multi-collection, D4
+segment files; then Q3-Q6, M-S server/security, M-O observability; G1
+reference oracle pending). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 20 probes x2), signed commits, docs updated.
++ 20 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; numeric
 gates per build; watchdogs + exit codes; check free memory before trusting a

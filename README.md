@@ -116,6 +116,8 @@ Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme
 handoff) is in [`docs/PRODUCTION-PLAN.md`](docs/PRODUCTION-PLAN.md) with the
 requirements intake in
 [`docs/requirements/production-v1.md`](docs/requirements/production-v1.md).
+Measured baseline: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) (run
+`.\scripts\bench.ps1` / `bash scripts/bench.sh`).
 
 ## Dependencies
 - `xiom-std` -- standard library

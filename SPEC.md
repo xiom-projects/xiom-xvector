@@ -247,11 +247,14 @@ vector**.
   missing/garbage/empty files -> empty). Reads shorter than the shortest
   valid WAL are skipped via a `file_size < 25` guard (also semantically
   exact). No fsync/append yet (stdlib gap), so this is a checkpoint rewrite,
-  not a delta log. Gate: `tests/probes/probe_wal_file.xi` (roundtrip
-  equality vs the live WAL, kill/reopen with Hnsw config, overwrite
-  persistence, atomic kill-before/during-rename injection, a 9-point
-  byte-truncation sweep with per-cut prefix checks, record-boundary cuts,
-  missing/garbage/empty files).
+  not a delta log. The checkpoint bytes are built LINEARLY (`append_bytes`
+  into a `Vec[UInt8]`; the earlier string-concat builder was O(L^2) and
+  thrashed the allocator at ~150 KB -- M-G finding). Gate:
+  `tests/probes/probe_wal_file.xi` (roundtrip equality vs the live WAL,
+  kill/reopen with Hnsw config, overwrite persistence, atomic
+  kill-before/during-rename injection, a 9-point byte-truncation sweep with
+  per-cut prefix checks, record-boundary cuts, missing/garbage/empty files,
+  and a 1200-record scale roundtrip).
 
 ## `xiom.vector.core.shim` (extracted module)
 Local `xiom-core` stand-ins, the porter-flow mapping target: `CoreError` (the
