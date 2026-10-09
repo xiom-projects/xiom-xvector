@@ -3,7 +3,11 @@
 
 # XVC-C-10 -- `hnsw_decode` segfaults on large pad volume (inline loop)
 
-**Status: OPEN (Windows + WSL; found 2026-10-08 by the XVECTOR fuzz probe).**
+**Status: FIXED on compiler v0.64.2** (2026-10-09 re-test: the pre-fix shape
+in `probe.xi` no longer segfaults; decode returns cleanly, exit 0). Found
+2026-10-08 on v0.64.1 by the XVECTOR fuzz probe; kept as a regression repro.
+The lane keeps the `pad_adj_slots` function boundary and the strict-decode
+bounds (the bounds are strictness, not a workaround).
 
 ## Summary
 
@@ -43,9 +47,10 @@ decodes:
 .\out\padloop.exe        # pre-fix: segfault after "decode start"; post-fix: exit 0
 ```
 
-- **Pre-fix revision**: `e0b1f7f` (inline `while pad < m` in `hnsw_decode`):
-  `git checkout e0b1f7f -- src/index/hnsw.xi` then build/run -> segfault
-  (`0xC0000005`); restore with `git checkout HEAD -- src/index/hnsw.xi`.
+- **Pre-fix shape (inline `while pad < m` in `hnsw_decode`)**: v0.64.1
+  segfaulted (`0xC0000005`) after "decode start"; on v0.64.2 the same shape
+  in `probe.xi` returns cleanly (exit 0) -- the compiler fix landed (loop
+  temporaries no longer reserve stack per iteration).
 - **Post-fix**: exits 0 with "decode -> None (correct: trailing junk)".
 
 ## Impact

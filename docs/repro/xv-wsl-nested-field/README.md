@@ -3,8 +3,12 @@
 
 # XVC-C-09 -- WSL segfault: nested-field mutation across modules
 
-**Status: OPEN (WSL only).** Found 2026-10-08 by the XVECTOR lane while
-adding the HNSW id -> position map.
+**Status: repro GREEN on compiler v0.64.2** (2026-10-09 re-test: the probe runs
+green on WSL + Windows; v0.64.2's release notes state mutating methods through
+nested fields write through, which is the suspected root cause). The lane
+keeps the local-assign pattern (clean code); the revision-pinned red remains
+`bca8b7f`'s compiled `engine_set_index` -- a full revert of the workaround was
+not re-attempted, so this is a weaker re-test than C-07/C-08.
 
 ## Summary
 

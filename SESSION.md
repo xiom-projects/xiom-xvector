@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (30 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (31 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -21,26 +21,26 @@ decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 + release-prep drafts -> upsert fix + index-driven candidates -> durable
 collection manifest -> HNSW update re-linking -> kill-recovery acceptance ->
 multi-key intersections -> file-backed WAL whole-file checkpoint [XVC-C-11/C-12
-found]).
+found] -> v0.64.2 re-test: C-03/C-06/C-07/C-08 verified fixed, C-07/C-08
+workarounds reverted, C-10..C-12 re-tested green).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `c84ccbc` (feat: file-backed WAL --
-whole-file checkpoint codec + torn-tail load), then this wrap commit;
-preceded by `d7097ce`/`63dd1ea` (multi-key intersections). Identity
-`Lefteris Notas <lefterisnotas@gmail.com>`; conventional commits, DCO
-`git commit -s`.
+**Repo:** private, no pushes. HEAD `15e83e1` (file-WAL docs wrap; feature
+`c84ccbc` beneath), then this pass's commits (v0.64.2 re-test: workaround
+reverts + suite 169 + docs). Identity `Lefteris Notas
+<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.1** installed; **v0.64.2 announced release-ready** (relay 2026-10-09, tag held for owner -- re-test at tag) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
+| compiler | **v0.64.2** (installed 2026-10-09; tag `c51170a6`; Win 19:00 / WSL 18:37) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `d54929d` (wave 97, 2026-10-09); the consumed release for the v0.64.1 re-test was **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `c84ccbc` + this wrap commit | this repo |
+| xvector | `15e83e1` + this pass's commits | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -77,8 +77,9 @@ preceded by `d7097ce`/`63dd1ea` (multi-key intersections). Identity
   `HydratedHits` + `hydrate_hits` in `query/search_service.xi`;
   `engine_search_request` (metric validation, filtered/plain dispatch,
   optional hydration) + facade `search_with_request`; new probe
-  `probe_search_request` (real-module gate). Hydration flags are gated in
-  that probe only (compiler XVC-C-08, below).
+  `probe_search_request` (real-module gate). Hydration flags were gated in
+  that probe only while XVC-C-08 was open; since the v0.64.2 fix the suite
+  asserts them too.
 - **Phase 3 refinement (payload index):** sorted key index in `payload.xi`
   (rows sorted by field/kind/num/text/id in parallel vectors; maintained on
   put/overwrite/remove; `payload_store_index_len/_exists/_field_count/_eq/
@@ -238,19 +239,36 @@ preceded by `d7097ce`/`63dd1ea` (multi-key intersections). Identity
   `docs/repro/xv-stdlib-file-read-defects/`; workarounds: read bytes and
   parse byte-wise (never handle file content as a Str), guard with
   `file_size < 25` (semantically exact for a WAL).
+- **v0.64.2 re-test + workaround reverts (31st pass, 2026-10-09):** all
+  relayed fixes verified on the tag archive (`c51170a6`, Windows + WSL).
+  **C-07:** `Str::from_utf8(&Vec[UInt8])` compiles and returns correctly;
+  the payload codec (`src/payload/payload.xi`) and suite mirror reverted to
+  the `&` spelling. **C-08:** trailing-scalar repro exit 0, all 14
+  `variants.xi` green; the suite hydration mirror is restored and asserts
+  the trailer `has_payload` flags (suite 168 -> 169). **C-10:** the inline
+  pad shape no longer segfaults; `pad_adj_slots` + strict bounds kept as
+  hygiene. **C-11/C-12:** unguarded reads green in a copy of the original
+  failing unit; byte parser + `file_size` guard kept as defense in depth.
+  **C-09:** repro green on WSL + Windows (local-assign kept; weaker
+  re-test). Batteries: suite 169/169 x2 + 18 probes x2, Windows + WSL.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **70 % today**; recompute at every wrap.
 
-**Green evidence (compiler v0.64.1 + stdlib 0.64.2; latest re-verification
-= file-WAL slice `c84ccbc` + this handoff wrap):**
+**Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
+`d54929d`; latest re-verification = v0.64.2 re-test pass with the
+workarounds reverted):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
   (the new-module import gate: `xiom.vector.engine` + `xiom.vector.engine.core`
   in one consumer).
-- `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
-  WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
+- `scripts\run-suite.ps1 -Runs 2` -> **169/169 passed** twice, exit 0;
+  WSL `bash scripts/run-suite.sh 2 240` -> **169/169 x2**.
+- **v0.64.2 re-test pass (31st):** suite **169/169 x2** + 18 probes x2 on
+  Windows and WSL, ALL GATES GREEN; repro bundles: C-07 exit 0, C-08 probe
+  + 14 variants exit 0, C-10 exit 0, C-11/C-12 green in the original
+  context unit, C-09 green on WSL; suite W004 count 0 (C-03).
 - All **18 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -264,7 +282,7 @@ preceded by `d7097ce`/`63dd1ea` (multi-key intersections). Identity
 - Release battery: `scripts/ci.ps1` and `scripts/ci.sh` -> `ci: ALL GATES
   GREEN` this pass on Windows and WSL (suite x2 + 18 probes x2 each); the
   file-WAL slice `c84ccbc` was verified through both batteries.
-- Handoff re-verification (2026-10-09, this wrap): `scripts/ci.ps1` ->
+- Handoff re-verification (file-WAL wrap, v0.64.1-era): `scripts/ci.ps1` ->
   `ci: ALL GATES GREEN` (suite 168/168 x2 + 18 probes x2); WSL spot
   `bash scripts/run-probe.sh tests/probes/probe_wal_file.xi 2` -> 2/2
   green with bit-identical diagnostics; both stdlib-defect control probes
@@ -277,50 +295,32 @@ preceded by `d7097ce`/`63dd1ea` (multi-key intersections). Identity
 - Stresses: `probe_search_request` 8/8, `probe_payload_index` 6/6,
   `probe_filter_plan` 6/6, `probe_hnsw_recall` 6/6, `probe_engine_hnsw` 6/6,
   `probe_hnsw_codec` 6/6, `probe_fuzz_codecs` 6/6, `probe_result_shapes` 8/8,
-  `probe_bind_semantics` 8/8, `probe_soak_mixed` 4/4 fresh builds (see
-  XVC-C-08 for why trailing-field reads are not asserted in the suite).
+  `probe_bind_semantics` 8/8, `probe_soak_mixed` 4/4 fresh builds (trailing
+  field reads are asserted in the suite again since the v0.64.2 C-08 fix).
 - WSL matrix `docs/repro/xv-f32-int-miscompile/linux_matrix.sh 3` -> 9/9
   exact (v0.64.1 fixed the per-build f32 lowering).
 
 **Compiler findings (all reported; see `docs/COMPILER-FINDINGS-XVECTOR.md`):**
 
-- XVC-C-01..06 **FIXED in v0.64.1** (fn-ptr call, contract exit code, W004
-  noise, `Result[Vec[non-scalar]]` field loss, per-build f32->int lowering,
-  FloatVal zeroing) -- re-tested, per-row status in the findings doc and
-  repro bundles.
-- **XVC-C-07 OPEN:** `Str::from_utf8(&Vec[UInt8])` emits invalid LLVM IR
-  (`invalid getelementptr`); pass the Vec **by value**. Repro:
-  `docs/repro/xv-from-utf8-vec-ref/`. Re-test at the next archive.
-- **XVC-C-08 OPEN (new on v0.64.1):** a trailing scalar after a Vec-bearing
-  field in a `Vec[Struct]` element can read as uninitialized garbage
-  (silent wrong hydration flags; Bool true / Int nonzero) depending on the
-  compilation unit. Repro: `docs/repro/xv-trailing-field-vec/` (probe exit
-  1, variants matrix exit 5). The shipped `hydrate_hits` is green in its own
-  unit (probe 8/8 builds); the suite mirror asserts ids only.
-- **XVC-C-09 OPEN (new on v0.64.1, WSL only):** the compiled
-  `engine_set_index` segfaulted on WSL while Windows was green (context-
-  sensitive lowering; same family as C-08). Worked around (local graph then
-  single field assign). Repro pinned at `bca8b7f`:
-  `docs/repro/xv-wsl-nested-field/`.
-- **XVC-C-10 OPEN (new on v0.64.1):** `hnsw_decode`'s inline pad loop
-  segfaulted at `m >= 512` (Windows + WSL) on otherwise pristine streams.
-  Worked around (`pad_adj_slots` function boundary + strict bounds). Repro
-  pinned at `e0b1f7f`: `docs/repro/xv-decode-pad-loop/`.
-- **XVC-C-11 OPEN (new 2026-10-09):** `io.read_file` content does not
-  survive in some units (silent wrong data: `slice.str_bytes(s)` = 0 bytes
-  for a written 11-/1771-byte file; same class via `Str::from_utf8`).
-  Green in a minimal control unit -- unit-context-sensitive (C-08 family).
-  Repro: `docs/repro/xv-stdlib-file-read-defects/`. Workaround: read bytes
-  and parse byte-wise; never handle file content as a Str.
-- **XVC-C-12 OPEN (new 2026-10-09):** `io.read_file_bytes` aborts on files
-  of <= 8 bytes in some units (`contract violated: ensures at 947:12`),
-  zero-byte files included; 9+ bytes read fine; green in a minimal control.
-  Workaround: `io.file_size` guard (WAL guard `< 25` is semantically
-  exact). Repro: same bundle.
-- Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addendum 3 =
-  v0.64.1 results; 4 = C-08; 5 = C-09; 6 = C-10; 7 = C-11/C-12). Incoming
-  relay `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` (v0.64.2 release-ready;
-  m220-m239; re-run the suite + pinned probes when the tag lands).
+- **v0.64.2 re-test (2026-10-09): all relayed fixes verified, workarounds
+  reverted.** C-03 (suite W004 count 0) and C-06 (pinned FloatVal probe)
+  stay green; **C-07 FIXED** -- `Str::from_utf8(&Vec[UInt8])` compiles and
+  returns correctly, the payload codec + suite mirror reverted to the `&`
+  spelling; **C-08 FIXED** -- trailing-scalar repro exit 0, all 14 variants
+  green, suite hydration flags asserted again (168 -> 169 checks).
+- Extra re-tests beyond the relayed set: **C-10 FIXED** (inline pad shape
+  no longer segfaults; `pad_adj_slots` + strict bounds kept as hygiene);
+  **C-11/C-12 re-tested green in a copy of the original failing unit**
+  (byte parser + `file_size` guard kept as defense in depth); **C-09 repro
+  green on WSL + Windows** (local-assign pattern kept; weaker re-test --
+  the inline pattern was green before too).
+- Retained workarounds (deliberate choices, not blockers): `SearchHits`
+  wrapper (C-04, zero-cost public API), suite direct dispatch (C-01),
+  predicate-negative style (C-02).
+- Relay for the compiler lane: `docs/RELAY-COMPILER.md` (Addenda 3-8;
+  8 = v0.64.2 re-test). Incoming relay
+  `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` (m220-m239) -- actioned:
+  suite + pinned probes re-run on the archive, no residual reds.
 
 ---
 
@@ -388,35 +388,32 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
   receivers (C-PULSE-05); explicit `*p` for `&mut Int` reads (C-PULSE-04).
 - Types are `Vec[T]`/`Result[T, Err]`; after every write grep for
   `Vec<|Result<|Option<`.
-- **XVC-C-07 (open): pass Vec arguments BY VALUE to `Str::from_utf8`.**
-- **XVC-C-08 (open): a trailing scalar after a Vec-bearing field in a
-  `Vec[Struct]` element can read as uninitialized garbage.** Gate such reads
-  only in real-module probes (never in the suite mirror); repro
-  `docs/repro/xv-trailing-field-vec/`. Verify any layout workaround per unit
-  (the flag-first reorder was green in the bundle but segfaulted the suite).
-- **XVC-C-09 (open, WSL only): a compiled function that mutates a nested
-  struct field through another module in a loop can segfault on WSL while
-  Windows is green.** Build the nested value in a local and assign the field
-  once; repro `docs/repro/xv-wsl-nested-field/` (pinned `bca8b7f`). Always
-  run the WSL spot before trusting a green Windows wrap.
-- **XVC-C-10 (open): `hnsw_decode`'s inline pad loop segfaults at larger
-  `m`.** Keep large-volume push loops behind function boundaries and bound
-  strict decode (`m <= 512`, `count <= words.len()`); repro
-  `docs/repro/xv-decode-pad-loop/` (pinned `e0b1f7f`); general gate
-  `probe_fuzz_codecs`.
-- **XVC-C-11 (open): never handle file content as a Str in a large unit.**
-  `io.read_file` content can be silently lost (0 bytes) in some units; read
-  bytes via `read_file_bytes` and parse byte-wise. Repro
+- **XVC-C-07 (fixed v0.64.2): `Str::from_utf8(&Vec[UInt8])` is valid again.**
+  The lane uses the `&` spelling (reverted from the by-value workaround);
+  repro `docs/repro/xv-from-utf8-vec-ref/` stays as a regression gate.
+- **XVC-C-08 (fixed v0.64.2): trailing scalars after a Vec-bearing field are
+  readable in large units again.** The suite hydration mirror asserts the
+  flags (169 checks); repro `docs/repro/xv-trailing-field-vec/` stays as a
+  regression gate. If a future archive reintroduces garbage reads, open a
+  delta row instead of re-applying layout hacks.
+- **XVC-C-09 (repro green v0.64.2; keep the pattern): build nested values in
+  a local and assign the field once.** Always run the WSL spot before
+  trusting a green Windows wrap; repro `docs/repro/xv-wsl-nested-field/`.
+- **XVC-C-10 (fixed v0.64.2; keep the hygiene): keep large-volume push loops
+  behind function boundaries and bound strict decode (`m <= 512`,
+  `count <= words.len()`).** Repro `docs/repro/xv-decode-pad-loop/`; general
+  gate `probe_fuzz_codecs`.
+- **XVC-C-11/C-12 (re-tested green v0.64.2; keep defense in depth): read
+  file content as bytes and parse byte-wise; guard short reads with
+  `io.file_size` (WAL guard `< 25`).** Repro
   `docs/repro/xv-stdlib-file-read-defects/`.
-- **XVC-C-12 (open): `io.read_file_bytes` aborts on files of <= 8 bytes in
-  some units.** Guard with `io.file_size` and skip short reads (the WAL
-  guard `< 25` is semantically exact). Repro: same bundle.
 - **filter_plan helper quirk (loud T001, not silent):** a private helper
   with two `&Vec[Int]` parameters can report `undefined variable` for its
   second parameter (three shapes tried, v0.64.1); inline the logic or use
   single-parameter helpers in `filter_plan.xi`.
-- Historical v0.64.0-era traps (C-01..C-06) are fixed; if any reappears,
-  open a delta row instead of re-bisecting (details in the findings doc).
+- Historical v0.64.0/v0.64.1-era traps (C-01..C-08) are fixed; if any
+  reappears, open a delta row instead of re-bisecting (details in the
+  findings doc).
 - Keep numeric gates per build (suite/probes assert exact bits; red = build
   rejection). Keep watchdogs (`-TimeoutSec`) and gate on exit codes; run
   every green suite x2; redirect long-running output to files; build
@@ -439,10 +436,10 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
   so re-check `git -C E:\xiom-lang\stdlib log -1` each pass.
   **fsync/fd-write/append-bytes still stubs** (wishlist rows 1-3) --
   whole-file WAL workaround shipped, delta log still gated.
-- **compiler:** v0.64.1 installed; v0.64.2 **release-ready** on the
-  compiler repo's local main (incoming relay 2026-10-09: m220-m239 cover
-  XVC-C-03/C-06/C-07/C-08; tag/push held for the owner). Re-test the suite
-  + probes when the tag lands.
+- **compiler:** **v0.64.2 installed** (2026-10-09; tag `c51170a6`; nine-tool
+  install Windows + WSL). Re-test done: all relayed XVECTOR fixes verified
+  (C-03/06/07/08), C-10..C-12 also green; workarounds reverted where
+  applicable (Addendum 8). No residual reds from this lane.
 - **packages:** names frozen (`xiom.vectors`/`xiom.wal`/`xiom.ann`);
   bindings lane: blas-class placeholders only, no SIMD package planned;
   `xiom.metrics` planned for Phase 10; `xiom.kv` gated on C-PULSE-10 +
@@ -457,9 +454,9 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | 6/12 fixed (v0.64.1); C-07..C-12 open |
-| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-7 (re-test; C-08; C-09; C-10; C-11/C-12) |
-| `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; re-test at the v0.64.2 tag |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.2: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
+| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-8 (8 = v0.64.2 re-test + workaround reverts) |
+| `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | rows 1-3 (fsync/fd/append) still gating M2 delta log |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | names frozen; replies recorded |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
@@ -478,14 +475,13 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Toolchain (latest-tracking): compiler v0.64.1 installed on Windows
+Toolchain (latest-tracking): compiler v0.64.2 installed on Windows
 (%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom, use
-`wsl.exe -d Ubuntu`); v0.64.2 is release-ready upstream (re-test at the
-tag); stdlib lane E:\xiom-lang\stdlib (lane HEAD d54929d; consumed release
-0.64.2 = 4dd8844, /mnt/e/... in WSL); XIOM_RUNTIME_DIR retired. Dot-source
-scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh build;
-scripts\run-suite.* runs the conformance suite; scripts\run-probe.* runs
-probes. Green baseline: suite 168/168 x2 (Windows + WSL), 18 probes x2
+`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD d54929d;
+consumed release 0.64.2 = 4dd8844, /mnt/e/... in WSL); XIOM_RUNTIME_DIR
+retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
+build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
+runs probes. Green baseline: suite 169/169 x2 (Windows + WSL), 18 probes x2
 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -514,35 +510,31 @@ VERSION/checklist; durable collection manifest; HNSW update re-linking;
 kill-recovery prefix-exactness acceptance; file-backed WAL (whole-file
 checkpoint codec + torn-tail-safe byte-level load; gate probe_wal_file;
 both batteries now 18 probes) [XVC-C-11/C-12 found there]).
-FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
-FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
-(trailing scalar after a Vec-bearing field can read garbage; repro
-docs/repro/xv-trailing-field-vec; gate such reads only in real-module
-probes); XVC-C-09 OPEN (WSL-only nested-field mutation segfault; build into
-a local then assign once; repro docs/repro/xv-wsl-nested-field pinned at
-bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
-pad step behind pad_adj_slots + strict bounds; repro
-docs/repro/xv-decode-pad-loop pinned at e0b1f7f); XVC-C-11 OPEN
-(io.read_file content lost in some units -- read bytes, parse byte-wise;
-repro docs/repro/xv-stdlib-file-read-defects); XVC-C-12 OPEN
-(io.read_file_bytes aborts at <= 8 bytes in some units -- file_size guard;
-same repro).
+FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
+(2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
+works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
+all 14 variants green; suite hydration flags asserted again, 169 checks);
+C-10 FIXED (inline pad no longer crashes); C-11/C-12 re-tested green in the
+original context unit; C-09 repro green on WSL (workaround retained).
+Retained workarounds (deliberate): SearchHits wrapper (C-04), suite direct
+dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
+bounds (C-10), byte parser + file_size guard (C-11/C-12).
 
 NEXT TASK (priority 1): M2 is partly landed -- whole-file WAL checkpoint +
 torn-tail load shipped (durability.wal_file); the delta append/fsync log,
 file-backed segments, manifest file and file-level kill test await the
 stdlib fd/fsync gap (re-check each pass, pivot when it lands). Non-gated
 extras: range-search surface, reference oracle cross-check, adaptive
-ef/latency budget. Re-test the suite + pinned probes when the v0.64.2 tag
-lands (keep probe_floatval_roundtrip pinned); public release/runners/
-rulesets await the owner (docs/RELEASE-CHECKLIST.md).
+ef/latency budget. Now unblocked: decide the C-01/C-02/C-04 unwind
+candidates (direct dispatch, negative tests, SearchHits wrapper) without
+compiler pressure. Public release/runners/rulesets await the owner
+(docs/RELEASE-CHECKLIST.md).
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
 + 18 probes x2), signed commits, docs updated.
 
-Discipline: struct literals list every field; locals initialized; Vec by
-value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
-probes (C-08); numeric gates per build; watchdogs + exit codes; check free
-memory before trusting a red build; suite x2 green before any wrap; update
+Discipline: struct literals list every field; locals initialized; numeric
+gates per build; watchdogs + exit codes; check free memory before trusting a
+red build; suite x2 green before any wrap; WSL spot every wrap; update
 SESSION.md STATE + relay rows + docs/PRODUCTION-READINESS.md at every wrap;
 commit signed at every step.
 ```

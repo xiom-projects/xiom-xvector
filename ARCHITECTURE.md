@@ -212,8 +212,9 @@ api.set_payload
 ```
 
 Payloads never outlive their point: `engine_delete` removes both the vector
-and the metadata record. Float32 payloads are diagnostic-only on v0.64.0
-(compiler XVC-C-06).
+and the metadata record. Float32 payloads are fully gated since the v0.64.1
+fix (compiler XVC-C-06); the suite and probes assert float payloads
+bit-exactly per build.
 
 ## 4. Search path (top-k query)
 
@@ -241,10 +242,11 @@ api.search
         6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)
 ```
 
-`SearchHits` is a struct wrapper around the result Vec: on compiler v0.64.0 a
-`Result[Vec[non-scalar], E]` payload loses element fields at the caller
-(finding XVC-C-04), so the public shape wraps it. Unwrap when the compiler
-fix lands.
+`SearchHits` is a struct wrapper around the result Vec: it was introduced
+because on v0.64.0 a `Result[Vec[non-scalar], E]` payload lost element
+fields at the caller (finding XVC-C-04, fixed in v0.64.1). The wrapper is
+retained deliberately -- zero-cost, stable public API; any unwrap is an API
+decision, not a compiler need.
 
 Request-driven variant (Phase 3): `search_with_request` ->
 `engine_search_request` takes top_k/filter/with_payload from a

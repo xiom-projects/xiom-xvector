@@ -168,3 +168,33 @@ shortest valid input (the WAL guard `< 25` is also semantically exact).
 Please triage alongside the C-08/C-10 family: one root cause for the
 unit-context-sensitive lowering would unlock trustworthy file I/O and let
 the lane drop several workarounds at once.
+
+**Addendum 8 (2026-10-09): v0.64.2 re-test -- C-03/C-06/C-07/C-08 confirmed fixed, workarounds reverted.**
+
+v0.64.2 (tag `c51170a6`, installed Windows + WSL) verified end-to-end; every
+repro bundle re-run first, then the full batteries. Results:
+
+- **XVC-C-03:** suite compile W004 count **0** (stays fixed).
+- **XVC-C-06:** `probe_floatval_roundtrip` green (pinned); suite FloatVal
+  payloads green.
+- **XVC-C-07:** `Str::from_utf8(&Vec[UInt8])` compiles and returns correctly
+  (repro exit 0). The lane **reverted the by-value workaround** in
+  `src/payload/payload.xi` and the suite mirror back to the `&` spelling.
+- **XVC-C-08:** trailing-scalar repro green (`probe.xi` exit 0,
+  "hydration-guard: green"; all 14 `variants.xi` green, was exit 5). The
+  suite's hydration mirror test is **restored**: it asserts the trailing
+  `has_payload` flags in the large unit again (suite 168 -> 169 checks).
+- Extra re-tests beyond the relayed set: **XVC-C-10** -- the inline pad
+  shape no longer segfaults at `m=512` (lane keeps `pad_adj_slots` + strict
+  bounds; the bounds are strict-decode hygiene); **XVC-C-11/C-12** --
+  unguarded `io.read_file` (Str content) and 5-byte `io.read_file_bytes`
+  are green in a copy of the original failing unit (lane keeps the byte
+  parser + `file_size` guard as defense in depth); **XVC-C-09** -- repro
+  green on WSL + Windows (workaround retained; weaker re-test since the
+  inline pattern was green before the crash-only-in-engine path).
+- Full batteries with the reverted code: suite **169/169 x2** + 18 probes
+  x2 on Windows and WSL -- ALL GATES GREEN.
+
+No residual reds from this lane. The C-01/C-02/C-04 workarounds stay as
+deliberate choices (public API shape, test-harness style), not compiler
+blockers.
