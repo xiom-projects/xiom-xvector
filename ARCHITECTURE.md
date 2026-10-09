@@ -63,7 +63,8 @@ src/
 |                     engine_set_payload, engine_get_payload,
 |                     engine_search_filtered, engine_search_request,
 |                     engine_get_point, engine_size, engine_durable_lsn,
-|                     engine_recover (REAL dispatch to store + graph + WAL
+|                     engine_recover + the durable collection manifest
+|                     (REAL dispatch to store + graph + WAL
 |                     + search + payloads + recovery)                     [EXTRACTED]
 |
 |-- types/

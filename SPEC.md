@@ -243,15 +243,15 @@ same ten variants as `xiom.core.error`), `Counter` + `counter_new/inc`,
 wal; upserts; deletes; next_collection; payloads }` -- the orchestrator that
 owns the active collection, the WAL, the payload store, and (when
 `index_kind = Hnsw`) the ANN graph mirroring the store.
-- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` (resets to Flat).
-- `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. In-memory only: re-apply after `engine_recover` (metadata persistence is future work).
+- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` (resets to Flat; logs the collection manifest).
+- `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. Logs a manifest update, so the configuration survives `engine_recover` and checkpoints.
 - `engine_compact_index(eng) -> Result[Int, CoreError]` `requires: eng.created` -- rebuilds the HNSW graph from live nodes (Flat -> `Ok(0)`); returns the reclaimed count.
 - `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
 - `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (`Hnsw`: ANN fetch `ef_search` wide + matching subset, exact flat filtered fallback when under-filled; `Flat`: the planner scan), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
 - `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
-- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries both); LSNs stay monotonic. The recovered engine is Flat; callers re-apply `engine_set_index`.
+- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries store, payloads AND the latest collection manifest); LSNs stay monotonic. The latest `ManifestUpdate` record (`[version=1, dim, metric_code, kind_code, m, ef_construction, ef_search]`, logged by create_collection/set_index) governs dim/metric/index kind/params -- including rebuilding an Hnsw graph -- with the caller's dim/metric as the fallback for pre-manifest logs (Flat collection). Malformed manifests are ignored.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):

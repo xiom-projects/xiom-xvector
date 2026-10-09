@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-08 (25 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (26 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -18,14 +18,15 @@ engine HNSW wiring -> HNSW tombstone compaction -> HNSW graph codec ->
 beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
 decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
-+ release-prep drafts -> upsert fix + index-driven candidates).
++ release-prep drafts -> upsert fix + index-driven candidates -> durable
+collection manifest).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `f0066ba` (feat: index-driven
-candidates), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `8917cec` (feat: durable collection
+manifest), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -35,7 +36,7 @@ candidates), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `f0066ba` + this wrap commit | this repo |
+| xvector | `8917cec` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -178,10 +179,17 @@ candidates), then this wrap commit. Identity `Lefteris Notas
   plan 3 (index: exact Eq/Range/Exists candidates, incl.
   `payload_store_index_field_ids`) and `filter_matching_upper` for And/Or/
   Not (post when the bound is a majority, scan otherwise);
-  `search_knn_filtered` executes the index plan with distances only for
-  matches. Gate `probe_filter_plan` (20 checks: plan codes, upper bounds
-  And=3 Or=1 Not=2 In=-1, index equivalence bit-identical to the scan
-  reference).
+    `search_knn_filtered` executes the index plan with distances only for
+    matches. Gate `probe_filter_plan` (20 checks: plan codes, upper bounds
+    And=3 Or=1 Not=2 In=-1, index equivalence bit-identical to the scan
+    reference).
+- **Durable collection manifest:** `create_collection`/`set_index` log a
+  `ManifestUpdate` record (`[version=1, dim, metric_code, kind_code, m,
+  ef_construction, ef_search]`); `engine_recover` restores dim/metric/index
+  kind/params from the latest manifest (rebuilding an Hnsw graph) without a
+  manual `set_index`; `wal_writer_checkpoint_from` carries it forward, so
+  chained recovery keeps the config; legacy/malformed logs fall back to the
+  caller config + Flat. Gates in `probe_engine_hnsw` (23 checks).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -252,12 +260,13 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **E stretch (slice 5): multi-key / index-driven candidate iteration**
-   with planner integration -- only if green. Release gate: when the owner
-   greenlights, follow `docs/RELEASE-CHECKLIST.md` (both batteries are
-   scripted: `scripts/ci.ps1` / `ci.sh`). M2 stays parked until stdlib
-   fd/fsync lands (re-checked 2026-10-08: still stubs); then M2 file-backed
-   WAL + kill-recovery harness first.
+1. **HNSW update-path edge refresh (slice 2):** re-link on existing-id
+   updates (documented TODO) with a recall-after-many-updates gate vs the
+   flat oracle. Then: kill-recovery acceptance script on the in-memory WAL
+   model (prefix-exactness after truncation), optional multi-key
+   intersection indexes, release gate via docs/RELEASE-CHECKLIST.md. M2
+   stays parked until stdlib fd/fsync lands (still stubs -- re-checked
+   2026-10-09 wave 95).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
