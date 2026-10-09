@@ -10,7 +10,7 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post v0.64.2 re-test; E complete)
+- **As of:** 2026-10-09 (post M-D1 atomic checkpoint; E complete)
 - **Overall:** **70 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -28,7 +28,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 63 | buildable | stdlib fsync/append gap, delta log, file-backed segments, manifest file, file-level kill test |
+| D | Persistence & durability | 20 | 65 | buildable | stdlib fsync/append gap, delta log, file-backed segments, manifest file, file-level kill test |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
@@ -36,8 +36,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 84 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x63 + 0.08x100 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **70.42 -> 70 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x65 + 0.08x100 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **70.82 -> 71 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -93,7 +93,7 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 63 %
+### D. Persistence & durability -- 65 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
@@ -104,7 +104,10 @@ compacted checkpoint log, empty log and corrupt-final-record cases), and
 **whole-file WAL persistence** (`durability.wal_file`: `wal_persist` text
 checkpoint + `wal_load` byte-level torn-tail-safe prefix load; kill/reopen
 equality, overwrite persistence, 9-point truncation sweep, missing/
-garbage/empty cases; gate `probe_wal_file`).
+garbage/empty cases; gate `probe_wal_file`), and **atomic checkpoint swap**
+(M-D1: `<path>.tmp` -> `io.rename`; 7 fault-injection checks -- no temp
+remains, staged-complete and partial temps leave the previous checkpoint
+intact, completed persist advances the file).
 Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 `docs/STDLIB-WISHLIST-XVECTOR.md`), delta append log, file-backed segment
 files, separate manifest file, file-level crash-kill test, WAL
@@ -167,7 +170,7 @@ extraction with the packages lane.
 | Milestone | Meaning | Status |
 |---|---|---|
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
-| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint on disk with torn-tail-safe load (`wal_file`); fsync/append delta, segments, manifest file, file-level kill test blocked on stdlib fsync/append |
+| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint on disk with torn-tail-safe load + atomic swap (M-D1); fsync/append delta, segments, manifest file, file-level kill test blocked on stdlib fsync/append |
 | M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | Not started |
 | M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | Not started (release gate is owner's) |
 
@@ -410,6 +413,14 @@ extraction with the packages lane.
   **C-09 repro green on WSL + Windows** (pattern kept; weaker re-test).
   I 83 -> 84; overall 70.33 -> 70 %. Evidence: suite 169/169 x2 + 18 probes
   x2, Windows + WSL, ALL GATES GREEN.
+- **2026-10-09 (thirty-fourth pass):** M-D1 atomic WAL checkpoint --
+  `wal_persist` writes `<path>.tmp` and swaps via `io.rename` (platform
+  replace semantics on Windows + WSL); `probe_wal_file` +7 fault-injection
+  checks (no temp left behind; staged-complete temp and partial temp both
+  leave the previous checkpoint intact; completed persist advances the
+  file). D 63 -> 65; overall 70.42 -> 70.82 -> 71 %. Evidence: full
+  batteries (suite 169/169 x2 + 18 probes x2, Windows + WSL), ALL GATES
+  GREEN.
 
 ## Update rule
 

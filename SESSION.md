@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (33 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (34 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -24,7 +24,8 @@ multi-key intersections -> file-backed WAL whole-file checkpoint [XVC-C-11/C-12
 found] -> v0.64.2 re-test: C-03/C-06/C-07/C-08 verified fixed, C-07/C-08
 workarounds reverted, C-10..C-12 re-tested green -> wishlist refresh
 (stdlib 0.64.3 re-check; xiom.wal/xiom.btree in-tree; relays updated) ->
-production programme kickoff: requirements + v1.0 plan + checklist).
+production programme kickoff: requirements + v1.0 plan + checklist ->
+M-D1 atomic WAL checkpoint (temp + io.rename; kill injection).
 
 ---
 
@@ -40,8 +41,8 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d9f146cb` (post-tag m244 fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
-| stdlib | lane HEAD `82ac2f3` = release **0.64.3** (pinned to compiler v0.64.2); wave 97 = `d54929d` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
-| packages | lane HEAD `b52028b9` (36 eco releases; `xiom.http` 0.1.4 published); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate (NOT consumed yet) | `E:\xiom-packages\packages` |
+| stdlib | lane HEAD `1b85edb` (0.64.3 + five-lane wishlist scoop, docs-only; durability primitives still stubs) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| packages | lane HEAD `6bb40bb0` (36 eco releases; `xiom.wal` + `xiom.btree` 0.1.0 in-tree; `xiom.vectors` extraction gate MET, awaiting owner greenlight) | `E:\xiom-packages\packages` |
 | xvector | `15e83e1` + this pass's commits | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
@@ -260,6 +261,12 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
   performance/scale, M-R release + owner handoff; first-12 slice backlog),
   execution checklist (`docs/checklists/production-v1.md`);
   ROADMAP/README/readiness aligned.
+- **M-D1 atomic WAL checkpoint (2026-10-09):** `wal_persist` writes
+  `<path>.tmp` then swaps via `io.rename` (platform replace semantics);
+  `probe_wal_file` gained 7 fault-injection checks (no temp left behind;
+  staged-complete temp and partial temp both leave the previous checkpoint
+  intact; completed persist advances the file). Evidence: probe x2 +
+  full batteries both platforms.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -341,10 +348,9 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 atomic checkpoint (next slice):** `wal_persist` -> temp file +
-   `io.rename` (available today) with a fault-injection probe (interrupt
-   between write and rename keeps the previous consistent file). Then D2
-   manifest file, D3 multi-collection, D4 segment files.
+1. **M-D1 DONE (atomic checkpoint).** Next per the backlog: M-Q1 range
+   search -> M-Q2 batch ops -> M-G2/G3 bench harness + baseline -> D2
+   manifest file -> D3 multi-collection -> D4 segment files.
 2. **M-Q query surface:** range search (Q1), batch ops (Q2), pagination
    (Q3), delete-by-filter (Q4), per-collection stats + index admin (Q5),
    SearchRequest extensions (Q6).
@@ -439,28 +445,28 @@ signed commits, docs updated).
 
 ## 5. Ecosystem status (2026-10-09)
 
-- **stdlib:** current lane HEAD `82ac2f3` = release **0.64.3** (pinned to
-  compiler v0.64.2; wire waves 93-97, contract %, no durability primitives).
-  **Re-checked 2026-10-09: fsync/fdatasync, the fd path (`write_all` etc.),
+- **stdlib:** current lane HEAD `1b85edb` = release 0.64.3 + the five-lane
+  wishlist scoop (docs-only; no durability movement). **Re-checked
+  2026-10-09: fsync/fdatasync, the fd path (`write_all` etc.),
   `append_file_bytes`, `truncate`/`ftruncate` are still stubs; no
   `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `io.rename` exists -- atomic
-  temp+rename checkpoint hardening is available today. Byte-exact file
-  writes / CRLF-clean reads since 0.64.2.
+  temp+rename checkpoint hardening is available today (used by M-D1).
+  Byte-exact file writes / CRLF-clean reads since 0.64.2.
 - **compiler:** **v0.64.2 installed** (2026-10-09; tag `c51170a6`; nine-tool
   install Windows + WSL). Re-test done: all relayed XVECTOR fixes verified
   (C-03/06/07/08), C-10..C-12 also green; workarounds reverted where
   applicable (Addendum 8). No residual reds from this lane.
-- **packages:** lane HEAD `b52028b9`; **36 eco releases** (`xiom.http` 0.1.4
+- **packages:** lane HEAD `6bb40bb0`; **36 eco releases** (`xiom.http` 0.1.4
   published, `eco-v0.1.120`). **`xiom.wal` 0.1.0 and `xiom.btree` 0.1.0 are
-  in the tree** (`packages/xiom-wal` 21/21 `137a8200`, `packages/xiom-btree`
-  22/22 `c78fe78a`) -- the packages lane's remaining gate is an ops scope +
-  native-lane allowlist append. `xiom.wal` is the single WAL home (durable
-  record shape + ORBITDB disk segment; `wal_flush` no-op on the same fsync
-  gap); XVECTOR aligns its codec and consumes it when published. No
-  `xiom.vectors`/`xiom.ann` dirs yet (names frozen; extraction unblocked
-  technically). `xiom.metrics` planned for Phase 10; `xiom.kv` gated on
-  C-PULSE-10 + fsync.
+  in the tree** (`packages/xiom-wal` 21/21, `packages/xiom-btree` 22/22) --
+  pending ops scope + native-lane allowlist append. `xiom.wal` is the single
+  WAL home (durable record shape + ORBITDB disk segment; `wal_flush` no-op
+  on the same fsync gap); XVECTOR aligns its codec and consumes it when
+  published. No `xiom.vectors`/`xiom.ann` dirs yet (names frozen);
+  wishlist ledger (2026-10-09): **`xiom.vectors` extraction gate MET,
+  awaiting owner greenlight**, then the porter flow. `xiom.metrics` planned
+  for Phase 10; `xiom.kv` gated on C-PULSE-10 + fsync.
 - Registry ready: `xiom.http` 0.1.1, `xiom.jwt` 0.2.0, `xiom.rate` 0.2.0,
   `xiom.metrics` 0.2.0, `xiom.router` 0.1.0, `xiom.http.middleware` 0.1.0,
   `xiom.session` 0.1.0, `xiom.static` 0.1.0, `xiom.kv` 0.1.0. Read
@@ -475,7 +481,7 @@ signed commits, docs updated).
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-8 (8 = v0.64.2 re-test + workaround reverts) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-09 on 0.64.3: fsync/fd/append + f32-bits + truncate + flush_stdout all still open |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09: `xiom.wal`/`xiom.btree` in-tree (ops-allowlist gate); vectors/ann extraction unblocked |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09: `xiom.wal`/`xiom.btree` in-tree (ops-allowlist gate); `xiom.vectors` gate MET awaiting owner greenlight |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 70 %; recompute every wrap |
 
@@ -539,9 +545,10 @@ Retained workarounds (deliberate): SearchHits wrapper (C-04), suite direct
 dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12).
 
-NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (first: M-D1
-atomic checkpoint via io.rename, then M-Q1 range search, M-Q2 batch ops,
-M-G bench harness + baseline). Non-gated work proceeds while the stdlib
+NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 atomic
+checkpoint done; next: M-Q1 range search, M-Q2 batch ops, M-G bench
+harness + baseline, then D2 manifest / D3 multi-collection / D4 segment
+files). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional

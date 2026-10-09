@@ -19,8 +19,9 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-D -- On-disk durability
 
-- [ ] D1 atomic checkpoint: `wal_persist` temp+`io.rename`; fault-injection
-  probe (interrupt between write and rename keeps the previous file)
+- [x] D1 atomic checkpoint **(done 2026-10-09)**: `wal_persist` temp+
+  `io.rename`; fault-injection probe (staged-complete temp + partial temp
+  both leave the previous file; 7 new checks in `probe_wal_file`)
 - [ ] D2 manifest file: registry persisted whole-file + rename; load on
   open; in-WAL manifest migration fallback; `probe_manifest_file`
 - [ ] D3 multi-collection runtime: named collections, create/drop/list,
