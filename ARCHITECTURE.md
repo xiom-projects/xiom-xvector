@@ -348,6 +348,13 @@ set, exact ties come back id-ascending, and the after-id cursor is the
 live vector of the last seen id (a deleted cursor is `Err(NotFound)`).
 Exact on Flat AND Hnsw; ANN widening stays M-P tuning.
 
+Request dispatch (M-Q6): `SearchRequest.mode` selects the plain/filtered
+knn path or the exact range path (`top_k` = inclusive-radius limit, no
+filters/pagination); knn requests may carry `offset` (page ranks) or
+`after_id` (cursor continuation) -- mutually exclusive, and neither
+combines with filters yet. Batch requests (`SearchBatchRequest`) run in
+order, all-or-nothing. Dimension/top_k/metric validation is unchanged.
+
 `SearchHits` is a struct wrapper around the result Vec: it was introduced
 because on v0.64.0 a `Result[Vec[non-scalar], E]` payload lost element
 fields at the caller (finding XVC-C-04, fixed in v0.64.1). The wrapper is

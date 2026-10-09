@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 82 | buildable | version endpoint; request-level pagination (Q6) |
+| F | API & query surface | 8 | 84 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x82 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.26 -> 75 %**.
+0.08x84 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.42 -> 75 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -159,9 +159,11 @@ order; gate `probe_pagination`), and selective delete-by-filter (M-Q4:
 `delete_filter` -- planner-driven index candidates or scan, WAL-durable
 per point, tombstones + payload/index cleanup; gate
 `probe_delete_filter`), and per-collection stats + the admin rebuild
-(M-Q5: `collection_stats` / `rebuild_index`; gate `probe_index_admin`).
-Remaining: version endpoint for the future service; request-level
-pagination fields (Q6).
+(M-Q5: `collection_stats` / `rebuild_index`; gate `probe_index_admin`),
+and the request surface extensions (M-Q6: `SearchRequest` mode
+knn/range, radius, offset/after-id pagination; `SearchBatchRequest` +
+`search_batch_with_request`; gate `probe_search_request`, 24 checks).
+Remaining: version endpoint for the future service.
 
 ### G. Concurrency & scalability -- 25 %
 Done: multi-collection registry (M-D3: named collections with per-
@@ -559,6 +561,16 @@ extraction with the packages lane.
   `probe_index_admin` (20 checks; batteries now 26 probes). F 80 -> 82;
   overall 75.10 -> 75.26 -> 75 %. Evidence: full batteries (suite 171/171
   x2 + 26 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-fifth pass):** M-Q6 request surface extensions --
+  `SearchRequest` gains mode (knn/range), radius (top_k = inclusive-radius
+  limit), and knn offset/after-id pagination (mutually exclusive; filters
+  stay Knn-only; cursor keeps `Err(NotFound)`); `SearchBatchRequest` +
+  `HydratedBatch` + `search_batch_with_request` (ordered, all-or-nothing);
+  dimension/top_k/metric validation unchanged. Gate `probe_search_request`
+  extended 10 -> 24 checks (probe-only; the suite mirror is a standalone
+  re-implementation and stays untouched). F 82 -> 84; overall 75.26 ->
+  75.42 -> 75 %. Evidence: full batteries (suite 171/171 x2 + 26 probes x2
+  + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

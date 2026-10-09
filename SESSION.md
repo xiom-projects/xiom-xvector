@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (44 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (45 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -43,17 +43,19 @@ order; probe_pagination]) -> M-Q4 delete-by-filter [planner-driven
 selective delete (index candidates or scan), per-point WAL, tombstones +
 payload/index cleanup; probe_delete_filter]) -> M-Q5 index admin
 [per-collection stats + admin rebuild_index (before/after/reclaimed);
-probe_index_admin]).
+probe_index_admin]) -> M-Q6 request extensions [SearchRequest mode
+(knn/range) + offset/after-id pagination; SearchBatchRequest +
+search_batch_with_request; probe_search_request extended]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `91d75fa` (feat: M-Q5
-index admin) + this handoff commit. Recent slices: `91d75fa` M-Q5 (index
-admin), `1ea8aa2` M-Q4 wrap, `ac2535e` M-Q4 (delete-by-filter), `4cda576`
-M-Q3 wrap, `32193a2` M-Q3 (pagination), `bd57ac2` M-D4 wrap.
-Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
+**Repo:** private, no pushes; clean tree. HEAD `2647d2f` (feat: M-Q6
+request extensions) + this handoff commit. Recent slices: `2647d2f` M-Q6
+(request extensions), `7014d86` M-Q5 wrap, `91d75fa` M-Q5 (index admin),
+`1ea8aa2` M-Q4 wrap, `ac2535e` M-Q4 (delete-by-filter), `4cda576` M-Q3
+wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
 commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -63,7 +65,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `91d75fa` + this handoff commit | this repo |
+| xvector | `2647d2f` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -415,6 +417,19 @@ commits, DCO `git commit -s`.
   tombstone accounting, rebuild stats/idempotence/search equality vs a
   flat twin, parked-vs-live agreement, set_index transitions,
   compact_index compat, lsn/points movement, recovery consistency).
+- **M-Q6 request extensions (2026-10-09):** `SearchRequest` gains `mode`
+  (`SearchMode.Knn | Range`), `radius` (range mode; `top_k` = inclusive-
+  radius limit), `offset` (knn page ranks) and `after_id` (knn cursor,
+  -1 = none), with setters `set_mode/set_range/set_page/set_after`;
+  defaults are the old plain-knn behavior. Dispatch: Range -> exact range
+  path (hydrated); filters/pagination are Knn-only and rejected loudly in
+  range mode; `offset`+`after_id` mutually exclusive; pagination does not
+  combine with filters yet; cursor keeps `Err(NotFound)`. Batch:
+  `SearchBatchRequest` + `HydratedBatch` + `search_batch_with_request`
+  (one HydratedHits per request, order preserved, all-or-nothing).
+  `probe_search_request` extended to 24 checks (range radii 0.5/1.0
+  inclusive + hydration, range refusals, page/cursor dispatch matching
+  the kernels, mutex + filter refusals, batch order/empty/abort).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -459,6 +474,11 @@ current tree):**
 - **M-Q5 index-admin pass:** suite **171/171 x2** + **26 probes x2** + bench
   smoke (Windows + WSL), ALL GATES GREEN; new `probe_index_admin`
   (20 checks) wired into both batteries; WSL spot x2 bit-identical.
+- **M-Q6 request-extensions pass:** suite **171/171 x2** + **26 probes x2**
+  + bench smoke (Windows + WSL), ALL GATES GREEN; `probe_search_request`
+  extended 10 -> 24 checks (probe-only gate; suite mirror untouched --
+  the mirror is a standalone re-implementation); WSL spot x2
+  bit-identical.
 - All **26 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -528,11 +548,10 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 +
-   M-G2/G3 DONE.** Next per the backlog: Q6 request extensions; then
-   M-S1 server & security, M-O observability. G1 (reference oracle)
-   remains the open M-G item. D5/D6 (delta+fsync, retention) stay gated on
-   the stdlib fsync chain.
+1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6
+   + M-G2/G3 DONE -- the M-Q backlog is complete.** Next: M-G1 reference
+   oracle; then M-S1 server & security, M-O observability. D5/D6
+   (delta+fsync, retention) stay gated on the stdlib fsync chain.
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -700,7 +719,7 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `91d75fa` (feat: M-Q5 index admin) + the handoff
+Orientation: HEAD `2647d2f` (feat: M-Q6 request extensions) + the handoff
 commit; clean tree; `git log --oneline -12` shows the recent slice commits.
 Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 (installed compiler v0.64.2, tag c51170a6).
@@ -708,8 +727,8 @@ Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: Q6 request extensions;
-M-G1 reference oracle; M-S1 HTTP service -> S2 config/limits/
+slice backlog: M-G1 reference oracle;
+M-S1 HTTP service -> S2 config/limits/
 errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
@@ -792,8 +811,11 @@ delete-by-filter (planner-driven index-candidate or scan delete,
 per-point WAL + tombstones + payload/index cleanup; nothing matching ->
 Ok(0); gate `probe_delete_filter`, 26 checks); M-Q5 index admin
 (per-collection stats + `rebuild_index` with build/compact stats; parked
-entries report without switching; gate `probe_index_admin`, 20 checks)
--- 26 probes, suite 171).
+entries report without switching; gate `probe_index_admin`, 20 checks);
+M-Q6 request extensions (SearchRequest mode knn/range + radius + offset/
+after-id pagination; SearchBatchRequest + search_batch_with_request
+ordered all-or-nothing; gate probe_search_request, 24 checks) -- 26
+probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -806,9 +828,9 @@ bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
 NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
-M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-G2/G3 done; next:
-Q6 request extensions; then M-S server/security, M-O observability; G1
-reference oracle pending). Non-gated work proceeds while the stdlib
+M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G2/G3 done --
+the M-Q backlog is complete; next: M-G1 reference oracle; then M-S
+server/security, M-O observability). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
