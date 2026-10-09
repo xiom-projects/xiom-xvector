@@ -279,10 +279,61 @@ fn add_edge(g: &mut HNSWGraph, a: Int, layer: Int, b: Int, metric: DistanceMetri
   g.deg[row] = sel.len();
 }
 
-// Insert a point. Re-inserting an existing id updates the vector in place
-// and revives a tombstoned node (edges are kept; re-linking on update is a
-// hardening TODO). A dimension mismatch (vs the first inserted vector) is
-// ignored; the engine validates dimensions before calling.
+// Beam search + diversified selection for connecting a node on `layer`
+// (read-only; the node itself may appear as its closest candidate and is
+// filtered when edges are applied).
+fn beam_select(g: &mut HNSWGraph, layer: Int, start: Int, ef: Int, nv: &Vector, metric: DistanceMetric) -> Vec[Neighbor] {
+  var cands = search_layer_build(g, nv, start, ef, layer, metric);
+  return select_diverse(g, &cands, g.m, metric);
+}
+
+// Replace `pos`'s adjacency block on `layer` with `sel` (bidirectional
+// edges); the old slots are dropped (degree reset to 0).
+fn apply_layer_edges(g: &mut HNSWGraph, pos: Int, layer: Int, sel: &Vec[Neighbor], metric: DistanceMetric) {
+  var row = adj_row(pos, layer);
+  g.deg[row] = 0;
+  var c: Int = 0;
+  while c < sel.len() {
+    var cid = sel[c].id as Int;
+    if cid != pos {
+      add_edge(g, pos, layer, cid, metric);
+      add_edge(g, cid, layer, pos, metric);
+    }
+    c = c + 1;
+  }
+}
+
+// Refresh the out-edges of an existing node after its vector changed: per
+// layer, beam through the OLD structure, then replace the block with the
+// diversified selection for the new vector. Without this, updates keep
+// stale edges and degrade recall.
+fn refresh_edges(g: &mut HNSWGraph, pos: Int, metric: DistanceMetric) {
+  var lv: Int = g.levels[pos];
+  var nv = g.vectors[pos];
+  var top: Int = g.levels[g.entry];
+  var cur: Int = g.entry;
+  var ef: Int = g.ef_construction;
+  if ef < g.m { ef = g.m; }
+  var l: Int = top;
+  while l > lv {
+    cur = greedy_layer_pos(g, &nv, cur, l, metric);
+    l = l - 1;
+  }
+  var lc: Int = lv;
+  if lc > top { lc = top; }
+  l = lc;
+  while l >= 0 {
+    var sel = beam_select(g, l, cur, ef, &nv, metric);
+    apply_layer_edges(g, pos, l, &sel, metric);
+    if sel.len() > 0 { cur = sel[0].id as Int; }
+    l = l - 1;
+  }
+}
+
+// Insert a point. Re-inserting an existing id updates the vector in place,
+// revives a tombstoned node, and refreshes its edges for the new vector. A
+// dimension mismatch (vs the first inserted vector) is ignored; the engine
+// validates dimensions before calling.
 pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetric) {
   if g.ids.len() > 0 {
     if vec.dimension != g.vectors[0].dimension { return; }
@@ -291,6 +342,7 @@ pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetr
   if existing >= 0 {
     g.vectors[existing] = vec;
     g.deleted[existing] = false;
+    refresh_edges(g, existing, metric);
     return;
   }
   var pos: Int = g.ids.len();
@@ -328,16 +380,9 @@ pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetr
   if ef < g.m { ef = g.m; }
   l = lc;
   while l >= 0 {
-    var cands = search_layer_build(g, &nv, cur, ef, l, metric);
-    var sel = select_diverse(g, &cands, g.m, metric);
-    var c: Int = 0;
-    while c < sel.len() {
-      var cid = sel[c].id as Int;
-      add_edge(g, pos, l, cid, metric);
-      add_edge(g, cid, l, pos, metric);
-      c = c + 1;
-    }
-    if cands.len() > 0 { cur = cands[0].id as Int; }
+    var sel = beam_select(g, l, cur, ef, &nv, metric);
+    apply_layer_edges(g, pos, l, &sel, metric);
+    if sel.len() > 0 { cur = sel[0].id as Int; }
     l = l - 1;
   }
   if lv > top { g.entry = pos; }

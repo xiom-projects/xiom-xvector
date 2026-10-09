@@ -249,6 +249,33 @@ fn main() -> Int {
     ei = ei + 1;
   }
 
+  // --- update path: 60 in-place vector updates with edge refresh ---
+  var u: Int = 1;
+  while u <= 60 {
+    var uc = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut uc);
+    var uv1 = vec_from_coords(&uc);
+    var uv2 = vec_from_coords(&uc);
+    hnsw_insert(&mut graph, u, uv1, DistanceMetric.Euclidean);
+    index_add(&mut flat, u, uv2);
+    u = u + 1;
+  }
+  var hits_upd: Int = 0;
+  var qup: Int = 0;
+  while qup < 20 {
+    var qcu = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut qcu);
+    var qu = vec_from_coords(&qcu);
+    var ou = search_knn(&flat, &qu, k, DistanceMetric.Euclidean);
+    var au = hnsw_search(&graph, &qu, k, 64, DistanceMetric.Euclidean);
+    hits_upd = hits_upd + hit_count(&ou, &au, k);
+    qup = qup + 1;
+  }
+  io.println("    diag after 60 updates: recall@10 ef=64 " + int_to_str(hits_upd) + "/" + int_to_str(20 * k));
+  fails = check(hits_upd * 100 >= 20 * k * 80, "update path: recall >= 0.80 after 60 in-place updates", fails);
+  fails = check(hnsw_size(&graph) == n && hnsw_live_count(&graph) == n,
+    "update path: size/live unchanged (in-place updates)", fails);
+
   // --- cosine sanity: same shape, separate graph ---
   var state2: Int = 246813579;
   var flat2 = index_new(dim);
