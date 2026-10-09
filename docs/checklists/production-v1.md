@@ -35,8 +35,10 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-Q -- Query surface complete
 
-- [ ] Q1 range search: `search_range` engine/facade + request mode; exact on
-  Flat, ANN widening on Hnsw; `probe_range_search` vs brute force
+- [x] Q1 range search **(done 2026-10-09, exact-first)**: `search_range`
+  engine/facade + `search_range_scan` kernel; exact on both index kinds;
+  `probe_range_search` vs brute force. Request range mode folded into Q6;
+  ANN widening deferred to M-P tuning.
 - [ ] Q2 batch ops: `upsert_many`/`search_many`/`delete_many`; amortized WAL;
   `probe_batch_ops` incl. partial-failure semantics
 - [ ] Q3 pagination: stable offset/after-id paging + tie-break documented;

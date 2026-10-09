@@ -142,13 +142,13 @@ Selectivity-based plan choice for filtered search.
   distances and the k-bound are unaffected.
 
 ## `xiom.vector.query.search_service` (extracted module)
-Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `hydrate_hits` (search_range / search_execute pending).
+Implemented today: `SearchResult`/`SearchHits`/`SearchHit`/`HydratedHits` + `search_knn` + `search_knn_filtered` + `search_range_scan` + `hydrate_hits` (search_execute pending).
 `SearchResult { id: Int; distance: Float32 }`.
 - Per-build pin for the Result/Option payload shapes (XVC-C-04): `tests/probes/probe_result_shapes.xi`.
 - `search_knn(idx, query, k, metric)` `requires: k > 0, idx.dim == query.dimension` `ensures: result.len() <= k`.
-- `search_range(idx, query, radius, metric)` `requires: radius > 0.0, idx.dim == query.dimension`.
+- `search_range_scan(idx, query, radius, limit, metric)` `requires: limit > 0, radius >= 0.0, idx.dim == query.dimension` `ensures: result.len() <= limit` -- exact range scan (M-Q1): keeps every `distance <= radius` (inclusive), distance-sorted ascending, bounded by `limit` (the closest ones); runs on the raw store for BOTH index kinds (exact by construction; ANN widening is M-P tuning). A NaN radius yields an empty result.
 - `search_execute(idx, graph, query, k, metric, kind)` -- routes by `AnnIndexKind` (Flat/Ivf -> exact scan, Hnsw -> graph), lowers `Neighbor -> SearchResult`, `ensures: result.len() <= k`.
-- `hydrate_hits(items, payloads, with_payload) -> Vec[SearchHit]` -- attaches metadata when requested (`has_payload=false` + empty payload otherwise); `SearchHit { id; distance; payload; has_payload }`, wrapped as `HydratedHits { items }` for the request path (XVC-C-04 shape). NOTE (compiler XVC-C-08): the trailing `has_payload` field after the Vec-bearing `payload` field can read as garbage in affected compilation units; hydration flags are gated in the real-module probe only.
+- `hydrate_hits(items, payloads, with_payload) -> Vec[SearchHit]` -- attaches metadata when requested (`has_payload=false` + empty payload otherwise); `SearchHit { id; distance; payload; has_payload }`, wrapped as `HydratedHits { items }` for the request path (XVC-C-04 shape). The trailing `has_payload` after the Vec-bearing `payload` field was compiler finding XVC-C-08 (fixed in v0.64.2; the suite asserts the flags again, and the real-module probe stays the independent gate).
 - `filter_results_by_payload(items, payloads, filter) -> Vec[SearchResult]` -- matching subset, order preserved (shared by the flat post-filter plan and the engine's HNSW+filter path).
 
 ## `xiom.vector.collection.schema`
@@ -271,6 +271,7 @@ owns the active collection, the WAL, the payload store, and (when
 - `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
 - `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (`Hnsw`: ANN fetch `ef_search` wide + matching subset, exact flat filtered fallback when under-filled; `Flat`: the planner scan), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
+- `engine_search_range(eng, query, radius, limit) -> Result[SearchHits, CoreError]` `requires: eng.created` -- exact range path (M-Q1): raw-store scan keeping `distance <= radius` (inclusive), distance-sorted ascending, bounded by `limit`; validates dim/limit/radius (negative radius or out-of-range limit -> `InvalidInput`); exact for both index kinds (ANN widening is M-P tuning). Gate `tests/probes/probe_range_search.xi`.
 - `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
 - `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries store, payloads AND the latest collection manifest); LSNs stay monotonic. The latest `ManifestUpdate` record (`[version=1, dim, metric_code, kind_code, m, ef_construction, ef_search]`, logged by create_collection/set_index) governs dim/metric/index kind/params -- including rebuilding an Hnsw graph -- with the caller's dim/metric as the fallback for pre-manifest logs (Flat collection). Malformed manifests are ignored. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
@@ -279,7 +280,7 @@ owns the active collection, the WAL, the payload store, and (when
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
 `create_collection`, `set_index`, `compact_index`, `upsert`, `search`,
 `delete_point`, `get_point`, `set_payload`, `get_payload`,
-`search_filtered`, `search_with_request` -- thin delegations.
+`search_filtered`, `search_range`, `search_with_request` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 

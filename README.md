@@ -84,6 +84,7 @@ src/
 | `get_point(eng, point)` | Fetch a stored vector by id |
 | `set_payload` / `get_payload` | WAL-durable metadata attach/replace and read |
 | `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |
+| `search_range(eng, query, radius, limit)` | Exact range search: every point with `distance <= radius` (inclusive), distance-sorted, at most `limit` items (M-Q1) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
@@ -96,7 +97,7 @@ is zero-cost and stable as public API).
 |-----------|--------|
 | Dense vector math (dot/cosine/euclidean/normalize/...) | [OK] Done |
 | Distance metrics + dispatch | [OK] Done |
-| Flat exact KNN (range surface: plan M-Q1) | [OK] Done |
+| Flat exact KNN + exact range search (M-Q1) | [OK] Done |
 | In-memory HNSW graph (insert + greedy search) | [OK] Done |
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |

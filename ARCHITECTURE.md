@@ -52,7 +52,8 @@ src/
 |                     public facade ONLY -- create_collection, set_index,
 |                     compact_index, upsert, search, delete_point,
 |                     get_point, set_payload, get_payload,
-|                     search_filtered, search_with_request; thin
+|                     search_filtered, search_range, search_with_request;
+|                     thin
 |                     delegation to engine.core (no shims here)          [EXTRACTED]
 |-- engine/
 |   `-- core.xi      module xiom.vector.engine.core
@@ -61,7 +62,8 @@ src/
 |                     engine_compact_index, engine_upsert, engine_search
 |                     (routes Flat/Hnsw), engine_delete,
 |                     engine_set_payload, engine_get_payload,
-|                     engine_search_filtered, engine_search_request,
+|                     engine_search_filtered, engine_search_range,
+|                     engine_search_request,
 |                     engine_get_point, engine_size, engine_durable_lsn,
 |                     engine_recover + the durable collection manifest
 |                     (REAL dispatch to store + graph + WAL
@@ -111,7 +113,7 @@ src/
 |   |-- search_request.xi SearchRequest (query, top_k, metric, filter) [DONE]
 |   |-- filter_plan.xi   selectivity estimates + pre/post plan choice [EXTRACTED]
 |   |-- topk_heap.xi      bounded top-K heap (invariant: <= k)         [DONE]
-|   `-- search_service.xi search_knn / search_knn_filtered (planned)   [EXTRACTED]
+|   `-- search_service.xi search_knn / search_knn_filtered / search_range_scan [EXTRACTED]
 |
 |-- durability/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
@@ -262,6 +264,14 @@ probe only (repro: `docs/repro/xv-trailing-field-vec/`).
 
 Multi-segment fan-out (Phase 5) inserts a step 2a: iterate the collection's live
 segments from the manifest, search each, and merge into the same top-K heap.
+
+Range search (`search_range`, M-Q1) is a separate exact path: a raw-store scan
+keeps every point with `distance <= radius` (inclusive), distance-sorted
+ascending, bounded by `limit` (the caller passes it; `is_valid_top_k` bounds
+it). The index kind does not change the result -- exact by construction for
+both Flat and Hnsw; an ANN-widened variant is M-P tuning, not a correctness
+change. Gate: `tests/probes/probe_range_search.xi` (72 radius x limit combos
+vs a local brute-force scan + boundary/error/reopen checks).
 
 ## 5. Reuse-from-core table
 
