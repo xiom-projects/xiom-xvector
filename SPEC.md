@@ -124,11 +124,16 @@ Selectivity-based plan choice for filtered search.
   to total), Not = `total - exact` when the child is a single predicate,
   otherwise `-1`.
 - `filter_plan_candidates(payloads, expr) -> Vec[Int]` -- exact candidate ids
-  for Eq/Range/Exists (`[]` otherwise; the index plan is chosen only for those).
+  for Eq/Range/Exists, and for And of those (per-clause candidates
+  intersected with a nested membership scan; `[]` otherwise -- the planner
+  only chooses the index for answerable shapes).
+- `filter_index_answerable(expr) -> Bool` -- every leaf predicate is
+  Eq/Range/Exists (`And([])` deliberately not answerable).
 - `choose_filter_plan(payloads, expr, total, k) -> Int` -- `1` = pre-filter
-  scan (default), `2` = post-filter (exact count >= k and a majority; compound
-  shapes via the upper bound, with the scan fallback), `3` = index plan
-  (exact count 0 or < total/4).
+  scan (default), `2` = post-filter (exact count >= k and a majority;
+  compound shapes via the upper bound, with the scan fallback), `3` = index
+  plan (exact count 0 or < total/4; answerable compounds when the upper
+  bound is selective or < k).
 - `search_service.search_knn_filtered` executes the choice: post ranks the
   whole store and keeps the matching subset (provably exact when the subset
   fills k; otherwise falls back to the scan); index resolves each candidate

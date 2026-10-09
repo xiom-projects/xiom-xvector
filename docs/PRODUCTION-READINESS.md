@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-09 (post kill-recovery acceptance)
+- **As of:** 2026-10-09 (post multi-key intersections; E complete)
 - **Overall:** **70 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -27,15 +27,15 @@ the code merely exists. Blockers are named; blocked work still scores.
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 60 | buildable | stdlib fsync gap, file-backed segments, manifest file, file-level kill test |
-| E | Metadata & filtering | 8 | 99 | release-grade | multi-key intersection indexes |
+| E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 82 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x60 + 0.08x99 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x82 + 0.08x48 = **69.56 -> 70 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x60 + 0.08x100 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x82 + 0.08x48 = **69.64 -> 70 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -103,16 +103,16 @@ Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 `docs/STDLIB-WISHLIST-XVECTOR.md`), file-backed segment files, file-backed
 manifest, file-level crash-kill test, WAL retention/pruning policy.
 
-### E. Metadata & filtering -- 99 %
+### E. Metadata & filtering -- 100 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
 integration, durable metadata, filtered probe, sorted key index
 (parallel-vector rows; exists/count/Eq/Range with semantic float compare;
 gate `probe_payload_index`), selectivity planner (exact counts for
 Eq/Range/Exists; pre/post choice + fallback; gate `probe_filter_plan`),
-**compound upper bounds** (And/Or/Not planning) and the **index-driven
-candidate plan** (exact Eq/Range/Exists candidates resolved through the
-store's O(log n) id map).
-Remaining: multi-key intersection indexes (And-of-Eq candidate intersection).
+compound upper bounds (And/Or/Not planning), the index-driven candidate
+plan, and **multi-key intersections** (And of indexable clauses).
+Remaining: none (composite `In` intersections are a possible future
+stretch).
 
 ### F. API & query surface -- 70 %
 Done: facade (create/upsert/search/delete/get + payloads + filtered search),
@@ -367,6 +367,12 @@ extraction with the packages lane.
   Both batteries now run 17 probes. D 58 -> 60, I 80 -> 82; overall
   68.98 -> 70 %. Evidence: full batteries via ci.ps1 / ci.sh (suite x2 +
   17 probes x2, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (twenty-ninth pass):** multi-key intersections -- the index
+  plan serves And of indexable clauses via per-clause candidate
+  intersection; answerable compounds route to the index when the upper
+  bound is selective or < k. Planner probe now 23 checks. E 99 -> 100
+  (phase complete); overall 69.56 -> 70 %. Evidence: full batteries via
+  ci.ps1 / ci.sh, ALL GATES GREEN.
 
 ## Update rule
 
