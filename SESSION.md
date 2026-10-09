@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (27 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (28 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -19,14 +19,14 @@ beam construction + diversified pruning -> HNSW id map [XVC-C-09 found] ->
 shape pins + unwind decision -> HNSW+filter integration -> fuzz gate +
 decoder hardening [XVC-C-10 found] -> mixed-workload soak -> latency metrics
 + release-prep drafts -> upsert fix + index-driven candidates -> durable
-collection manifest -> HNSW update re-linking).
+collection manifest -> HNSW update re-linking -> kill-recovery acceptance).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes. HEAD `de3f6d7` (feat: HNSW update
-re-linking), then this wrap commit. Identity `Lefteris Notas
+**Repo:** private, no pushes. HEAD `5041fc1` (test: kill-recovery
+acceptance), then this wrap commit. Identity `Lefteris Notas
 <lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -36,7 +36,7 @@ re-linking), then this wrap commit. Identity `Lefteris Notas
 | compiler | **v0.64.1** (re-tested 2026-10-08) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | **0.64.2** = `4dd8844` | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | `66a96df8` (NOT consumed yet) | `E:\xiom-packages\packages` |
-| xvector | `de3f6d7` + this wrap commit | this repo |
+| xvector | `5041fc1` + this wrap commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -196,6 +196,13 @@ re-linking), then this wrap commit. Identity `Lefteris Notas
   `apply_layer_edges`, construction behavior-identical). Gate: recall@10
   200/200 after 60 in-place updates vs the flat oracle (`probe_hnsw_recall`,
   size/live unchanged).
+- **Kill-recovery acceptance:** `probe_kill_recovery.xi` proves the crash
+  guarantee at the WAL model level -- for every prefix of a 46-record
+  scripted log, recover(prefix) + apply(record t) == recover(prefix +
+  record t) (store bits, payloads, config); same on the compacted
+  checkpoint log (28 records); full recovery equals the live engine; empty
+  log and corrupt-final-record cases hold. ~120ms; both batteries now run
+  17 probes.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -209,12 +216,13 @@ final extraction wave):**
   in one consumer).
 - `scripts\run-suite.ps1 -Runs 2` -> **168/168 passed** twice, exit 0;
   WSL `bash scripts/run-suite.sh 2 240` -> **168/168 x2**.
-- All **16 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- All **17 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
   `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
-  `probe_fuzz_codecs`, `probe_soak_mixed` (run via `scripts\run-probe.ps1`).
+  `probe_fuzz_codecs`, `probe_soak_mixed`, `probe_kill_recovery` (run via
+  `scripts\run-probe.ps1`).
 - Per-ef tradeoff (n=200, 10 queries each): ef=8 -> 97/100 recall @ 63
   visited; ef=16 -> 100/100 @ 84; ef=32 -> 100/100 @ 126; ef=64 -> 100/100
   @ 171; ef=128 -> 100/100 @ 196; build work 62,129 distance ops.
@@ -266,12 +274,12 @@ final extraction wave):**
 
 The extraction tree is final; what remains is capability work.
 
-1. **Kill-recovery acceptance script (slice 3):** truncate the in-memory
-   WAL at random points, recover, and assert the recovered state equals the
-   surviving prefix exactly; then optional multi-key intersection indexes
-   and the release gate via docs/RELEASE-CHECKLIST.md. M2 stays parked
-   until stdlib fd/fsync lands (still stubs -- re-checked 2026-10-09 wave
-   95).
+1. **WAL model complete; stdlib-gated remains.** Optional: multi-key
+   intersection indexes (And-of-Eq candidate intersection). M2 file-backed
+   WAL + file-level kill test stay parked until stdlib lands
+   fsync/fd-write/append-bytes (re-checked 2026-10-09 wave 95: still
+   stubs). Release: follow docs/RELEASE-CHECKLIST.md when the owner
+   greenlights (batteries: scripts/ci.ps1 / ci.sh, 17 probes).
 2. **M2 file-backed WAL -- standby on stdlib:** the day stdlib lands
    `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
    `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on stdlib 0.64.2 -- verified
@@ -398,7 +406,7 @@ Toolchain (latest-tracking): compiler v0.64.1 on Windows
 in WSL); XIOM_RUNTIME_DIR retired. Dot-source scripts\dev-env.ps1 (and .sh
 twin); scripts\build.ps1/.sh build; scripts\run-suite.* runs the
 conformance suite; scripts\run-probe.* runs probes. Green baseline: suite
-168/168 x2 (Windows + WSL), 16 probes x2 (Windows) + WSL spot.
+168/168 x2 (Windows + WSL), 17 probes x2 (Windows) + WSL spot.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -422,7 +430,8 @@ ef_construction with diversified pruning; sorted id map; XVC-C-04 shape
 pin probe; C-01 bind pin; HNSW+filter integration with exact fallback;
 deterministic fuzz gate + decoder hardening [XVC-C-10 found];
 mixed-workload soak harness; latency metrics + release battery scripts +
-VERSION/checklist).
+VERSION/checklist; durable collection manifest; HNSW update re-linking;
+kill-recovery prefix-exactness acceptance).
 FloatVal gates restored after the v0.64.1 fix. Compiler: XVC-C-01..06
 FIXED; XVC-C-07 OPEN (pass Vec by value to Str::from_utf8); XVC-C-08 OPEN
 (trailing scalar after a Vec-bearing field can read garbage; repro
@@ -433,13 +442,13 @@ bca8b7f); XVC-C-10 OPEN (hnsw_decode inline pad loop segfaults at larger m;
 pad step behind pad_adj_slots + strict bounds; repro
 docs/repro/xv-decode-pad-loop pinned at e0b1f7f).
 
-NEXT TASK (priority 1): E stretch (slice 5) -- multi-key / index-driven
-candidate iteration with planner integration, only if green. Release gate:
-follow docs/RELEASE-CHECKLIST.md when the owner greenlights (batteries are
-scripted: scripts/ci.ps1 / ci.sh). M2 standby until stdlib lands
-fsync/fd-write/append-bytes (still stubs -- re-checked 2026-10-08). Keep
-the wrap discipline: suite x2 (Win+WSL), all 16 probes x2 (Win) + WSL
-spot, signed commits, docs updated.
+NEXT TASK (priority 1): optional multi-key intersection indexes (And-of-Eq
+candidate intersection); M2 file-backed WAL + file-level kill test stay
+parked until stdlib lands fsync/fd-write/append-bytes (re-checked
+2026-10-09 wave 95: still stubs). Release gate: docs/RELEASE-CHECKLIST.md
+when the owner greenlights. Keep the wrap discipline: full batteries
+(scripts/ci.ps1 + ci.sh, suite x2 + 17 probes x2), signed commits, docs
+updated.
 
 Discipline: struct literals list every field; locals initialized; Vec by
 value to Str::from_utf8 (C-07); trailing-scalar reads only in real-module
