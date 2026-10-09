@@ -201,6 +201,12 @@ pub type HydratedHits = {
   items: Vec[SearchHit];
 }
 
+// Batch-request wrapper (M-Q6): one HydratedHits per request, order
+// preserved (same C-04 family rationale as BatchHits).
+pub type HydratedBatch = {
+  sets: Vec[HydratedHits];
+}
+
 // Attach payloads to a result list when `with_payload`; otherwise every hit
 // carries the empty payload and has_payload=false. Payloads are copied out
 // of the store into the hit (no borrowed references escape).

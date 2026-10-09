@@ -112,6 +112,12 @@ pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[Hy
   return engine_search_request(eng, req);
 }
 
+// Batch request search (M-Q6): one hydrated result set per request, order
+// preserved; the first failing request aborts the batch.
+pub fn search_batch_with_request(eng: &VectorEngine, batch: &SearchBatchRequest) -> Result[HydratedBatch, CoreError] {
+  return engine_search_batch_request(eng, batch);
+}
+
 // Persist the whole collection registry to a manifest file (M-D2/D3;
 // whole-file + atomic rename). The registry file is the durable collection
 // registry: `open_engine` consults it first on the next start.
