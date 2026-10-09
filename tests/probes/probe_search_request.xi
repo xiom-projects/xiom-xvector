@@ -188,6 +188,143 @@ fn main() -> Int {
     Err(_) => { fails = check(true, "request(dim=2 on dim=3) -> Err", fails); }
   }
 
+  // ---- M-Q6 extensions: mode / pagination / batch ----
+
+  // 7. Range mode: d1=0, d2~0.006, d3=d4=1.0 (orthogonal).
+  var rq1 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 10, DistanceMetric.Cosine);
+  search_request_set_range(&mut rq1, 0.5);
+  match search_with_request(&eng, &rq1) {
+    Ok(h) => { fails = check(h.items.len() == 2 && h.items[0].id == 1 && h.items[1].id == 2,
+      "range mode: radius 0.5 -> {1,2}", fails); }
+    Err(_) => { fails = check(false, "range mode(0.5) -> Ok", fails); }
+  }
+  var rq2 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 10, DistanceMetric.Cosine);
+  search_request_set_range(&mut rq2, 1.0);
+  search_request_set_with_payload(&mut rq2, true);
+  match search_with_request(&eng, &rq2) {
+    Ok(h) => {
+      var i1r = hit_index(&h.items, 1);
+      fails = check(h.items.len() == 4 && i1r >= 0 && h.items[i1r].has_payload,
+        "range mode: radius 1.0 inclusive -> 4 hits, hydrated", fails);
+    }
+    Err(_) => { fails = check(false, "range mode(1.0) -> Ok", fails); }
+  }
+  var rq3 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 5, DistanceMetric.Cosine);
+  search_request_set_range(&mut rq3, -1.0);
+  match search_with_request(&eng, &rq3) {
+    Ok(_) => { fails = check(false, "range mode: negative radius -> Err", fails); }
+    Err(_) => { fails = check(true, "range mode: negative radius -> Err", fails); }
+  }
+  var rq4 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 5, DistanceMetric.Cosine);
+  search_request_set_range(&mut rq4, 1.0);
+  search_request_set_filter(&mut rq4, filter_eq("color", FieldValue.TextVal("red")));
+  match search_with_request(&eng, &rq4) {
+    Ok(_) => { fails = check(false, "range mode + filter -> Err", fails); }
+    Err(_) => { fails = check(true, "range mode + filter -> Err", fails); }
+  }
+  var rq5 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 5, DistanceMetric.Cosine);
+  search_request_set_range(&mut rq5, 1.0);
+  search_request_set_page(&mut rq5, 1);
+  match search_with_request(&eng, &rq5) {
+    Ok(_) => { fails = check(false, "range mode + pagination -> Err", fails); }
+    Err(_) => { fails = check(true, "range mode + pagination -> Err", fails); }
+  }
+
+  // 8. Offset pagination through the request matches the page kernel.
+  var pref = Vec[Int].new();
+  match search_page(&eng, &mk_vec3(1.0, 0.0, 0.0), 2, 1) {
+    Ok(h) => { var i = 0; while i < h.items.len() { pref.push(h.items[i].id); i = i + 1; } }
+    Err(_) => {}
+  }
+  var pq1 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 2, DistanceMetric.Cosine);
+  search_request_set_page(&mut pq1, 1);
+  var pq_ids = Vec[Int].new();
+  match search_with_request(&eng, &pq1) {
+    Ok(h) => { var i = 0; while i < h.items.len() { pq_ids.push(h.items[i].id); i = i + 1; } }
+    Err(_) => {}
+  }
+  var pq_ok: Bool = pq_ids.len() == pref.len() && pq_ids.len() == 2;
+  if pq_ok {
+    var i = 0;
+    while i < pq_ids.len() {
+      if pq_ids[i] != pref[i] { pq_ok = false; }
+      i = i + 1;
+    }
+  }
+  fails = check(pq_ok, "page mode: request offset matches search_page ranks", fails);
+
+  // 9. After-id cursor through the request matches the cursor kernel.
+  var aref = Vec[Int].new();
+  match search_after(&eng, &mk_vec3(1.0, 0.0, 0.0), 3, 1) {
+    Ok(h) => { var i = 0; while i < h.items.len() { aref.push(h.items[i].id); i = i + 1; } }
+    Err(_) => {}
+  }
+  var aq1 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 3, DistanceMetric.Cosine);
+  search_request_set_after(&mut aq1, 1);
+  var aq_ids = Vec[Int].new();
+  match search_with_request(&eng, &aq1) {
+    Ok(h) => { var i = 0; while i < h.items.len() { aq_ids.push(h.items[i].id); i = i + 1; } }
+    Err(_) => {}
+  }
+  var aq_ok: Bool = aq_ids.len() == aref.len() && aq_ids.len() == 3;
+  if aq_ok {
+    var i = 0;
+    while i < aq_ids.len() {
+      if aq_ids[i] != aref[i] { aq_ok = false; }
+      i = i + 1;
+    }
+  }
+  fails = check(aq_ok, "cursor mode: request after_id matches search_after", fails);
+
+  var aq2 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 3, DistanceMetric.Cosine);
+  search_request_set_after(&mut aq2, 999);
+  match search_with_request(&eng, &aq2) {
+    Ok(_) => { fails = check(false, "cursor mode: unknown after_id -> Err", fails); }
+    Err(_) => { fails = check(true, "cursor mode: unknown after_id -> Err", fails); }
+  }
+  var xq1 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 3, DistanceMetric.Cosine);
+  search_request_set_page(&mut xq1, 1);
+  search_request_set_after(&mut xq1, 1);
+  match search_with_request(&eng, &xq1) {
+    Ok(_) => { fails = check(false, "page + after_id -> Err (mutually exclusive)", fails); }
+    Err(_) => { fails = check(true, "page + after_id -> Err (mutually exclusive)", fails); }
+  }
+  var xq2 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 3, DistanceMetric.Cosine);
+  search_request_set_page(&mut xq2, 1);
+  search_request_set_filter(&mut xq2, filter_eq("color", FieldValue.TextVal("red")));
+  match search_with_request(&eng, &xq2) {
+    Ok(_) => { fails = check(false, "pagination + filter -> Err", fails); }
+    Err(_) => { fails = check(true, "pagination + filter -> Err", fails); }
+  }
+
+  // 10. Batch requests: one set per request, order preserved.
+  var batch1 = search_batch_request_new();
+  search_batch_request_add(&mut batch1, search_request_new(mk_vec3(1.0, 0.0, 0.0), 1, DistanceMetric.Cosine));
+  var bred = search_request_new(mk_vec3(1.0, 0.0, 0.0), 10, DistanceMetric.Cosine);
+  search_request_set_filter(&mut bred, filter_eq("color", FieldValue.TextVal("red")));
+  search_batch_request_add(&mut batch1, bred);
+  fails = check(search_batch_request_len(&batch1) == 2, "batch: two requests registered", fails);
+  match search_batch_with_request(&eng, &batch1) {
+    Ok(b) => {
+      var ok0: Bool = b.sets.len() == 2 && b.sets[0].items.len() == 1 && b.sets[0].items[0].id == 1;
+      var ok1: Bool = b.sets.len() == 2 && b.sets[1].items.len() == 2
+        && b.sets[1].items[0].id == 1 && b.sets[1].items[1].id == 3;
+      fails = check(ok0 && ok1, "batch: sets (plain k=1 {1}, red {1,3}) in order", fails);
+    }
+    Err(_) => { fails = check(false, "batch(2 requests) -> Ok", fails); }
+  }
+  var bempty = search_batch_request_new();
+  match search_batch_with_request(&eng, &bempty) {
+    Ok(_) => { fails = check(false, "batch: empty -> Err", fails); }
+    Err(_) => { fails = check(true, "batch: empty -> Err", fails); }
+  }
+  var bbad = search_batch_request_new();
+  search_batch_request_add(&mut bbad, search_request_new(mk_vec3(1.0, 0.0, 0.0), 1, DistanceMetric.Euclidean));
+  match search_batch_with_request(&eng, &bbad) {
+    Ok(_) => { fails = check(false, "batch: failing request aborts (metric mismatch)", fails); }
+    Err(_) => { fails = check(true, "batch: failing request aborts (metric mismatch)", fails); }
+  }
+
   io.println("");
   io.println("probe_search_request: " + int_to_str(fails) + " failed checks");
   return fails;

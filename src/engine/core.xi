@@ -1008,6 +1008,48 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
   if req.metric != eng.metric {
     return Err(CoreError.InvalidInput("metric mismatch"));
   }
+  // M-Q6 mode dispatch: Range uses top_k as the inclusive-radius limit;
+  // filters and pagination are Knn-only.
+  if req.mode == SearchMode.Range {
+    if search_request_has_filter(req) {
+      return Err(CoreError.InvalidInput("range mode does not support filters"));
+    }
+    if req.offset > 0 || req.after_id >= 0 {
+      return Err(CoreError.InvalidInput("range mode does not support pagination"));
+    }
+    if req.radius < 0.0 {
+      return Err(CoreError.InvalidInput("radius out of range"));
+    }
+    var rres = engine_search_range(eng, &req.query, req.radius, req.top_k);
+    match rres {
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Err(e) => { return Err(e); }
+    }
+  }
+  // M-Q6 pagination dispatch (Knn): after-id cursor or offset ranks.
+  if req.after_id >= 0 {
+    if req.offset > 0 {
+      return Err(CoreError.InvalidInput("offset and after_id are mutually exclusive"));
+    }
+    if search_request_has_filter(req) {
+      return Err(CoreError.InvalidInput("pagination does not support filters"));
+    }
+    var cres = engine_search_after(eng, &req.query, req.top_k, req.after_id);
+    match cres {
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Err(e) => { return Err(e); }
+    }
+  }
+  if req.offset > 0 {
+    if search_request_has_filter(req) {
+      return Err(CoreError.InvalidInput("pagination does not support filters"));
+    }
+    var pres = engine_search_page(eng, &req.query, req.top_k, req.offset);
+    match pres {
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Err(e) => { return Err(e); }
+    }
+  }
   if search_request_has_filter(req) {
     if eng.index_kind == AnnIndexKind.Hnsw {
       var hits0 = hnsw_search_filtered(eng, &req.query, req.top_k, &req.filter[0]);
@@ -1023,6 +1065,26 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
   }
   var hits = search_knn(&eng.store, &req.query, req.top_k, eng.metric);
   return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+}
+
+// Batch request search (M-Q6): validate non-empty, then one dispatch per
+// request (all-or-nothing: the first failing request aborts the batch).
+pub fn engine_search_batch_request(eng: &VectorEngine, batch: &SearchBatchRequest) -> Result[HydratedBatch, CoreError]
+  requires: eng.created
+{
+  if batch.requests.len() == 0 {
+    return Err(CoreError.InvalidInput("empty batch"));
+  }
+  var sets = Vec[HydratedHits].new();
+  var i: Int = 0;
+  while i < batch.requests.len() {
+    match engine_search_request(eng, &batch.requests[i]) {
+      Ok(h) => { sets.push(h); }
+      Err(e) => { return Err(e); }
+    }
+    i = i + 1;
+  }
+  return Ok(HydratedBatch{ sets: sets });
 }
 
 // Point getter used by the facade's `get_point` -- keeps the facade from
