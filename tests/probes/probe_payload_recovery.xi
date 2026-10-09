@@ -66,6 +66,7 @@ fn main() -> Int {
 
   var eng = engine_new();
   create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  let lsn_after_create = engine_durable_lsn(&eng);
   upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
   upsert(&mut eng, 2, mk_vec3(0.9, 0.1, 0.0));
   upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
@@ -80,7 +81,10 @@ fn main() -> Int {
   payload_set(&mut p2, "note", FieldValue.TextVal("hello world"));
   set_payload(&mut eng, 2, p2);
   let lsn_after_sets = engine_durable_lsn(&eng);
-  fails = check(lsn_after_sets == 5, "WAL-before-ack: 3 upserts + 2 payload records (lsn=5)", fails);
+  // create_collection also logs the collection manifest, so count relative
+  // to the post-create LSN captured above (manifest + 3 upserts + 2 sets).
+  fails = check(lsn_after_sets == lsn_after_create + 5,
+    "WAL-before-ack: manifest + 3 upserts + 2 payload records (lsn=create+5)", fails);
 
   // First reopen: payloads restored from the WAL.
   // NOTE: payloads are copied out of the Option into plain locals before any
