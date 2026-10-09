@@ -38,3 +38,18 @@ pub fn ann_index_kind_name(k: &AnnIndexKind) -> Str {
     Ivf => "ivf",
   }
 }
+
+// Stable wire/on-disk codes for the index kind: 1 = Flat, 2 = Hnsw,
+// 3 = Ivf. Shared by the WAL collection-manifest record and the durable
+// manifest file (D2); the codes are part of the on-disk format.
+pub fn ann_kind_code(k: AnnIndexKind) -> Int {
+  if k == AnnIndexKind.Flat { return 1; }
+  if k == AnnIndexKind.Hnsw { return 2; }
+  return 3;
+}
+
+pub fn ann_kind_from_code(c: Int) -> AnnIndexKind {
+  if c == 1 { return AnnIndexKind.Flat; }
+  if c == 2 { return AnnIndexKind.Hnsw; }
+  return AnnIndexKind.Ivf;
+}

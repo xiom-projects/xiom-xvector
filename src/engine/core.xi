@@ -24,6 +24,7 @@ use xiom.vector.payload.filter_ast;
 use xiom.vector.durability.wal;
 use xiom.vector.durability.recovery;
 use xiom.vector.durability.write_ahead_events;
+use xiom.vector.durability.manifest_file;
 
 // ---- VectorEngine ----
 // The flat store is always maintained (source of truth for ids/vectors);
@@ -88,18 +89,6 @@ fn empty_manifest() -> CollectionManifest {
   };
 }
 
-fn metric_code(m: DistanceMetric) -> Int {
-  if m == DistanceMetric.Cosine { return 1; }
-  if m == DistanceMetric.DotProduct { return 2; }
-  return 3;
-}
-
-fn kind_code(k: AnnIndexKind) -> Int {
-  if k == AnnIndexKind.Flat { return 1; }
-  if k == AnnIndexKind.Hnsw { return 2; }
-  return 3;
-}
-
 fn parse_manifest(words: &Vec[Int]) -> CollectionManifest {
   var mf = empty_manifest();
   if words.len() != 7 { return mf; }
@@ -141,11 +130,39 @@ fn log_manifest(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnParams) {
   words.push(1);
   words.push(eng.dimension);
   words.push(metric_code(eng.metric));
-  words.push(kind_code(kind));
+  words.push(ann_kind_code(kind));
   words.push(params.m);
   words.push(params.ef_construction);
   words.push(params.ef_search);
   wal_writer_append_payload(&mut eng.wal, WalOpKind.ManifestUpdate, 0, 0, words);
+}
+
+// A registry entry (manifest file) as the in-WAL CollectionManifest shape, so
+// both recovery sources feed the same apply path.
+fn manifest_from_entry(e: &RegistryEntry) -> CollectionManifest {
+  var mf = empty_manifest();
+  mf.valid = true;
+  mf.dim = e.dim;
+  mf.metric = e.metric;
+  mf.kind = e.kind;
+  mf.m = e.m;
+  mf.ef_construction = e.ef_construction;
+  mf.ef_search = e.ef_search;
+  return mf;
+}
+
+// Persist the active collection's configuration to a manifest file (M-D2):
+// one registry entry (name + dim/metric/index kind/params) written whole-file
+// and swapped in atomically. The caller supplies the collection name until
+// the multi-collection runtime (D3) owns the registry. False when the name /
+// config is invalid or the write fails (target file untouched).
+pub fn engine_manifest_save(eng: &VectorEngine, name: Str, path: Str) -> Bool
+  requires: eng.created
+{
+  var reg = registry_new();
+  var e = registry_entry_new(name, eng.dimension, eng.metric, eng.index_kind, eng.ann);
+  registry_add(&mut reg, e);
+  return manifest_persist(&reg, path);
 }
 
 // Apply an index configuration to the (already created) collection: Hnsw
@@ -504,16 +521,15 @@ pub fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
 }
 
-// Rebuild an engine from its WAL: the latest collection manifest (when
-// present) governs dim/metric/index kind/params -- the caller's dim/metric
-// are the fallback for pre-manifest logs -- then the log replays into a
-// fresh store + payload store, the configured index is applied, and a
-// compacted checkpoint log (inserts + updates + the manifest) is written so
-// the recovered engine is itself recoverable. LSNs stay monotonic.
-pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
+// Shared recovery: the manifest `mf` (when valid) governs dim/metric/index
+// kind/params -- the caller's dim/metric are the fallback for pre-manifest
+// logs -- then the log replays into a fresh store + payload store, the
+// configured index is applied, and a compacted checkpoint log (inserts +
+// updates + the manifest) is written so the recovered engine is itself
+// recoverable. LSNs stay monotonic.
+fn engine_recover_with(w: &WalWriter, dim: Int, metric: DistanceMetric, mf: CollectionManifest) -> VectorEngine
   requires: dim > 0
 {
-  var mf = last_manifest(w);
   var eff_dim: Int = dim;
   var eff_metric: DistanceMetric = metric;
   if mf.valid {
@@ -533,4 +549,28 @@ pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> Vector
   }
   eng.wal = wal_writer_checkpoint_from(w, &eng.store, &eng.payloads);
   return eng;
+}
+
+// Rebuild an engine from its WAL, with the latest in-WAL collection manifest
+// (when present) governing the configuration.
+pub fn engine_recover(w: &WalWriter, dim: Int, metric: DistanceMetric) -> VectorEngine
+  requires: dim > 0
+{
+  return engine_recover_with(w, dim, metric, last_manifest(w));
+}
+
+// Open from disk (M-D2): the manifest file's first registry entry governs the
+// collection config when the file is valid and non-empty (the registry of
+// record); otherwise the in-WAL manifest is the migration fallback (pre-D2
+// logs, or a missing/corrupt file) and finally the caller's dim/metric
+// applies. The WAL itself is replayed and re-checkpointed exactly like
+// engine_recover.
+pub fn engine_recover_file(w: &WalWriter, path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine
+  requires: dim > 0
+{
+  var reg = manifest_load(path);
+  if reg.valid && reg.entries.len() >= 1 {
+    return engine_recover_with(w, dim, metric, manifest_from_entry(&reg.entries[0]));
+  }
+  return engine_recover_with(w, dim, metric, last_manifest(w));
 }

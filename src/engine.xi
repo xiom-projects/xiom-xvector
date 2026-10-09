@@ -15,6 +15,7 @@ use xiom.vector.core.shim;
 use xiom.vector.types.dense_vector;
 use xiom.vector.types.metric;
 use xiom.vector.index.ann_index;
+use xiom.vector.durability.wal;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.query.search_service;
@@ -89,4 +90,19 @@ pub fn search_range(eng: &VectorEngine, query: &Vector, radius: Float32, limit: 
 // The active collection's metric governs (mismatching request metric -> Err).
 pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError] {
   return engine_search_request(eng, req);
+}
+
+// Persist the active collection's configuration to a manifest file (M-D2;
+// whole-file + atomic rename). The registry file is the durable collection
+// registry: `open_engine` consults it first on the next start.
+pub fn save_manifest(eng: &VectorEngine, name: Str, path: Str) -> Bool {
+  return engine_manifest_save(eng, name, path);
+}
+
+// Open an engine from a WAL checkpoint + its manifest file (M-D2). The file's
+// registry entry governs the collection config; the in-WAL manifest is the
+// migration fallback for pre-D2 logs; the caller's dim/metric the last resort.
+// Load the WAL first (`wal_load(path)` then pass the writer).
+pub fn open_engine(w: &WalWriter, path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine {
+  return engine_recover_file(w, path, dim, metric);
 }

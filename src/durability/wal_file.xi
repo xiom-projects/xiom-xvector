@@ -47,13 +47,14 @@ fn code_op(c: Int) -> WalOpKind {
 
 // One parsed integer: value plus the position after it; ok=false when no
 // digits were present at `start` (strict: optional '-', then digits).
+// Shared with the manifest-file codec (D2): both parse byte-level text.
 pub type ParsedInt = {
   value: Int;
   pos: Int;
   ok: Bool;
 }
 
-fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
+pub fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
   var p: Int = start;
   var neg: Bool = false;
   if p < b.len() && b[p] == 45 {
@@ -78,7 +79,8 @@ fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
 // LINEAR: the previous `text = text + ...` builder was O(L^2) in allocations
 // (each intermediate string survives in the runtime's allocator long enough
 // to thrash a large persist; found by the M-G bench at ~150 KB logs).
-fn append_bytes(out: &mut Vec[UInt8], s: Str) {
+// Shared with the manifest-file codec (D2).
+pub fn append_bytes(out: &mut Vec[UInt8], s: Str) {
   var b = slice.str_bytes(s);
   var i: Int = 0;
   while i < b.len() {
