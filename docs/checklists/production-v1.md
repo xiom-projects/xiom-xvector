@@ -57,8 +57,10 @@ needed) -> signed commit. Red build = rejection.
   (`search_page`) + after-id cursor (`search_after`) over the (distance
   asc, id asc) total order; exact tie order by id; exact on Flat and
   Hnsw; `probe_pagination` (22 checks: page consistency + cursor walks)
-- [ ] Q4 delete-by-filter: planner-driven selective delete + WAL + tombstone
-  upkeep; `probe_delete_filter`
+- [x] Q4 delete-by-filter **(done 2026-10-09)**: `engine_delete_filter` /
+  `delete_filter` -- planner-driven (index candidates for Eq/Range/Exists/
+  And, scan for In/Or/Not), per-point WAL + tombstones + payload/index
+  cleanup, Ok(0) on no match; `probe_delete_filter` (26 checks)
 - [ ] Q5 per-collection stats + index admin (`rebuild_index`, build/compact
   stats); `probe_index_admin`
 - [ ] Q6 `SearchRequest` extensions (mode/page/batch) + validation; suite

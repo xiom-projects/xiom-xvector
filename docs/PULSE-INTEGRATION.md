@@ -18,7 +18,9 @@ external **Int id**; batch ops (`upsert_many`/`search_many`/`delete_many`);
 exact Flat scan and HNSW ANN; exact range search
 (`search_range(eng, query, radius, limit)` -- inclusive radius, distance
 sorted); pagination (`search_page` offset + `search_after` after-id cursor
-over the distance/id total order, exact on both index kinds); typed
+over the distance/id total order, exact on both index kinds); selective
+delete-by-filter (`delete_filter` -- typed filter, planner-driven,
+WAL-durable); typed
 payload filters with a selectivity planner; payload
 hydration; whole-file WAL checkpoint + recover. Multi-collection registry:
 `create_named_collection`/`select_collection`/`drop_collection`/

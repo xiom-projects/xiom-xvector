@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 78 | buildable | version endpoint; request-level pagination (Q6) |
+| F | API & query surface | 8 | 80 | buildable | version endpoint; request-level pagination (Q6) |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x78 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **74.94 -> 75 %**.
+0.08x80 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **75.10 -> 75 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -155,7 +155,10 @@ and the multi-collection registry surface (M-D3: `create_named_collection`/
 `collection_count` + whole-registry `save_manifest`; gate
 `probe_collections`), and pagination (M-Q3: `search_page` offset +
 `search_after` after-id cursor over the (distance asc, id asc) total
-order; gate `probe_pagination`).
+order; gate `probe_pagination`), and selective delete-by-filter (M-Q4:
+`delete_filter` -- planner-driven index candidates or scan, WAL-durable
+per point, tombstones + payload/index cleanup; gate
+`probe_delete_filter`).
 Remaining: version endpoint for the future service; request-level
 pagination fields (Q6).
 
@@ -535,6 +538,16 @@ extraction with the packages lane.
   pages after recovery, deleted cursors. F 75 -> 78; overall 74.70 ->
   74.94 -> 75 %. Evidence: full batteries (suite 171/171 x2 + 24 probes
   x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-third pass):** M-Q4 delete-by-filter --
+  `engine_delete_filter` / `delete_filter`: planner-driven selective
+  delete (index candidates for Eq/Range/Exists/And-of-those, each
+  verified; live-store scan for In/Or/Not), ids collected before
+  mutation and applied ascending through the gated single-delete path
+  (per-point WAL, graph tombstones, payload + index cleanup); nothing
+  matching -> Ok(0). Gate `probe_delete_filter` (26 checks; batteries
+  now 25 probes). F 78 -> 80; overall 74.94 -> 75.10 -> 75 %. Evidence:
+  full batteries (suite 171/171 x2 + 25 probes x2 + bench smoke, Windows
+  + WSL), ALL GATES GREEN.
 
 ## Update rule
 

@@ -29,6 +29,10 @@ Import: `use xiom.vector.engine;` + `use xiom.vector.engine.core;` (the
 - Pagination (since M-Q3): `search_page(eng, &query, k, offset)` and
   `search_after(eng, &query, k, after_id)` over the (distance asc, id asc)
   total order; exact on Flat and Hnsw; a deleted cursor -> `Err(NotFound)`.
+- Selective delete (since M-Q4): `delete_filter(eng, &expr)` removes
+  every matching point (planner-driven, WAL-durable, tombstones +
+  payload/index cleanup); nothing matching -> `Ok(0)`. Useful for
+  version-slot cleanup after re-embeds.
 - Checkpoint/recover: `wal_persist(&eng.wal, path)` (atomic whole-file
   checkpoint) + `wal_load(path)` + `engine_recover(&wr, dim, metric)`.
 - Multi-collection registry (since M-D3): `create_named_collection` /
