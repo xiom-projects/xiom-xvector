@@ -253,6 +253,14 @@ and the metadata record. Float32 payloads are fully gated since the v0.64.1
 fix (compiler XVC-C-06); the suite and probes assert float payloads
 bit-exactly per build.
 
+Selective delete (M-Q4): `delete_filter` resolves matching ids (index
+candidates for Eq/Range/Exists/And-of-these, live-store scan otherwise),
+collects them BEFORE mutating (store removal shifts positions), sorts
+ascending for a plan-independent WAL order, and routes each through the
+same single-delete path (WAL record -> store removal -> graph tombstone ->
+payload/index cleanup). The plan choice never changes the durable outcome;
+nothing matching is `Ok(0)`.
+
 ## 3c. Segment path (seal / restore, M-D4)
 
 ```

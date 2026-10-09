@@ -185,8 +185,12 @@ Goal: the single-node query surface a modern DB is expected to have.
   over sorted hits with the (distance asc, id asc) tie-break documented
   (`query.pagination`; engine/facade `search_page`/`search_after`; exact
   on Flat and Hnsw). Gate `probe_pagination` (22 checks).
-- **Q4 delete-by-filter** -- planner-driven selective delete (index plan or
-  scan), WAL-durable, graph tombstones; probe with index/payload cleanup.
+- **Q4 delete-by-filter -- DONE 2026-10-09** -- planner-driven selective
+  delete (index candidates for Eq/Range/Exists/And-of-those, live-store
+  scan for In/Or/Not), WAL-durable per point, graph tombstones, payload +
+  index cleanup; ids collected before mutation + applied ascending (plan-
+  independent WAL); nothing matching -> Ok(0). Gate `probe_delete_filter`
+  (26 checks).
 - **Q5 per-collection stats + index admin** -- size/live counts, index
   kind/params, build/compact stats, `rebuild_index`; probe.
 - **Q6 request surface extensions** -- `SearchRequest` carries
@@ -278,7 +282,7 @@ deep quantization + tiered storage, client SDKs.
 | 5 | Manifest file -- **DONE 2026-10-09** | D2 | `probe_manifest_file` (38 checks) |
 | 6 | Multi-collection -- **DONE 2026-10-09** | D3/FR-1 | `probe_collections` (41 checks) |
 | 7 | Pagination -- **DONE 2026-10-09** | Q3 | `probe_pagination` (22 checks) |
-| 8 | Delete-by-filter | Q4 | `probe_delete_filter` |
+| 8 | Delete-by-filter -- **DONE 2026-10-09** | Q4 | `probe_delete_filter` (26 checks) |
 | 9 | Reference oracle | G1 | `probe_reference_oracle` |
 | 10 | HTTP skeleton + health | S1 | `probe_http_service` |
 | 11 | Config/limits/errors | S2 | service abuse probe |

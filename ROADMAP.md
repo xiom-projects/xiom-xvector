@@ -205,6 +205,9 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
 - [OK] Pagination (M-Q3): `search_page` (offset) + `search_after` (after-id
   cursor) over the (distance asc, id asc) total order; exact on Flat and
   Hnsw; gate `probe_pagination` (22 checks).
+- [OK] Delete-by-filter (M-Q4): `delete_filter` -- planner-driven selective
+  delete (index candidates or scan), WAL-durable per point with tombstones
+  and payload/index cleanup; gate `probe_delete_filter` (26 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;
