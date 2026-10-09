@@ -172,10 +172,13 @@ vector payload is now serialized into the record, so a point can be
 reconstructed on recovery. The WAL is in-memory during operation;
 `durability.wal_file` (`wal_persist`/`wal_load`) persists it as a whole-file
 checkpoint and loads the longest valid record prefix on reopen (torn-tail
-safe). There is still no fsync/append -- the stdlib fd-syscall gap
-(`xiom.os.fs_ffi.fsync` is a documented stub -- see
-`docs/STDLIB-WISHLIST-XVECTOR.md`), so persistence is a checkpoint rewrite at
-quiescent points; the append/fsync delta log remains the M2 step.
+safe). The checkpoint swap is atomic: the text lands in `<path>.tmp` and is
+moved over the target with `io.rename`, so an interrupted persist leaves the
+previous complete file (M-D1 gate `probe_wal_file`). There is still no
+fsync/append -- the stdlib fd-syscall gap (`xiom.os.fs_ffi.fsync` is a
+documented stub -- see `docs/STDLIB-WISHLIST-XVECTOR.md`), so persistence is
+a checkpoint rewrite at quiescent points; the append/fsync delta log remains
+the M2 step.
 
 ## 3a. Recovery path (reopen)
 

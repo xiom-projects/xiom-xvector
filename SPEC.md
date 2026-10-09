@@ -235,19 +235,23 @@ vector**.
   payload set/overwrite, malformed records skipped); `recover_store` returns
   just the store for compatibility. `engine_recover` uses both and checkpoints
   them.
-- `wal_file.xi` (2026-10-09): whole-file persistence on the stdlib APIs
-  available today (`write_file_bytes`/`read_file_bytes`/`file_exists`/
-  `file_size`). `wal_persist(w, path)` writes a text checkpoint (header + one
-  line per record: `lsn op key value timestamp payload_len [words...]`);
-  `wal_load(path)` parses byte-wise -- never as a Str (XVC-C-11) -- and
+- `wal_file.xi` (2026-10-09; atomic since the M-D1 slice): whole-file
+  persistence on the stdlib APIs available today (`write_file_bytes`/
+  `read_file_bytes`/`file_exists`/`file_size`/`rename`). `wal_persist(w,
+  path)` builds the text checkpoint (header + one line per record: `lsn op
+  key value timestamp payload_len [words...]`), writes it to `<path>.tmp`,
+  then swaps it over the target with `io.rename` -- a crash at any point
+  leaves either the previous or the new complete file, never a torn one.
+  `wal_load(path)` parses byte-wise (never as a Str; defense in depth) and
   returns the longest prefix of complete valid records (torn-tail tolerant;
   missing/garbage/empty files -> empty). Reads shorter than the shortest
-  valid WAL are skipped via a `file_size < 25` guard (XVC-C-12; also
-  semantically exact). No fsync/append yet (stdlib gap), so this is a
-  checkpoint rewrite, not a delta log. Gate: `tests/probes/probe_wal_file.xi`
-  (roundtrip equality vs the live WAL, kill/reopen with Hnsw config,
-  overwrite persistence, a 9-point byte-truncation sweep with per-cut prefix
-  checks, record-boundary cuts, missing/garbage/empty files).
+  valid WAL are skipped via a `file_size < 25` guard (also semantically
+  exact). No fsync/append yet (stdlib gap), so this is a checkpoint rewrite,
+  not a delta log. Gate: `tests/probes/probe_wal_file.xi` (roundtrip
+  equality vs the live WAL, kill/reopen with Hnsw config, overwrite
+  persistence, atomic kill-before/during-rename injection, a 9-point
+  byte-truncation sweep with per-cut prefix checks, record-boundary cuts,
+  missing/garbage/empty files).
 
 ## `xiom.vector.core.shim` (extracted module)
 Local `xiom-core` stand-ins, the porter-flow mapping target: `CoreError` (the
