@@ -198,3 +198,33 @@ repro bundle re-run first, then the full batteries. Results:
 No residual reds from this lane. The C-01/C-02/C-04 workarounds stay as
 deliberate choices (public API shape, test-harness style), not compiler
 blockers.
+
+**Addendum 9 (2026-10-09): XVC-C-13 (new, OPEN) -- `&Str` parameter types are unknown to the checker.**
+
+Found while landing M-D2 (manifest file): a helper declared with a
+`name: &Str` parameter compiled with
+
+```
+xiom: warning: unknown type '&Str' -- defaulting to i64. This may produce incorrect code.
+```
+
+and took the i64 fallback path -- `slice.str_bytes` then read no bytes, so
+every collection name validated as invalid and `manifest_persist` refused
+every registry. Minimal repro
+`docs/repro/xv-str-ref-param/probe.xi` (`first_byte("A")`, expect 65):
+**Windows returns 71, WSL returns 127**, both builds emit the warning and
+the probe exits nonzero. No crash observed.
+
+Lane position: every Str parameter in the stdlib and in this lane is
+**by value**, so this shape had never been exercised until the manifest
+codec; the validator now takes `Str` by value (green: suite 171/171 x2 +
+21 probes x2, Windows + WSL). Please make `&Str` a hard type error (or
+implement it) at the next archive; the silently wrong value behind a
+warning is the hazard.
+
+Re-run recipe:
+
+```powershell
+.\scripts\build.ps1 docs\repro\xv-str-ref-param\probe.xi -Name strref
+.\out\strref.exe; "exit=$LASTEXITCODE"        # v0.64.2: prints 71, exit 1
+```

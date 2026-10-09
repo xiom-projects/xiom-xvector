@@ -122,6 +122,7 @@ src/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
 |   |-- recovery.xi       recover_state/store + checkpoint compaction    [EXTRACTED]
 |   |-- wal_file.xi       whole-file persist/load (torn-tail safe)       [NEW 2026-10-09]
+|   |-- manifest_file.xi  collection registry persist/load (temp+rename) [NEW 2026-10-09]
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/
@@ -146,6 +147,8 @@ index.hnsw -> types.{dense_vector, neighbor, metric} + storage.vector_store
 collection/* -> types, index.ann_index, core.shim ids
 segment/* -> storage.vector_store, segment_state, core.shim ids
 payload.filter_eval -> payload.filter_ast -> payload.payload
+durability.manifest_file -> durability.wal_file (shared byte parsers) +
+                            types.metric + index.ann_index (stable codes)
 everything fallible -> core.shim (CoreError; the local stand-in until the
                        xiom.core porter flow maps it onto the package)
 ```
@@ -204,11 +207,17 @@ engine_recover(w, dim, metric)
 
 The checkpoint log alone reconstructs the store and its metadata, so a
 recovered engine is itself recoverable (chained reopen is covered by
-`test_recover_twice` / `test_recover_payloads_chained`); a durable manifest
-will later persist it instead of rebuilding on every open. The file-backed
-reopen path is `wal_load(path)` -> `engine_recover`: load the longest
-complete-record prefix of a persisted checkpoint, then replay it (kill/reopen
-equality gated by `tests/probes/probe_wal_file.xi`).
+`test_recover_twice` / `test_recover_payloads_chained`). The durable
+collection registry now travels in `durability.manifest_file` (M-D2):
+`engine_manifest_save` persists the live config (name / dim / metric /
+index kind / ANN params) whole-file and atomically; `engine_recover_file`
+(facade `open_engine`) prefers the file registry, falls back to the in-WAL
+manifest (migration for pre-D2 logs, missing or corrupt files), then the
+caller's dim/metric. The file-backed reopen path remains `wal_load(path)`
+-> `engine_recover`: load the longest complete-record prefix of a persisted
+checkpoint, then replay it (kill/reopen equality gated by
+`tests/probes/probe_wal_file.xi`; the registry matrix by
+`tests/probes/probe_manifest_file.xi`).
 
 ## 3b. Metadata write path (payloads)
 
