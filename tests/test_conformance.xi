@@ -74,6 +74,11 @@ pub type SearchHits = {
   items: Vec[SearchResult];
 }
 
+// Batch-search mirror (M-Q2): one result set per query, order preserved.
+pub type BatchHits = {
+  sets: Vec[SearchHits];
+}
+
 // Hydrated hit mirroring query/search_service.xi (SearchRequest.with_payload).
 // XVC-C-08 (the trailing has_payload after the Vec-bearing payload field read
 // as garbage in this unit) is FIXED in compiler v0.64.2; the suite asserts
@@ -691,6 +696,54 @@ fn engine_delete(eng: &mut VectorEngine, point: Int) -> Bool {
   payload_store_remove(&mut eng.payloads, point);
   counter_inc(&mut eng.deletes);
   return ok;
+}
+
+// ---- Batch ops (mirrors engine.core; M-Q2) ----
+fn engine_upsert_many(eng: &mut VectorEngine, ids: &Vec[Int], vecs: &Vec[Vector]) -> Result[Int, CoreError] {
+  if ids.len() == 0 { return Err(CoreError{ case: 1, msg: "empty batch" }); }
+  if ids.len() != vecs.len() { return Err(CoreError{ case: 1, msg: "batch length mismatch" }); }
+  var i: Int = 0;
+  while i < vecs.len() {
+    if vecs[i].dimension != eng.dimension { return Err(CoreError{ case: 1, msg: "dimension mismatch" }); }
+    i = i + 1;
+  }
+  i = 0;
+  while i < ids.len() {
+    if !engine_upsert(eng, ids[i], vecs[i]) { return Err(CoreError{ case: 1, msg: "upsert failed" }); }
+    i = i + 1;
+  }
+  return Ok(ids.len());
+}
+
+fn engine_delete_many(eng: &mut VectorEngine, ids: &Vec[Int]) -> Result[Int, CoreError] {
+  if ids.len() == 0 { return Err(CoreError{ case: 1, msg: "empty batch" }); }
+  var removed: Int = 0;
+  var i: Int = 0;
+  while i < ids.len() {
+    if engine_delete(eng, ids[i]) { removed = removed + 1; }
+    i = i + 1;
+  }
+  return Ok(removed);
+}
+
+fn engine_search_many(eng: &VectorEngine, queries: &Vec[Vector], k: Int) -> Result[BatchHits, CoreError] {
+  if queries.len() == 0 { return Err(CoreError{ case: 1, msg: "empty batch" }); }
+  if !is_valid_top_k(k) { return Err(CoreError{ case: 1, msg: "top_k out of range" }); }
+  var i: Int = 0;
+  while i < queries.len() {
+    if queries[i].dimension != eng.dimension { return Err(CoreError{ case: 1, msg: "dimension mismatch" }); }
+    i = i + 1;
+  }
+  var sets = Vec[SearchHits].new();
+  i = 0;
+  while i < queries.len() {
+    match engine_search(eng, &queries[i], k) {
+      Ok(h) => { sets.push(h); }
+      Err(e) => { return Err(e); }
+    }
+    i = i + 1;
+  }
+  return Ok(BatchHits{ sets: sets });
 }
 
 // ---- Payload metadata + filtered search (mirrors engine.xi) ----
@@ -2092,6 +2145,61 @@ fn test_range_search_basic() -> TestResult {
   if exact.len() != 1 { return assert(false, "range: radius 0 keeps only exact matches"); }
   if exact[0].id != 1 { return assert(false, "range: radius 0 exact id"); }
   return assert(true, "range scan: inclusive radius, sorted, bounded");
+}
+
+fn test_batch_ops_basic() -> TestResult {
+  var eng = engine_new();
+  let _cid = engine_create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  var ids = Vec[Int].new();
+  ids.push(1); ids.push(2); ids.push(3);
+  var vecs = Vec[Vector].new();
+  vecs.push(mk_vec3(1.0, 0.0, 0.0));
+  vecs.push(mk_vec3(0.0, 1.0, 0.0));
+  vecs.push(mk_vec3(0.0, 0.0, 1.0));
+  match engine_upsert_many(&mut eng, &ids, &vecs) {
+    Ok(n) => { if n != 3 { return assert(false, "batch upsert: returns 3"); } }
+    Err(_) => { return assert(false, "batch upsert: Ok expected"); }
+  }
+  if engine_size(&eng) != 3 { return assert(false, "batch upsert: size 3"); }
+  // All-or-nothing: one bad dimension -> nothing applied.
+  var badids = Vec[Int].new();
+  badids.push(10); badids.push(11);
+  var badvecs = Vec[Vector].new();
+  badvecs.push(mk_vec3(1.0, 0.0, 0.0));
+  badvecs.push(vector_new(2));
+  match engine_upsert_many(&mut eng, &badids, &badvecs) {
+    Ok(_) => { return assert(false, "batch upsert: bad dim rejected"); }
+    Err(_) => {}
+  }
+  if engine_size(&eng) != 3 { return assert(false, "batch upsert: all-or-nothing"); }
+  // Batch search: order preserved, k bounded.
+  var qs = Vec[Vector].new();
+  qs.push(mk_vec3(1.0, 0.0, 0.0));
+  qs.push(mk_vec3(0.0, 1.0, 0.0));
+  match engine_search_many(&eng, &qs, 1) {
+    Ok(b) => {
+      if b.sets.len() != 2 { return assert(false, "batch search: 2 sets"); }
+      if b.sets[0].items.len() != 1 || b.sets[0].items[0].id != 1 { return assert(false, "batch search: set 0 -> id 1"); }
+      if b.sets[1].items.len() != 1 || b.sets[1].items[0].id != 2 { return assert(false, "batch search: set 1 -> id 2"); }
+    }
+    Err(_) => { return assert(false, "batch search: Ok expected"); }
+  }
+  // Batch delete: missing ids skipped, count = actual removals.
+  var del = Vec[Int].new();
+  del.push(1); del.push(99); del.push(2);
+  match engine_delete_many(&mut eng, &del) {
+    Ok(n) => { if n != 2 { return assert(false, "batch delete: 2 removed"); } }
+    Err(_) => { return assert(false, "batch delete: Ok expected"); }
+  }
+  if engine_size(&eng) != 1 { return assert(false, "batch delete: size 1"); }
+  // Empty batches rejected.
+  var eids = Vec[Int].new();
+  var evecs = Vec[Vector].new();
+  match engine_upsert_many(&mut eng, &eids, &evecs) {
+    Ok(_) => { return assert(false, "batch upsert: empty rejected"); }
+    Err(_) => {}
+  }
+  return assert(true, "batch ops: upsert/search/delete + all-or-nothing");
 }
 
 fn test_flat_search_exact_top1() -> TestResult {
@@ -4393,6 +4501,7 @@ fn main() -> Int {
   failed = failed + run_one_test(test_flat_search_ordered()); total = total + 1;
   failed = failed + run_one_test(test_flat_search_all_metrics()); total = total + 1;
   failed = failed + run_one_test(test_range_search_basic()); total = total + 1;
+  failed = failed + run_one_test(test_batch_ops_basic()); total = total + 1;
 
   // SECTION 6: Segment management
   failed = failed + run_one_test(test_segment_new()); total = total + 1;

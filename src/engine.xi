@@ -40,6 +40,21 @@ pub fn upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, C
   return engine_upsert(eng, point, vec);
 }
 
+// Batch ops (M-Q2): all-or-nothing validation per call; see engine.core for
+// the exact semantics (upsert returns records applied; delete returns points
+// actually removed; search returns one result set per query in order).
+pub fn upsert_many(eng: &mut VectorEngine, ids: &Vec[Int], vecs: &Vec[Vector]) -> Result[Int, CoreError] {
+  return engine_upsert_many(eng, ids, vecs);
+}
+
+pub fn delete_many(eng: &mut VectorEngine, ids: &Vec[Int]) -> Result[Int, CoreError] {
+  return engine_delete_many(eng, ids);
+}
+
+pub fn search_many(eng: &VectorEngine, queries: &Vec[Vector], k: Int) -> Result[BatchHits, CoreError] {
+  return engine_search_many(eng, queries, k);
+}
+
 pub fn search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError] {
   return engine_search(eng, query, k);
 }

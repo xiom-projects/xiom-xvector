@@ -283,6 +283,92 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
   return Ok(ok);
 }
 
+// Batch upsert (M-Q2): all-or-nothing per call. The whole batch is validated
+// BEFORE anything is applied (non-empty, equal lengths, every vector matches
+// the collection dimension), then each point goes through the same
+// WAL-before-ack path as engine_upsert. Returns the number of records
+// applied (duplicate ids collapse in the store, like single upserts).
+pub fn engine_upsert_many(eng: &mut VectorEngine, ids: &Vec[Int], vecs: &Vec[Vector]) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  if ids.len() == 0 {
+    return Err(CoreError.InvalidInput("empty batch"));
+  }
+  if ids.len() != vecs.len() {
+    return Err(CoreError.InvalidInput("batch length mismatch"));
+  }
+  var i: Int = 0;
+  while i < vecs.len() {
+    if vecs[i].dimension != eng.dimension {
+      return Err(CoreError.InvalidInput("dimension mismatch"));
+    }
+    i = i + 1;
+  }
+  i = 0;
+  while i < ids.len() {
+    match engine_upsert(eng, ids[i], vecs[i]) {
+      Ok(_) => {}
+      Err(e) => { return Err(e); }
+    }
+    i = i + 1;
+  }
+  return Ok(ids.len());
+}
+
+// Batch delete (M-Q2): idempotent per id (missing ids are skipped, not an
+// error); returns the number of points actually removed. Empty batches are
+// rejected loudly.
+pub fn engine_delete_many(eng: &mut VectorEngine, ids: &Vec[Int]) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  if ids.len() == 0 {
+    return Err(CoreError.InvalidInput("empty batch"));
+  }
+  var removed: Int = 0;
+  var i: Int = 0;
+  while i < ids.len() {
+    match engine_delete(eng, ids[i]) {
+      Ok(ok) => { if ok { removed = removed + 1; } }
+      Err(e) => { return Err(e); }
+    }
+    i = i + 1;
+  }
+  return Ok(removed);
+}
+
+// Batch search (M-Q2): one result set per query, order preserved.
+// All-or-nothing validation (non-empty, k in range, every query dimension
+// matches) happens before any search runs. Returns `BatchHits` (struct
+// wrapper; a Result whose payload is a Vec of Vec-bearing structs is the
+// XVC-C-04/C-08 shape family).
+pub fn engine_search_many(eng: &VectorEngine, queries: &Vec[Vector], k: Int) -> Result[BatchHits, CoreError]
+  requires: eng.created
+{
+  if queries.len() == 0 {
+    return Err(CoreError.InvalidInput("empty batch"));
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  var i: Int = 0;
+  while i < queries.len() {
+    if queries[i].dimension != eng.dimension {
+      return Err(CoreError.InvalidInput("dimension mismatch"));
+    }
+    i = i + 1;
+  }
+  var sets = Vec[SearchHits].new();
+  i = 0;
+  while i < queries.len() {
+    match engine_search(eng, &queries[i], k) {
+      Ok(h) => { sets.push(h); }
+      Err(e) => { return Err(e); }
+    }
+    i = i + 1;
+  }
+  return Ok(BatchHits{ sets: sets });
+}
+
 // Attach/replace metadata for an existing point (WAL-before-ack: the encoded
 // payload record is appended before the in-memory store is touched).
 // Returns Ok(false) when the point does not exist (payloads never outlive
