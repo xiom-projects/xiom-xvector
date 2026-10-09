@@ -181,8 +181,10 @@ Goal: the single-node query surface a modern DB is expected to have.
   `probe_batch_ops`. (Records are WAL-appended per point; an amortized
   batch-record format is a D5-era option, not required by the current
   semantics.)
-- **Q3 pagination** -- stable `offset`/`after_id` paging over sorted hits
-  with distance tie-breaking documented; probe for page consistency.
+- **Q3 pagination -- DONE 2026-10-09** -- stable `offset`/`after_id` paging
+  over sorted hits with the (distance asc, id asc) tie-break documented
+  (`query.pagination`; engine/facade `search_page`/`search_after`; exact
+  on Flat and Hnsw). Gate `probe_pagination` (22 checks).
 - **Q4 delete-by-filter** -- planner-driven selective delete (index plan or
   scan), WAL-durable, graph tombstones; probe with index/payload cleanup.
 - **Q5 per-collection stats + index admin** -- size/live counts, index
@@ -275,7 +277,7 @@ deep quantization + tiered storage, client SDKs.
 | 4 | Benchmark harness + baseline | G2/G3 | `bench.ps1/bench.sh` green; `docs/BENCHMARKS.md` committed -- **DONE 2026-10-09** |
 | 5 | Manifest file -- **DONE 2026-10-09** | D2 | `probe_manifest_file` (38 checks) |
 | 6 | Multi-collection -- **DONE 2026-10-09** | D3/FR-1 | `probe_collections` (41 checks) |
-| 7 | Pagination | Q3 | `probe_pagination` |
+| 7 | Pagination -- **DONE 2026-10-09** | Q3 | `probe_pagination` (22 checks) |
 | 8 | Delete-by-filter | Q4 | `probe_delete_filter` |
 | 9 | Reference oracle | G1 | `probe_reference_oracle` |
 | 10 | HTTP skeleton + health | S1 | `probe_http_service` |

@@ -53,8 +53,10 @@ needed) -> signed commit. Red build = rejection.
 - [x] Q2 batch ops **(done 2026-10-09)**: `upsert_many`/`search_many`/
   `delete_many` + `BatchHits`; all-or-nothing validation; `probe_batch_ops`
   (14 checks) + suite mirror
-- [ ] Q3 pagination: stable offset/after-id paging + tie-break documented;
-  `probe_pagination` (page consistency)
+- [x] Q3 pagination **(done 2026-10-09)**: `query.pagination` -- offset
+  (`search_page`) + after-id cursor (`search_after`) over the (distance
+  asc, id asc) total order; exact tie order by id; exact on Flat and
+  Hnsw; `probe_pagination` (22 checks: page consistency + cursor walks)
 - [ ] Q4 delete-by-filter: planner-driven selective delete + WAL + tombstone
   upkeep; `probe_delete_filter`
 - [ ] Q5 per-collection stats + index admin (`rebuild_index`, build/compact

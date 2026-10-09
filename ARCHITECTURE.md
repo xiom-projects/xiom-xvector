@@ -117,7 +117,8 @@ src/
 |   |-- search_request.xi SearchRequest (query, top_k, metric, filter) [DONE]
 |   |-- filter_plan.xi   selectivity estimates + pre/post plan choice [EXTRACTED]
 |   |-- topk_heap.xi      bounded top-K heap (invariant: <= k)         [DONE]
-|   `-- search_service.xi search_knn / search_knn_filtered / search_range_scan [EXTRACTED]
+|   |-- search_service.xi search_knn / search_knn_filtered / search_range_scan [EXTRACTED]
+|   `-- pagination.xi     offset + after-id kernels over (distance, id) [NEW 2026-10-09]
 |
 |-- durability/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
@@ -311,6 +312,13 @@ api.search
         5. (Phase 3) hydrate: attach payloads when with_payload = true
         6. return Ok(SearchHits{ items }) (items.len() <= k, guaranteed)
 ```
+
+Pagination (M-Q3, `query/pagination.xi`): `search_page`/`search_after`
+re-rank through the same raw-store scans under the total order
+**(distance asc, id asc)** -- page slices reconstruct the ordered result
+set, exact ties come back id-ascending, and the after-id cursor is the
+live vector of the last seen id (a deleted cursor is `Err(NotFound)`).
+Exact on Flat AND Hnsw; ANN widening stays M-P tuning.
 
 `SearchHits` is a struct wrapper around the result Vec: it was introduced
 because on v0.64.0 a `Result[Vec[non-scalar], E]` payload lost element

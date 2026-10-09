@@ -66,7 +66,7 @@ src/
 |-- segment/                  segment_state - segment - manifest - segment_file (sealed codec)
 |-- index/                    ann_index - flat_index - hnsw (+ codec, recall harness)
 |-- distance/                 cosine - dot - l2
-|-- query/                    search_request - filter_plan - topk_heap - search_service
+|-- query/                    search_request - filter_plan - topk_heap - search_service - pagination
 |-- durability/               wal - recovery - write_ahead_events - wal_file - manifest_file
 `-- api/                      vector_api (merged stub; facade lives in engine.xi)
 ```
@@ -90,6 +90,8 @@ src/
 | `set_payload` / `get_payload` | WAL-durable metadata attach/replace and read |
 | `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |
 | `search_range(eng, query, radius, limit)` | Exact range search: every point with `distance <= radius` (inclusive), distance-sorted, at most `limit` items (M-Q1) |
+| `search_page(eng, query, k, offset)` | Offset pagination: ranks [offset, offset+k) of the (distance asc, id asc) total order; exact on Flat and Hnsw (M-Q3) |
+| `search_after(eng, query, k, after_id)` | Cursor pagination: the next k ranks strictly after `after_id` (live vector as cursor; `Err(NotFound)` when it no longer exists) (M-Q3) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
 | `save_manifest(eng, path)` | Persist the whole collection registry (one entry per collection: name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2/D3) |
 | `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry entries override per-collection configs by name; the in-WAL manifests are the migration fallback (M-D2/D3) |

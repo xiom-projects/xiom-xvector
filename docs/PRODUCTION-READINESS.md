@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 75 | buildable | pagination, version endpoint |
+| F | API & query surface | 8 | 78 | buildable | version endpoint; request-level pagination (Q6) |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x75 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **74.70 -> 75 %**.
+0.08x78 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **74.94 -> 75 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -153,8 +153,11 @@ discipline, SearchHits/BatchHits shapes documented, SearchRequest wire
 and the multi-collection registry surface (M-D3: `create_named_collection`/
 `select_collection`/`drop_collection`/`list_collections`/
 `collection_count` + whole-registry `save_manifest`; gate
-`probe_collections`).
-Remaining: pagination, version endpoint for the future service.
+`probe_collections`), and pagination (M-Q3: `search_page` offset +
+`search_after` after-id cursor over the (distance asc, id asc) total
+order; gate `probe_pagination`).
+Remaining: version endpoint for the future service; request-level
+pagination fields (Q6).
 
 ### G. Concurrency & scalability -- 25 %
 Done: multi-collection registry (M-D3: named collections with per-
@@ -483,6 +486,22 @@ extraction with the packages lane.
   (`scripts/build.ps1` + `images/xvector-icon.ico`). I 84 -> 86; overall
   71.26 -> 71.44 -> 71 %. Evidence: full batteries (suite 171/171 x2 + 20
   probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (thirty-ninth pass):** M-D2 manifest file -- new
+  `durability.manifest_file` (`xvector-manifest 1` text registry: one line
+  per collection `name dim mc kc m efc efs`; whole-file persist with atomic
+  temp+rename; invalid entries refused with the target untouched;
+  torn-tail-safe byte-level load with a complete-entry prefix; names 1..64
+  chars of `[A-Za-z0-9_.-]`). Engine: `engine_manifest_save` +
+  `engine_recover_file` (facade `save_manifest`/`open_engine`) -- the file
+  registry governs and the in-WAL manifest is the migration fallback
+  (shared private `engine_recover_with`). Stable metric/kind codes moved to
+  the leaf modules; wal_file byte helpers shared (`parse_int_at`,
+  `append_bytes`). New compiler finding **XVC-C-13** (`&Str` params
+  mislower to i64; repro `docs/repro/xv-str-ref-param/`, relay Addendum 9).
+  Probe `probe_manifest_file` (38 checks; both batteries now 21 probes).
+  D 65 -> 68; overall 71.44 -> 72.04 -> 72 %. Evidence: full batteries
+  (suite 171/171 x2 + 21 probes x2 + bench smoke, Windows + WSL), ALL GATES
+  GREEN.
 - **2026-10-09 (fortieth pass):** M-D3 multi-collection registry -- named
   collections (create/select/drop/list; facade + engine), per-collection
   isolation of stores/payloads/index configs, WAL ManifestUpdate v2 config
@@ -505,22 +524,17 @@ extraction with the packages lane.
   batteries now 23 probes). D 68 -> 73; overall 73.70 -> 74.70 -> 75 %.
   Evidence: full batteries (suite 171/171 x2 + 23 probes x2 + bench smoke,
   Windows + WSL), ALL GATES GREEN.
-- **2026-10-09 (thirty-ninth pass):** M-D2 manifest file -- new
-  `durability.manifest_file` (`xvector-manifest 1` text registry: one line
-  per collection `name dim mc kc m efc efs`; whole-file persist with atomic
-  temp+rename; invalid entries refused with the target untouched;
-  torn-tail-safe byte-level load with a complete-entry prefix; names 1..64
-  chars of `[A-Za-z0-9_.-]`). Engine: `engine_manifest_save` +
-  `engine_recover_file` (facade `save_manifest`/`open_engine`) -- the file
-  registry governs and the in-WAL manifest is the migration fallback
-  (shared private `engine_recover_with`). Stable metric/kind codes moved to
-  the leaf modules; wal_file byte helpers shared (`parse_int_at`,
-  `append_bytes`). New compiler finding **XVC-C-13** (`&Str` params
-  mislower to i64; repro `docs/repro/xv-str-ref-param/`, relay Addendum 9).
-  Probe `probe_manifest_file` (38 checks; both batteries now 21 probes).
-  D 65 -> 68; overall 71.44 -> 72.04 -> 72 %. Evidence: full batteries
-  (suite 171/171 x2 + 21 probes x2 + bench smoke, Windows + WSL), ALL GATES
-  GREEN.
+- **2026-10-09 (forty-second pass):** M-Q3 pagination -- new
+  `query.pagination` (offset + after-id kernels over the (distance
+  ascending, id ascending) total order; bounded collector with the id
+  tie-break), engine/facade `search_page` / `search_after` (missing
+  cursor -> `Err(NotFound)`; exact on Flat AND Hnsw). Gate
+  `probe_pagination` (22 checks; batteries now 24 probes): page
+  reconstruction without gaps/dupes, exact tie clusters id-ascending,
+  cursor walks across tie boundaries, refusals, Flat/Hnsw bit-parity,
+  pages after recovery, deleted cursors. F 75 -> 78; overall 74.70 ->
+  74.94 -> 75 %. Evidence: full batteries (suite 171/171 x2 + 24 probes
+  x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

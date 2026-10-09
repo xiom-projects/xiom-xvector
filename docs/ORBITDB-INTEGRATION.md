@@ -26,6 +26,9 @@ Import: `use xiom.vector.engine;` + `use xiom.vector.engine.core;` (the
 - `Vector{ data: Vec[Float32]; dimension: Int }` via `Vector.new(dim)` +
   `set(i, v)`; dims `1..=65536`; metrics `Cosine | DotProduct | Euclidean`;
   **distances smaller-is-better** (cosine = `1 - cos`).
+- Pagination (since M-Q3): `search_page(eng, &query, k, offset)` and
+  `search_after(eng, &query, k, after_id)` over the (distance asc, id asc)
+  total order; exact on Flat and Hnsw; a deleted cursor -> `Err(NotFound)`.
 - Checkpoint/recover: `wal_persist(&eng.wal, path)` (atomic whole-file
   checkpoint) + `wal_load(path)` + `engine_recover(&wr, dim, metric)`.
 - Multi-collection registry (since M-D3): `create_named_collection` /
