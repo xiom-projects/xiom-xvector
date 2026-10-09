@@ -31,6 +31,7 @@ probes=(
   probe_kill_recovery
   probe_wal_file
   probe_manifest_file
+  probe_collections
   probe_range_search
   probe_batch_ops
 )

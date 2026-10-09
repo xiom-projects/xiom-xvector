@@ -92,17 +92,46 @@ pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[Hy
   return engine_search_request(eng, req);
 }
 
-// Persist the active collection's configuration to a manifest file (M-D2;
+// Persist the whole collection registry to a manifest file (M-D2/D3;
 // whole-file + atomic rename). The registry file is the durable collection
 // registry: `open_engine` consults it first on the next start.
-pub fn save_manifest(eng: &VectorEngine, name: Str, path: Str) -> Bool {
-  return engine_manifest_save(eng, name, path);
+pub fn save_manifest(eng: &mut VectorEngine, path: Str) -> Bool {
+  return engine_manifest_save(eng, path);
 }
 
-// Open an engine from a WAL checkpoint + its manifest file (M-D2). The file's
-// registry entry governs the collection config; the in-WAL manifest is the
-// migration fallback for pre-D2 logs; the caller's dim/metric the last resort.
-// Load the WAL first (`wal_load(path)` then pass the writer).
+// Open an engine from a WAL checkpoint + its manifest file (M-D2/D3). The
+// file's registry entries override collection configs by name; the in-WAL
+// manifests are the migration fallback (pre-D2 logs, missing names); the
+// caller's dim/metric the last resort. Load the WAL first (`wal_load(path)`
+// then pass the writer).
 pub fn open_engine(w: &WalWriter, path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine {
   return engine_recover_file(w, path, dim, metric);
+}
+
+// ---- Multi-collection registry (M-D3) ----
+
+// Create a named collection (empty) and make it active. Rejects invalid or
+// duplicate names and invalid dimensions.
+pub fn create_named_collection(eng: &mut VectorEngine, name: Str, dim: Int, metric: DistanceMetric) -> Result[CollectionId, CoreError] {
+  return engine_create_named(eng, name, dim, metric);
+}
+
+// Make a named collection active (no-op when it already is).
+pub fn select_collection(eng: &mut VectorEngine, name: Str) -> Result[Bool, CoreError] {
+  return engine_select(eng, name);
+}
+
+// Drop a named collection (WAL-durable; the active view moves to the first
+// remaining collection, or the engine is left ready for a fresh create).
+pub fn drop_collection(eng: &mut VectorEngine, name: Str) -> Result[Bool, CoreError] {
+  return engine_drop(eng, name);
+}
+
+// Collection names in creation order.
+pub fn list_collections(eng: &VectorEngine) -> CollectionList {
+  return engine_list_collections(eng);
+}
+
+pub fn collection_count(eng: &VectorEngine) -> Int {
+  return engine_collection_count(eng);
 }
