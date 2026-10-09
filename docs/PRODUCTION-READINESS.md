@@ -8,8 +8,8 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-09 (post HNSW update re-linking)
-- **Overall:** **68 %** (weighted; see method)
+- **As of:** 2026-10-09 (post kill-recovery acceptance)
+- **Overall:** **70 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -26,16 +26,16 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 58 | buildable | stdlib fsync gap, file-backed segments, manifest file, kill-recovery test |
+| D | Persistence & durability | 20 | 60 | buildable | stdlib fsync gap, file-backed segments, manifest file, file-level kill test |
 | E | Metadata & filtering | 8 | 99 | release-grade | multi-key intersection indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 80 | release-grade | kill-recovery, reference oracle, CI |
+| I | Testing & verification | 9 | 82 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x58 + 0.08x99 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.98 -> 69 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x60 + 0.08x99 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x82 + 0.08x48 = **69.56 -> 70 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -91,14 +91,17 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 58 %
+### D. Persistence & durability -- 60 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
-kind/params survive recover and checkpoints; malformed/legacy fall back).
+kind/params survive recover and checkpoints; malformed/legacy fall back),
+**kill-recovery acceptance** (prefix exactness at the WAL model level:
+recover(prefix) + apply(record) == recover(prefix + record), incl. the
+compacted checkpoint log, empty log and corrupt-final-record cases).
 Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
 `docs/STDLIB-WISHLIST-XVECTOR.md`), file-backed segment files, file-backed
-manifest, crash-kill test harness, WAL retention/pruning policy.
+manifest, file-level crash-kill test, WAL retention/pruning policy.
 
 ### E. Metadata & filtering -- 99 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
@@ -128,15 +131,14 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 80 %
-Done: 168-check conformance suite (x2 Windows + WSL), 16 probes, build-time
+### I. Testing & verification -- 82 %
+Done: 168-check conformance suite (x2 Windows + WSL), 17 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
-deterministic fuzz gate (`probe_fuzz_codecs`; found XVC-C-10), and a
-mixed-workload soak (`probe_soak_mixed`: 600 ops with per-op bookkeeping
-invariants, periodic compaction, final + chained recovery; ~2.5s).
-Remaining: kill-recovery acceptance script, reference oracle cross-check,
-CI wiring.
+deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
+(`probe_soak_mixed`) and the kill-recovery acceptance
+(`probe_kill_recovery`).
+Remaining: reference oracle cross-check, CI runner activation.
 
 ### J. Ecosystem & release engineering -- 48 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
@@ -355,8 +357,16 @@ extraction with the packages lane.
   (per-layer beam through the old structure + diversified replacement);
   connect factored into beam_select/apply_layer_edges (construction
   behavior-identical). Gate: recall@10 200/200 after 60 in-place updates vs
-  the flat oracle; size/live unchanged. C 97 -> 98; overall 68.84 -> 69 %.
+  the   flat oracle; size/live unchanged. C 97 -> 98; overall 68.84 -> 69 %.
   Evidence: full batteries via ci.ps1 / ci.sh, ALL GATES GREEN.
+- **2026-10-09 (twenty-eighth pass):** kill-recovery acceptance --
+  `probe_kill_recovery.xi` proves prefix exactness at the WAL model level
+  (every prefix of a 46-record log; recover(prefix) + apply(record) ==
+  recover(prefix + record)), on the compacted checkpoint log (28 records),
+  plus full-recovery equality, empty log, and corrupt-final-record cases.
+  Both batteries now run 17 probes. D 58 -> 60, I 80 -> 82; overall
+  68.98 -> 70 %. Evidence: full batteries via ci.ps1 / ci.sh (suite x2 +
+  17 probes x2, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 
