@@ -69,3 +69,18 @@ pub fn vector_distance(a: &Vector, b: &Vector, metric: DistanceMetric) -> Float3
     Euclidean => euclidean_distance(a, b),
   }
 }
+
+// Stable wire/on-disk codes for the metric: 1 = Cosine, 2 = DotProduct,
+// 3 = Euclidean. Shared by the WAL collection-manifest record and the
+// durable manifest file (D2); the codes are part of the on-disk format.
+pub fn metric_code(m: DistanceMetric) -> Int {
+  if m == DistanceMetric.Cosine { return 1; }
+  if m == DistanceMetric.DotProduct { return 2; }
+  return 3;
+}
+
+pub fn metric_from_code(c: Int) -> DistanceMetric {
+  if c == 1 { return DistanceMetric.Cosine; }
+  if c == 2 { return DistanceMetric.DotProduct; }
+  return DistanceMetric.Euclidean;
+}
