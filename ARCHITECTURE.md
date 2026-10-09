@@ -116,6 +116,7 @@ src/
 |-- durability/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
 |   |-- recovery.xi       recover_state/store + checkpoint compaction    [EXTRACTED]
+|   |-- wal_file.xi       whole-file persist/load (torn-tail safe)       [NEW 2026-10-09]
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/
@@ -168,11 +169,13 @@ api.upsert
 
 Invariant: **no write is acknowledged before its WAL record exists.** The
 vector payload is now serialized into the record, so a point can be
-reconstructed on recovery. The WAL itself is still in memory and
-`wal_writer_flush` is an LSN marker; on v0.64.0 the stdlib exposes no fsync
-syscall (`xiom.os.fs_ffi.fsync` is a documented stub -- see
-`docs/STDLIB-WISHLIST-XVECTOR.md`), so the file-backed, fsync'd log is the
-next Phase 2 step.
+reconstructed on recovery. The WAL is in-memory during operation;
+`durability.wal_file` (`wal_persist`/`wal_load`) persists it as a whole-file
+checkpoint and loads the longest valid record prefix on reopen (torn-tail
+safe). There is still no fsync/append -- the stdlib fd-syscall gap
+(`xiom.os.fs_ffi.fsync` is a documented stub -- see
+`docs/STDLIB-WISHLIST-XVECTOR.md`), so persistence is a checkpoint rewrite at
+quiescent points; the append/fsync delta log remains the M2 step.
 
 ## 3a. Recovery path (reopen)
 
@@ -192,7 +195,10 @@ engine_recover(w, dim, metric)
 The checkpoint log alone reconstructs the store and its metadata, so a
 recovered engine is itself recoverable (chained reopen is covered by
 `test_recover_twice` / `test_recover_payloads_chained`); a durable manifest
-will later persist it instead of rebuilding on every open.
+will later persist it instead of rebuilding on every open. The file-backed
+reopen path is `wal_load(path)` -> `engine_recover`: load the longest
+complete-record prefix of a persisted checkpoint, then replay it (kill/reopen
+equality gated by `tests/probes/probe_wal_file.xi`).
 
 ## 3b. Metadata write path (payloads)
 
@@ -290,7 +296,8 @@ The places where correctness is enforced in code (and documented in
 | Durability | WAL append/flush fault | surfaces as `CoreError.IOFailure` (retryable); write is **not** acked |
 | Storage | duplicate id on insert | `index_add` returns `false` (idempotent upsert semantics in Phase 2) |
 | Index | empty graph / cold search | returns an empty result set, never panics |
-| Recovery | truncated/corrupt WAL tail | in-memory replay: malformed payloads are skipped (`vector_decode -> None`), later valid records still replayed; LSNs stay monotonic. File-backed torn-tail repair waits on `ftruncate` (stdlib wishlist). |
+| Recovery | truncated/corrupt WAL tail (memory) | in-memory replay: malformed payloads are skipped (`vector_decode -> None`), later valid records still replayed; LSNs stay monotonic. |
+| Recovery | truncated/corrupt WAL file | `wal_load` returns the longest prefix of complete valid records (torn-tail safe); missing/garbage/empty files -> empty; a kill mid-checkpoint yields the previous consistent prefix. Appending to an existing file waits on the stdlib append-bytes gap. |
 | Segment | write to a sealed segment | `VectorError.SegmentSealed` (enforced Phase 5) |
 
 Each domain fails as an explicit `Result` value -- XIOM has no exceptions, so
