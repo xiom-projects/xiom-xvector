@@ -35,6 +35,7 @@ $probes = @(
   "probe_wal_file",
   "probe_manifest_file",
   "probe_collections",
+  "probe_segment_file",
   "probe_range_search",
   "probe_batch_ops"
 )

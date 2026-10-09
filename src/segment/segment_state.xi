@@ -60,3 +60,13 @@ pub fn segment_state_can_transition(from: &SegmentStateKind, to: &SegmentStateKi
   if f == 5 { return t == 4 || t == 6; }
   return false;
 }
+
+pub fn segment_state_from_code(c: Int) -> SegmentStateKind {
+  if c == 1 { return SegmentStateKind.Sealing; }
+  if c == 2 { return SegmentStateKind.Sealed; }
+  if c == 3 { return SegmentStateKind.Indexing; }
+  if c == 4 { return SegmentStateKind.Immutable; }
+  if c == 5 { return SegmentStateKind.Compacting; }
+  if c == 6 { return SegmentStateKind.Dropped; }
+  return SegmentStateKind.Mutable;
+}
