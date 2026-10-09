@@ -161,7 +161,7 @@ pub fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
       j = j + 1;
     }
     pos = pos + klen;
-    var key = Str::from_utf8(kb);
+    var key = Str::from_utf8(&kb);
     if pos >= words.len() { return None; }
     var kind = words[pos];
     pos = pos + 1;
@@ -187,7 +187,7 @@ pub fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
         k = k + 1;
       }
       pos = pos + tlen;
-      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(tb)));
+      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(&tb)));
     } elif kind == 4 {
       if pos >= words.len() { return None; }
       var bv = words[pos];
@@ -204,8 +204,9 @@ pub fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
 // ---- Payload store: point id -> Payload (linear scan, swap-remove) ----
 // Plus a sorted key index over the stored fields (Phase 3 refinement): rows
 // are kept sorted by (field, kind, num, text, id) in PARALLEL vectors --
-// deliberately not a Vec[Struct], because a struct element with Str- or
-// Vec-bearing fields is the shape compiler finding XVC-C-08 misreads.
+// deliberately not a Vec[Struct] (the nested-Vec heap shape dodges the
+// AUDIT T001 family; the XVC-C-08 trailing-field misread is fixed in
+// compiler v0.64.2).
 // Lookups: exists/count/Eq use binary search (Eq scans the field window for
 // float values, where IEEE +-0.0 / NaN need semantic comparison); Range
 // scans the field's numeric rows.
