@@ -38,6 +38,7 @@ $probes = @(
   "probe_segment_file",
   "probe_range_search",
   "probe_pagination",
+  "probe_delete_filter",
   "probe_batch_ops"
 )
 

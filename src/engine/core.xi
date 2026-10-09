@@ -20,6 +20,7 @@ use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
 use xiom.vector.query.search_service;
 use xiom.vector.query.pagination;
+use xiom.vector.query.filter_plan;
 use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
@@ -671,6 +672,53 @@ pub fn engine_delete_many(eng: &mut VectorEngine, ids: &Vec[Int]) -> Result[Int,
     i = i + 1;
   }
   return Ok(removed);
+}
+
+// Selective delete (M-Q4): remove every live point whose payload matches
+// `filter`, WAL-durable per point (graph tombstones + payload/index cleanup
+// through the gated batch path). Planner-driven: index-answerable shapes
+// (Eq/Range/Exists/And-of-those) resolve candidates from the sorted payload
+// index (each verified before deletion); every other shape scans the live
+// store. Ids are applied in ascending order (plan-independent WAL order).
+// Returns the number of points actually removed; a filter matching nothing
+// is Ok(0), never an error.
+pub fn engine_delete_filter(eng: &mut VectorEngine, filter: &FilterExpr) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  var ids = Vec[Int].new();
+  if filter_index_answerable(filter) {
+    var cands = filter_plan_candidates(&eng.payloads, filter);
+    var i: Int = 0;
+    while i < cands.len() {
+      if payload_store_matches(&eng.payloads, cands[i], filter) {
+        ids.push(cands[i]);
+      }
+      i = i + 1;
+    }
+  } else {
+    var i2: Int = 0;
+    while i2 < eng.store.ids.len() {
+      if payload_store_matches(&eng.payloads, eng.store.ids[i2], filter) {
+        ids.push(eng.store.ids[i2]);
+      }
+      i2 = i2 + 1;
+    }
+  }
+  if ids.len() == 0 {
+    return Ok(0);
+  }
+  var a: Int = 1;
+  while a < ids.len() {
+    var v = ids[a];
+    var b: Int = a - 1;
+    while b >= 0 && ids[b] > v {
+      ids[b + 1] = ids[b];
+      b = b - 1;
+    }
+    ids[b + 1] = v;
+    a = a + 1;
+  }
+  return engine_delete_many(eng, &ids);
 }
 
 // Batch search (M-Q2): one result set per query, order preserved.
