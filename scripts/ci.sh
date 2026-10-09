@@ -50,9 +50,15 @@ for p in "${probes[@]}"; do
   fi
 done
 
+echo "ci: bench smoke (quick)"
+if ! bash scripts/bench.sh quick > "out/ci_bench_smoke.log" 2>&1; then
+  failures=$((failures + 1))
+  echo "ci: BENCH FAILED (see out/ci_bench_smoke.log)"
+fi
+
 if [ "$failures" -ne 0 ]; then
   echo "ci: FAILED ($failures gate(s) red)"
   exit 1
 fi
-echo "ci: ALL GATES GREEN (suite x2 + ${#probes[@]} probes x2)"
+echo "ci: ALL GATES GREEN (suite x2 + ${#probes[@]} probes x2 + bench smoke)"
 exit 0

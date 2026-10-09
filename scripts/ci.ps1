@@ -52,9 +52,16 @@ foreach ($p in $probes) {
   }
 }
 
+Write-Host "ci: bench smoke (quick)"
+& "$PSScriptRoot/bench.ps1" -Mode quick *> "out/ci_bench_smoke.log"
+if ($LASTEXITCODE -ne 0) {
+  $failures = $failures + 1
+  Write-Host "ci: BENCH FAILED (see out/ci_bench_smoke.log)"
+}
+
 if ($failures -ne 0) {
   Write-Host "ci: FAILED ($failures gate(s) red)"
   exit 1
 }
-Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + $($probes.Count) probes x$ProbeRuns)"
+Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + $($probes.Count) probes x$ProbeRuns + bench smoke)"
 exit 0
