@@ -26,7 +26,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | # | Phase | Weight | Score | Level | Blockers |
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
-| B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
+| B | Exact search & query engine | 10 | 97 | release-grade | batch search, ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 65 | buildable | stdlib fsync/append gap, delta log, file-backed segments, manifest file, file-level kill test |
 | E | Metadata & filtering | 8 | 100 | production | -- |
@@ -36,8 +36,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 84 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x65 + 0.08x100 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **70.82 -> 71 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x65 + 0.08x100 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **71.02 -> 71 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -63,15 +63,18 @@ top-K bounded heap, exact f32<->bits codec, 168-check suite.
 Remaining: reference cross-check (numpy-style oracle) under fuzz; NaN/Inf
 documented policy in distance kernels.
 
-### B. Exact search & query engine -- 95 %
+### B. Exact search & query engine -- 97 %
 Done: flat exact KNN, k-bounded sorted results, filtered exact search
 (pre-filter scan + selectivity-based post plan with fallback), **filtered
 search on ANN collections** (HNSW fetch + matching subset with exact flat
-fallback when under-filled; k-fill guarantee kept), SearchHits public
-shape, error paths.
-Remaining: range-search surface, batch search.
+fallback when under-filled; k-fill guarantee kept), **exact range search**
+(kernel `search_range_scan` + `engine_search_range` + facade
+`search_range`: inclusive radius, distance-sorted, limit-bounded, exact on
+both index kinds; gate `probe_range_search` -- 72 radius x limit combos vs a
+brute-force scan), SearchHits public shape, error paths.
+Remaining: batch search surface, ANN-widened range (M-P tuning).
 
-### C. ANN index -- 95 %
+### C. ANN index -- 98 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
 adjacency rows, deterministic geometric levels, greedy descent + layer-0
 beam honouring `ef`, metric-agnostic, user-id results; **O(log n) sorted
@@ -421,6 +424,16 @@ extraction with the packages lane.
   file). D 63 -> 65; overall 70.42 -> 70.82 -> 71 %. Evidence: full
   batteries (suite 169/169 x2 + 18 probes x2, Windows + WSL), ALL GATES
   GREEN.
+- **2026-10-09 (thirty-sixth pass):** M-Q1 exact range search --
+  `search_range_scan` kernel + `engine_search_range` + facade
+  `search_range`: every point within `radius` (inclusive), distance-sorted
+  ascending, bounded by `limit`; exact on both index kinds (ANN widening is
+  M-P tuning); dim mismatch / limit 0 / negative radius rejected. Probe
+  `probe_range_search` (72 radius x limit combos vs a local brute-force
+  scan, inclusive-boundary, radius-0, KNN-equivalence, Hnsw routing, reopen
+  checks); suite mirror test added (169 -> 170). B 95 -> 97; overall
+  70.82 -> 71.02 -> 71 %. Evidence: full batteries (suite 170/170 x2 + 19
+  probes x2, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

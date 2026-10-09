@@ -164,8 +164,11 @@ documented (SPEC); snapshots restore bit-exact stores.
 
 Goal: the single-node query surface a modern DB is expected to have.
 
-- **Q1 range search** -- `search_range` engine/facade + `SearchRequest`
-  range mode; exact on Flat, ANN widening on Hnsw; probe vs brute force.
+- **Q1 range search -- DONE 2026-10-09 (exact-first)** -- `search_range`
+  engine/facade + `search_range_scan` kernel; exact on both index kinds
+  (inclusive radius, distance-sorted, limit-bounded); gate
+  `probe_range_search`. ANN widening deferred to M-P tuning; request range
+  mode folded into Q6.
 - **Q2 batch ops** -- `upsert_many` / `search_many` / `delete_many` with
   amortized WAL writes and k-bounded results; probe incl. partial-failure
   semantics (all-or-nothing per call, documented).
@@ -258,7 +261,7 @@ deep quantization + tiered storage, client SDKs.
 | # | Slice | Milestone | Gate |
 |---|---|---|---|
 | 1 | Atomic checkpoint (temp+rename) | D1 | `probe_wal_file` extension + suite x2 + probes x2 |
-| 2 | Range search | Q1 | `probe_range_search` vs brute force |
+| 2 | Range search -- **DONE 2026-10-09** (exact-first; ANN widening -> M-P) | Q1 | `probe_range_search` vs brute force |
 | 3 | Batch ops | Q2 | `probe_batch_ops` |
 | 4 | Benchmark harness + baseline | G2/G3 | bench script green; `docs/BENCHMARKS.md` |
 | 5 | Manifest file | D2 | `probe_manifest_file` |

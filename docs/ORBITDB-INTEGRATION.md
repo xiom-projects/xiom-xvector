@@ -17,6 +17,9 @@ Import: `use xiom.vector.engine;` + `use xiom.vector.engine.core;` (the
   `get_point(eng, id) -> Option[Vector]`; `set_payload` / `get_payload`.
 - `search(eng, &query, k) -> Result[SearchHits, CoreError]` with
   `SearchResult{ id, distance }` -- the join key is `id` (your row id).
+- `search_range(eng, &query, radius, limit)` -- exact range (inclusive
+  radius, distance-sorted); useful for "all embeddings near this one"
+  joins.
 - `Vector{ data: Vec[Float32]; dimension: Int }` via `Vector.new(dim)` +
   `set(i, v)`; dims `1..=65536`; metrics `Cosine | DotProduct | Euclidean`;
   **distances smaller-is-better** (cosine = `1 - cos`).

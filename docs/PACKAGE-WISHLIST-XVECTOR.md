@@ -83,7 +83,11 @@ placeholders (tests unknown, no timeline); when built they mirror the
 `xiom.vectors` contract, never define it. No SIMD kernel package from that
 lane; the bindings pilot is complete through batch 22, so accelerators are
 the sole unscheduled sector. XVECTOR's SIMD path (M-P3) therefore stays
-seam-first with pure-XIOM kernels.
+seam-first with pure-XIOM kernels. **Follow-up (2026-10-09):** the bindings
+durable-DB sector closed (`xiom.sqlite`/`xiom.libpq`/`xiom.odbc` live and
+signed); the bindings lane will pick up **accelerators once the
+`xiom.vectors` extraction lands** (owner greenlight still pending on our
+side).
 
 ## Packages lane reply (2026-10-08)
 

@@ -14,8 +14,10 @@ Import path: `use xiom.vector.engine;` (facade) and, whenever you call
 `use xiom.vector.engine.core;` -- required by the module system.
 
 Supported today: create collection -> upsert / search / delete / get by
-external **Int id**; exact Flat scan and HNSW ANN; typed payload filters with
-a selectivity planner; payload hydration; whole-file WAL checkpoint + recover.
+external **Int id**; exact Flat scan and HNSW ANN; exact range search
+(`search_range(eng, query, radius, limit)` -- inclusive radius, distance
+sorted); typed payload filters with a selectivity planner; payload
+hydration; whole-file WAL checkpoint + recover.
 Single active collection per engine value (multi-collection is M-D3 in
 `docs/PRODUCTION-PLAN.md`).
 
