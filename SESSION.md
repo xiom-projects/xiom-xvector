@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (32 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (33 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -23,7 +23,8 @@ collection manifest -> HNSW update re-linking -> kill-recovery acceptance ->
 multi-key intersections -> file-backed WAL whole-file checkpoint [XVC-C-11/C-12
 found] -> v0.64.2 re-test: C-03/C-06/C-07/C-08 verified fixed, C-07/C-08
 workarounds reverted, C-10..C-12 re-tested green -> wishlist refresh
-(stdlib 0.64.3 re-check; xiom.wal/xiom.btree in-tree; relays updated)).
+(stdlib 0.64.3 re-check; xiom.wal/xiom.btree in-tree; relays updated) ->
+production programme kickoff: requirements + v1.0 plan + checklist).
 
 ---
 
@@ -252,6 +253,13 @@ reverts + suite 169 + docs). Identity `Lefteris Notas
   failing unit; byte parser + `file_size` guard kept as defense in depth.
   **C-09:** repro green on WSL + Windows (local-assign kept; weaker
   re-test). Batteries: suite 169/169 x2 + 18 probes x2, Windows + WSL.
+- **Production programme kicked off (2026-10-09):** requirements intake
+  (`docs/requirements/production-v1.md`), v1.0 flagship plan
+  (`docs/PRODUCTION-PLAN.md`: M-G truth/benchmark, M-D on-disk durability,
+  M-Q query surface, M-S server/security, M-O observability, M-P
+  performance/scale, M-R release + owner handoff; first-12 slice backlog),
+  execution checklist (`docs/checklists/production-v1.md`);
+  ROADMAP/README/readiness aligned.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -327,35 +335,34 @@ workarounds reverted):**
 
 ## 1. NEXT TASKS (priority order)
 
-The extraction tree is final; what remains is capability work plus
-owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
+**Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 flagship plan) +
+`docs/requirements/production-v1.md` + `docs/checklists/production-v1.md`.
+Work proceeds autonomously slice-by-slice under the lane's goal loop, one
+verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
+signed commits, docs updated).
 
-1. **M2 durable-on-disk -- partly landed (whole-file WAL); fsync/append
-   still stdlib-gated.** `durability.wal_file` (whole-file checkpoint +
-   torn-tail-safe load + kill/reopen gate) shipped 2026-10-09. Non-gated
-   hardening available now: `io.rename` exists, so `wal_persist` can move to
-   write-temp + rename (atomic checkpoint) -- queued next. Remaining M2
-   path: stdlib `fsync`/fd-write/`append_file_bytes` (rows 1-3 of
-   `docs/STDLIB-WISHLIST-XVECTOR.md`; still stubs on 0.64.3 -- re-check
-   each pass), then a delta append log, file-backed segment files, a
-   separate manifest file, and the file-level kill test. Pivot immediately
-   when the stdlib gap lands. NOTE: stdlib 0.64.2 made file writes
-   byte-exact + CRLF-clean (good news for WAL files).
-2. **Non-gated extras:** range-search surface (B remaining: exact on the
-   flat store; Hnsw routes there; brute-force gate), reference oracle
-   cross-check (metric identities/axioms), adaptive ef/latency budget;
-   batch search / pagination (F remaining) when wanted.
-3. **Compiler re-test when the v0.64.2 tag lands** (incoming relay
-   2026-10-09: keep `probe_floatval_roundtrip` pinned; re-run the suite +
-   probes; relay residual reds with minimal repros). The C-08..C-12 family
-   stays exposed meanwhile; re-test all repro bundles and refresh the
-   findings doc per-row status.
-4. **Unwind candidates** (revisit after the v0.64.2 re-test): `SearchHits`
-   struct wrapper (C-04 fixed) -- decide API shape deliberately; suite
-   direct dispatch (C-01); predicate-based negative tests (C-02).
-5. **Porter flow prep:** with the tree final, extract `xiom.vectors`/
-   `xiom.wal` with the packages lane (names frozen; ORBITDB second user;
-   PULSE third WAL user; `xiom.durable` must not grow a competing WAL).
+1. **M-D1 atomic checkpoint (next slice):** `wal_persist` -> temp file +
+   `io.rename` (available today) with a fault-injection probe (interrupt
+   between write and rename keeps the previous consistent file). Then D2
+   manifest file, D3 multi-collection, D4 segment files.
+2. **M-Q query surface:** range search (Q1), batch ops (Q2), pagination
+   (Q3), delete-by-filter (Q4), per-collection stats + index admin (Q5),
+   SearchRequest extensions (Q6).
+3. **M-G truth & measurement:** reference-oracle cross-check (G1), `bench/`
+   harness (G2), `docs/BENCHMARKS.md` baseline + external-benchmark
+   protocol (G3) -- this is what the owner's benchmark drives.
+4. **M-S server & security:** HTTP skeleton (S1), config/limits/errors
+   (S2), API-key auth (S3), security pass + SBOM (S4); **M-O**
+   observability (metrics/health/logs/runbook) in the same wave.
+5. **Gated (pick up when the stdlib lane lands the primitives):** D5 delta
+   append + fsync + file-level kill-matrix; D6 truncate-based retention;
+   P5 mmap segments. Re-check each pass (0.64.3: still stubs --
+   `docs/STDLIB-WISHLIST-XVECTOR.md`).
+6. **Porter flow (owner-gated):** `xiom.vectors`/`xiom.ann` extraction on
+   greenlight; `xiom.wal` adoption when its ops allowlist clears
+   (`docs/PACKAGE-WISHLIST-XVECTOR.md`).
+7. **Release gate:** when the M-R criteria are met the lane tells the owner
+   -- the owner sets up the public release + benchmark (PULSE-style).
 
 ## 2. Consumer-lane rules (non-negotiable)
 
@@ -480,7 +487,8 @@ owner-gated release steps (`docs/RELEASE-CHECKLIST.md`).
 You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
 production-grade XIOM vector database. Read SESSION.md first, then
 README/SPEC/ARCHITECTURE/ROADMAP/AUDIT and docs/ (especially
-docs/PRODUCTION-READINESS.md). Consumer lane: never edit
+docs/PRODUCTION-PLAN.md + docs/PRODUCTION-READINESS.md and the
+requirements/checklists for the v1.0 programme). Consumer lane: never edit
 E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
@@ -531,15 +539,13 @@ Retained workarounds (deliberate): SearchHits wrapper (C-04), suite direct
 dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12).
 
-NEXT TASK (priority 1): M2 is partly landed -- whole-file WAL checkpoint +
-torn-tail load shipped (durability.wal_file); the delta append/fsync log,
-file-backed segments, manifest file and file-level kill test await the
-stdlib fd/fsync gap (re-check each pass, pivot when it lands). Non-gated
-extras: range-search surface, reference oracle cross-check, adaptive
-ef/latency budget. Now unblocked: decide the C-01/C-02/C-04 unwind
-candidates (direct dispatch, negative tests, SearchHits wrapper) without
-compiler pressure. Public release/runners/rulesets await the owner
-(docs/RELEASE-CHECKLIST.md).
+NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (first: M-D1
+atomic checkpoint via io.rename, then M-Q1 range search, M-Q2 batch ops,
+M-G bench harness + baseline). Non-gated work proceeds while the stdlib
+fsync chain stays pending (0.64.3: still stubs). When the M-R release
+criteria are met, TELL THE OWNER (public release + benchmark setup is the
+owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
+deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
 + 18 probes x2), signed commits, docs updated.
 
