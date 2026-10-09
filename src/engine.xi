@@ -80,6 +80,14 @@ pub fn search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &Filt
   return engine_search_filtered(eng, query, k, filter);
 }
 
+// Selective delete (M-Q4): remove every point matching `filter` (planner-
+// driven: index candidates or scan; WAL-durable per point, tombstones +
+// payload/index cleanup). Returns the number of points removed; nothing
+// matching -> Ok(0).
+pub fn delete_filter(eng: &mut VectorEngine, filter: &FilterExpr) -> Result[Int, CoreError] {
+  return engine_delete_filter(eng, filter);
+}
+
 // Exact range search: every point within `radius` (inclusive), distance-
 // sorted ascending, at most `limit` items (the closest ones).
 pub fn search_range(eng: &VectorEngine, query: &Vector, radius: Float32, limit: Int) -> Result[SearchHits, CoreError] {
