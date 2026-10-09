@@ -26,18 +26,18 @@ the code merely exists. Blockers are named; blocked work still scores.
 | # | Phase | Weight | Score | Level | Blockers |
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
-| B | Exact search & query engine | 10 | 97 | release-grade | batch search, ANN-widened range (M-P) |
+| B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 65 | buildable | stdlib fsync/append gap, delta log, file-backed segments, manifest file, file-level kill test |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
+| F | API & query surface | 8 | 73 | buildable | pagination, version endpoint |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 84 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x65 + 0.08x100 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **71.02 -> 71 %**.
+0.08x73 + 0.10x10 + 0.05x20 + 0.09x84 + 0.08x48 = **71.26 -> 71 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -72,7 +72,7 @@ fallback when under-filled; k-fill guarantee kept), **exact range search**
 `search_range`: inclusive radius, distance-sorted, limit-bounded, exact on
 both index kinds; gate `probe_range_search` -- 72 radius x limit combos vs a
 brute-force scan), SearchHits public shape, error paths.
-Remaining: batch search surface, ANN-widened range (M-P tuning).
+Remaining: ANN-widened range (M-P tuning).
 
 ### C. ANN index -- 98 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
@@ -127,12 +127,14 @@ plan, and **multi-key intersections** (And of indexable clauses).
 Remaining: none (composite `In` intersections are a possible future
 stretch).
 
-### F. API & query surface -- 70 %
-Done: facade (create/upsert/search/delete/get + payloads + filtered search),
-Result[..] error discipline, SearchHits shape documented, SearchRequest wire
+### F. API & query surface -- 73 %
+Done: facade (create/upsert/search/delete/get + payloads + filtered search +
+exact range), batch ops (`upsert_many`/`delete_many`/`search_many`,
+all-or-nothing validation; gate `probe_batch_ops`), Result[..] error
+discipline, SearchHits/BatchHits shapes documented, SearchRequest wire
 (real types) driving `search_with_request`, `with_payload` hydration
-(`HydratedHits`/`SearchHit`; XVC-C-08-gated in the real-module probe).
-Remaining: batch ops, pagination, version endpoint for the future service.
+(`HydratedHits`/`SearchHit`; C-08 fixed in v0.64.2, suite flags asserted).
+Remaining: pagination, version endpoint for the future service.
 
 ### G. Concurrency & scalability -- 10 %
 Done: nothing beyond a single-threaded engine.
@@ -434,6 +436,15 @@ extraction with the packages lane.
   checks); suite mirror test added (169 -> 170). B 95 -> 97; overall
   70.82 -> 71.02 -> 71 %. Evidence: full batteries (suite 170/170 x2 + 19
   probes x2, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (thirty-seventh pass):** M-Q2 batch ops -- `upsert_many` /
+  `delete_many` / `search_many` + `BatchHits`: all-or-nothing validation
+  per call (bad dimension/length/empty leaves the engine untouched), delete
+  counts actual removals (missing ids skipped), search returns one set per
+  query in order. Probe `probe_batch_ops` (14 checks incl. recover
+  equality, duplicate-id collapse, Hnsw batch path); suite mirror test
+  added (170 -> 171). F 70 -> 73; overall 71.02 -> 71.26 -> 71 %. Evidence:
+  full batteries (suite 171/171 x2 + 20 probes x2, Windows + WSL), ALL
+  GATES GREEN.
 
 ## Update rule
 

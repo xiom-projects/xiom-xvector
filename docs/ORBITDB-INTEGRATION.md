@@ -12,6 +12,9 @@
 Import: `use xiom.vector.engine;` + `use xiom.vector.engine.core;` (the
 `engine_*` symbols, incl. recovery, need the core import).
 
+- `upsert_many(eng, ids, vecs)` / `delete_many(eng, ids)` / `search_many(eng,
+  queries, k)` -- batch ops (M-Q2) with all-or-nothing validation; the bulk
+  repair pass should use `upsert_many` in chunks (see §4).
 - `upsert(eng, id, vec)` -- **idempotent by external Int id** (overwrite,
   no duplicates); `delete_point(eng, id)` (safe on a missing id); 
   `get_point(eng, id) -> Option[Vector]`; `set_payload` / `get_payload`.
@@ -101,9 +104,10 @@ over-fetch ratio makes it necessary.
   flat on v0.64.2; **Linux still grows (~87 KB/req in PULSE's measurement;
   compiler-side item pending)**. XVECTOR's own sustained-load RSS is being
   measured by the in-repo bench (M-G); **recommended repair chunking until
-  numbers land: <= 1k upserts per chunk with a checkpoint (+ optional
-  `compact_index`) every few chunks** -- final safe batch sizes will be
-  published in `docs/BENCHMARKS.md`.
+  numbers land: <= 1k upserts per chunk via `upsert_many` (all-or-nothing
+  per chunk) with a checkpoint (+ optional `compact_index`) every few
+  chunks** -- final safe batch sizes will be published in
+  `docs/BENCHMARKS.md`.
 - **Threading:** single-threaded; no global state -- one engine value per
   consumer thread/process; compose both stores on one thread.
 - **kill -9:** crash-consistent at checkpoint granularity; writes after the
