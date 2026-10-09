@@ -349,6 +349,26 @@ pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter
   return Ok(SearchHits{ items: hits });
 }
 
+// Exact range search: points within `radius` (inclusive) on the active
+// collection, distance-sorted ascending, at most `limit` items (the closest
+// ones). Exact for both index kinds (raw-store scan); ANN widening is M-P
+// tuning. Negative radius and out-of-range limit are rejected loudly.
+pub fn engine_search_range(eng: &VectorEngine, query: &Vector, radius: Float32, limit: Int) -> Result[SearchHits, CoreError]
+  requires: eng.created
+{
+  if query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(limit) {
+    return Err(CoreError.InvalidInput("limit out of range"));
+  }
+  if radius < 0.0 {
+    return Err(CoreError.InvalidInput("radius out of range"));
+  }
+  var hits = search_range_scan(&eng.store, query, radius, limit, eng.metric);
+  return Ok(SearchHits{ items: hits });
+}
+
 // Request-driven search: honors the request's top_k, filter, and
 // with_payload hydration flag. The active collection's metric governs; a
 // request whose metric differs from the collection is rejected. Returns
