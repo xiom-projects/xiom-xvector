@@ -64,6 +64,12 @@ pub fn search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter: &Filt
   return engine_search_filtered(eng, query, k, filter);
 }
 
+// Exact range search: every point within `radius` (inclusive), distance-
+// sorted ascending, at most `limit` items (the closest ones).
+pub fn search_range(eng: &VectorEngine, query: &Vector, radius: Float32, limit: Int) -> Result[SearchHits, CoreError] {
+  return engine_search_range(eng, query, radius, limit);
+}
+
 // Request-driven search: top_k/filter/with_payload come from the request.
 // The active collection's metric governs (mismatching request metric -> Err).
 pub fn search_with_request(eng: &VectorEngine, req: &SearchRequest) -> Result[HydratedHits, CoreError] {

@@ -540,6 +540,36 @@ fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMetric)
   return results;
 }
 
+// Exact range scan mirror (M-Q1): every distance <= radius, sorted, bounded.
+fn search_range_scan(idx: &VectorIndex, query: &Vector, radius: Float32, limit: Int, metric: DistanceMetric) -> Vec[SearchResult]
+  requires: limit > 0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= limit
+{
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  var total: Int = idx.ids.len();
+  while i < total {
+    var dist = vector_distance(&idx.vectors[i], query, metric);
+    if dist <= radius {
+      var result = SearchResult{ id: idx.ids[i], distance: dist };
+      results.push(result);
+      var pos: Int = results.len() - 1;
+      while pos > 0 && results[pos - 1].distance > results[pos].distance {
+        var tmp = results[pos];
+        results[pos] = results[pos - 1];
+        results[pos - 1] = tmp;
+        pos = pos - 1;
+      }
+      while results.len() > limit {
+        results.pop();
+      }
+    }
+    i = i + 1;
+  }
+  return results;
+}
+
 fn wal_writer_new() -> WalWriter {
   var records = Vec[WalRecord].new();
   return WalWriter{ records: records, next_lsn: 1, synced_lsn: 0 };
@@ -2042,6 +2072,28 @@ fn run_flat_search_exact_top1() -> Int {
   if results.len() == 1 && results[0].id == 10 { return 0; }
   return 1;
 }
+fn test_range_search_basic() -> TestResult {
+  var idx = index_new(3);
+  index_add(&mut idx, 1, mk_vec3(1.0, 0.0, 0.0));
+  index_add(&mut idx, 2, mk_vec3(0.9, 0.1, 0.0));
+  index_add(&mut idx, 3, mk_vec3(0.0, 0.0, 1.0));
+  var q = mk_vec3(1.0, 0.0, 0.0);
+  // Cosine distances from q: id1 = 0, id2 ~ 0.006, id3 = 1.
+  var all = search_range_scan(&idx, &q, 1.0, 10, DistanceMetric.Cosine);
+  if all.len() != 3 { return assert(false, "range: radius 1.0 inclusive keeps all 3"); }
+  if all[0].id != 1 { return assert(false, "range: closest first"); }
+  if all[2].id != 3 { return assert(false, "range: farthest last"); }
+  var near = search_range_scan(&idx, &q, 0.01, 10, DistanceMetric.Cosine);
+  if near.len() != 2 { return assert(false, "range: radius 0.01 keeps id1+id2"); }
+  var bounded = search_range_scan(&idx, &q, 1.0, 1, DistanceMetric.Cosine);
+  if bounded.len() != 1 { return assert(false, "range: limit 1 bounds the result"); }
+  if bounded[0].id != 1 { return assert(false, "range: limit keeps the closest"); }
+  var exact = search_range_scan(&idx, &q, 0.0, 10, DistanceMetric.Cosine);
+  if exact.len() != 1 { return assert(false, "range: radius 0 keeps only exact matches"); }
+  if exact[0].id != 1 { return assert(false, "range: radius 0 exact id"); }
+  return assert(true, "range scan: inclusive radius, sorted, bounded");
+}
+
 fn test_flat_search_exact_top1() -> TestResult {
   if run_flat_search_exact_top1() == 0 { return assert(true, "Flat: KNN top-1 returns nearest (id=10)"); }
   return assert(false, "Flat: KNN top-1 failed");
@@ -4340,6 +4392,7 @@ fn main() -> Int {
   failed = failed + run_one_test(test_flat_search_results_bounded()); total = total + 1;
   failed = failed + run_one_test(test_flat_search_ordered()); total = total + 1;
   failed = failed + run_one_test(test_flat_search_all_metrics()); total = total + 1;
+  failed = failed + run_one_test(test_range_search_basic()); total = total + 1;
 
   // SECTION 6: Segment management
   failed = failed + run_one_test(test_segment_new()); total = total + 1;

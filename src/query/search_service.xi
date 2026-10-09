@@ -62,6 +62,31 @@ pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMet
   return results;
 }
 
+// Exact range scan: every live point whose distance to the query is <= radius
+// (inclusive), distance-sorted ascending and bounded by `limit` (the closest
+// `limit` points). Runs on the raw store for BOTH index kinds -- exact by
+// construction; an ANN-widened variant is a performance follow-up (M-P), not
+// a correctness change. A NaN radius compares false and yields an empty
+// result.
+pub fn search_range_scan(idx: &VectorIndex, query: &Vector, radius: Float32, limit: Int, metric: DistanceMetric) -> Vec[SearchResult]
+  requires: limit > 0
+  requires: radius >= 0.0
+  requires: idx.dim == query.dimension
+  ensures: result.len() <= limit
+{
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  var total: Int = idx.ids.len();
+  while i < total {
+    var dist = vector_distance(&idx.vectors[i], query, metric);
+    if dist <= radius {
+      results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, limit);
+    }
+    i = i + 1;
+  }
+  return results;
+}
+
 // Pre-filter exact scan: evaluate the filter per candidate BEFORE the
 // distance compute. This is the fallback plan and the default for
 // un-estimable or low-selectivity filters.
