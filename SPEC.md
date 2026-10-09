@@ -290,28 +290,37 @@ same ten variants as `xiom.core.error`), `Counter` + `counter_new/inc`,
 
 ## `xiom.vector.engine.core` (extracted module)
 `VectorEngine { store; graph; index_kind; ann; metric; dimension; created;
-wal; upserts; deletes; next_collection; payloads }` -- the orchestrator that
-owns the active collection, the WAL, the payload store, and (when
-`index_kind = Hnsw`) the ANN graph mirroring the store.
-- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` (resets to Flat; logs the collection manifest).
-- `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. Logs a manifest update, so the configuration survives `engine_recover` and checkpoints.
+wal; upserts; deletes; next_collection; payloads; collections; active_idx;
+active_cid; active_name }` -- the orchestrator. D3: the top-level fields
+materialize the ACTIVE collection; `collections` holds one full
+`CollectionEntry { cid; name; store; payloads; graph; index_kind; ann;
+dimension; metric }` per collection in creation order, refreshed from the
+live fields by `sync_active` before switches and registry-wide reads
+(entry reads/writes are snapshot copies -- shape-validated on v0.64.2;
+data ops only touch the live fields). `CollectionList { names: Vec[Str] }`
+wraps the names (SearchHits discipline).
+- `engine_new()`; `engine_create_collection(eng, dim, metric) -> Result[CollectionId, CoreError]` `requires: dim >= 1` -- legacy path: (re)creates the canonical "default" collection through the registry (existing consumers unchanged).
+- Registry (M-D3): `engine_create_named(eng, name, dim, metric) -> Result[CollectionId, CoreError]` -- validates `is_valid_dimension` and `manifest_name_valid` (1..64 chars of `[A-Za-z0-9_.-]`), rejects duplicates, appends the v2 manifest record WAL-first (record value = new cid), parks the previous active and makes the new collection active. `engine_select(eng, name) -> Result[Bool, CoreError]` -- parks the active and materializes the target. `engine_drop(eng, name) -> Result[Bool, CoreError]` -- v3 drop record WAL-first; removing the active selects the first remaining collection (or leaves the engine uncreated, ready for a fresh create). `engine_collection_count`, `engine_list_collections -> CollectionList` (creation order).
+- `engine_set_index(eng, kind, params) -> Result[Bool, CoreError]` `requires: eng.created` -- Hnsw validates `ann_params_valid` and rebuilds the graph from the flat store; Flat resets the graph. Logs a v2 manifest update for the ACTIVE collection, so the configuration survives `engine_recover` and checkpoints.
 - `engine_compact_index(eng) -> Result[Int, CoreError]` `requires: eng.created` -- rebuilds the HNSW graph from live nodes (Flat -> `Ok(0)`); returns the reclaimed count.
-- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
+- `engine_upsert(eng, point, vec) -> Result[Bool, CoreError]` `requires: eng.created` -- WAL-before-ack (payload-encoded; **record value = the active collection id**) + store apply + (`Hnsw`) `hnsw_insert_ref` into the graph.
 - `engine_search(eng, query, k) -> Result[SearchHits, CoreError]` `requires: eng.created, k > 0` -- routes by `index_kind`: Flat -> `search_knn`, Hnsw -> `hnsw_search` with `ef = ann.ef_search` (Neighbor -> SearchResult). `SearchHits { items: Vec[SearchResult] }`; the struct wrapper is required by compiler finding XVC-C-04.
-- `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (`Hnsw`: ANN fetch `ef_search` wide + matching subset, exact flat filtered fallback when under-filled; `Flat`: the planner scan), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`.
+- `engine_delete` -- store remove + (`Hnsw`) graph tombstone; `engine_set_payload`, `engine_get_payload -> Option[Payload]`, `engine_search_filtered` (`Hnsw`: ANN fetch `ef_search` wide + matching subset, exact flat filtered fallback when under-filled; `Flat`: the planner scan), `engine_get_point -> Option[Vector]`, `engine_size`, `engine_durable_lsn`. Delete/Update records also carry the active collection id.
 - `engine_search_range(eng, query, radius, limit) -> Result[SearchHits, CoreError]` `requires: eng.created` -- exact range path (M-Q1): raw-store scan keeping `distance <= radius` (inclusive), distance-sorted ascending, bounded by `limit`; validates dim/limit/radius (negative radius or out-of-range limit -> `InvalidInput`); exact for both index kinds (ANN widening is M-P tuning). Gate `tests/probes/probe_range_search.xi`.
 - Batch ops (M-Q2): `engine_upsert_many(eng, ids, vecs) -> Result[Int, CoreError]` (all-or-nothing validation BEFORE applying: non-empty, equal lengths, every dim matches; returns records applied; duplicate ids collapse); `engine_delete_many(eng, ids) -> Result[Int, CoreError]` (idempotent per id; returns actual removals; empty -> `InvalidInput`); `engine_search_many(eng, queries, k) -> Result[BatchHits, CoreError]` (validates all queries first; one result set per query, order preserved). Gate `tests/probes/probe_batch_ops.xi`.
 - `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`.
-- `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
-- `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries store, payloads AND the latest collection manifest); LSNs stay monotonic. The latest `ManifestUpdate` record (`[version=1, dim, metric_code, kind_code, m, ef_construction, ef_search]`, logged by create_collection/set_index) governs dim/metric/index kind/params -- including rebuilding an Hnsw graph -- with the caller's dim/metric as the fallback for pre-manifest logs (Flat collection). Malformed manifests are ignored. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
-- `engine_manifest_save(eng, name, path) -> Bool` `requires: eng.created` -- persist the active collection's registry entry (name + dim/metric/index kind/params) to the manifest file (whole-file + atomic rename; false on an invalid name/config or any IO error). `engine_recover_file(w, path, dim, metric) -> VectorEngine` `requires: dim > 0` -- the same recovery as `engine_recover`, but the manifest file's **first valid entry governs** the config (the registry of record); the in-WAL manifest is the migration fallback (pre-D2 logs, or a missing/corrupt file), then the caller's dim/metric. Both paths share the private `engine_recover_with` body. Gate: `tests/probes/probe_manifest_file.xi`.
+- `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- legacy single-collection replay (kept in `durability.recovery`; the engine now uses the registry path).
+- Multi-collection recovery (M-D3): `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- builds the collection set from `ManifestUpdate` records (v1 legacy `[1, dim, mc, kc, m, efc, efs]` -> "default"/cid 1; v2 config `[2, name_len, name..., dim, mc, kc, m, efc, efs]` upserted by record value = cid; v3 drop `[3, name_len, name...]`), replays data records **routed by collection id** when the log carries v2/v3 records (D3 strict mode) or into the single collection otherwise (legacy logs, where the value field is not meaningful), applies each collection's index (Hnsw graphs rebuilt), and writes a compacted checkpoint WAL carrying every alive collection's data + its v2 manifest. No manifest at all -> caller dim/metric as the single "default" collection. Malformed records are ignored; LSNs stay monotonic. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
+- `engine_manifest_save(eng, path) -> Bool` -- persist the WHOLE registry (one entry per collection, cid order; whole-file + atomic rename via the D2 codec). `engine_recover_file(w, path, dim, metric) -> VectorEngine` `requires: dim > 0` -- the same recovery, with the manifest file's entries overriding configs **by collection name** (the registry of record; the D2 first-entry rule applies to single-collection logs); names absent from the file keep the in-WAL config, and a missing/corrupt file falls back entirely to the WAL. Gates: `tests/probes/probe_manifest_file.xi`, `tests/probes/probe_collections.xi`.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
-`create_collection`, `set_index`, `compact_index`, `upsert`, `upsert_many`,
-`search`, `search_many`, `delete_point`, `delete_many`, `get_point`,
-`set_payload`, `get_payload`, `search_filtered`, `search_range`,
-`search_with_request`, `save_manifest`, `open_engine` -- thin delegations.
+`create_collection`, `create_named_collection`, `select_collection`,
+`drop_collection`, `list_collections`, `collection_count`, `set_index`,
+`compact_index`, `upsert`, `upsert_many`, `search`, `search_many`,
+`delete_point`, `delete_many`, `get_point`, `set_payload`, `get_payload`,
+`search_filtered`, `search_range`, `search_with_request`, `save_manifest`,
+`open_engine` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 

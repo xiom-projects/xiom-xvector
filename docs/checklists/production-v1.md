@@ -28,8 +28,11 @@ needed) -> signed commit. Red build = rejection.
   prefix load); `engine_manifest_save` + `engine_recover_file`/`open_engine`
   (file registry governs; in-WAL manifest migration fallback);
   `probe_manifest_file` (38 checks)
-- [ ] D3 multi-collection runtime: named collections, create/drop/list,
-  isolated stores/payloads/indexes; `probe_collections`; survives reopen
+- [x] D3 multi-collection runtime **(done 2026-10-09)**: named collections,
+  create/select/drop/list, isolated stores/payloads/indexes (v2 config +
+  v3 drop WAL records; cid-stamped data; routed recovery; whole-registry
+  checkpoint + manifest save/open); `probe_collections` (41 checks);
+  survives reopen
 - [ ] D4 segment files: sealed segments (vectors+payloads+graph codec)
   whole-file + rename; load-on-open; `probe_segments_file`
 - [ ] D5 (GATED: stdlib fsync/append) WAL delta + fsync on commit;

@@ -95,6 +95,11 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
   `engine_manifest_save` + `engine_recover_file`/`open_engine` prefer the
   file registry and fall back to the in-WAL manifest (migration). Gate
   `probe_manifest_file` (38 checks).
+- [OK] Multi-collection registry (M-D3): named collections with
+  create/select/drop/list, per-collection isolation (stores, payloads,
+  index configs) and routed WAL recovery (v2 config / v3 drop records;
+  data records carry the collection id); whole-registry manifest save +
+  file-wins open by name. Gate `probe_collections` (41 checks).
 - [STOP] Delta append + `fsync` on commit -- **blocked on the stdlib
   fd-syscall gap** (re-checked 2026-10-09 on 0.64.3; see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `wal_writer_flush` remains an
@@ -273,7 +278,7 @@ not assumed; this phase turns a working engine into an operable one.
 | In-memory HNSW | [OK] Done |
 | Engine orchestration + API facade | [OK] Done |
 | WAL write path | [YELLOW] In progress -- whole-file checkpoint + torn-tail load done; delta/fsync gated on stdlib |
-| Collections / schema / validator | [YELLOW] In progress -- single active collection; multi-collection is M-D3 |
+| Collections / schema / validator | [YELLOW] In progress -- multi-collection registry (M-D3: create/select/drop/list, routed recovery, whole-registry manifest); schema/validator scaffold |
 | Payload + filtering | [OK] Done |
 | Segments + manifest + recovery | [YELLOW] In progress -- in-WAL manifest + segments scaffold; segment files are M-D4 |
 | IVF / PQ / disk / SIMD / distributed | [STOP] v1.1/v2 per the production plan |

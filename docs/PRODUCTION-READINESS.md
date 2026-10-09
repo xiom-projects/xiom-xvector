@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-D2 manifest file)
-- **Overall:** **72 %** (weighted; see method)
+- **As of:** 2026-10-09 (post M-D3 multi-collection)
+- **Overall:** **74 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 68 | buildable | stdlib fsync/append gap, delta log, file-backed segments, file-level kill test |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 73 | buildable | pagination, version endpoint |
-| G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
+| F | API & query surface | 8 | 75 | buildable | pagination, version endpoint |
+| G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x68 + 0.08x100 +
-0.08x73 + 0.10x10 + 0.05x20 + 0.09x86 + 0.08x48 = **72.04 -> 72 %**.
+0.08x75 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **73.70 -> 74 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -139,13 +139,22 @@ exact range), batch ops (`upsert_many`/`delete_many`/`search_many`,
 all-or-nothing validation; gate `probe_batch_ops`), Result[..] error
 discipline, SearchHits/BatchHits shapes documented, SearchRequest wire
 (real types) driving `search_with_request`, `with_payload` hydration
-(`HydratedHits`/`SearchHit`; C-08 fixed in v0.64.2, suite flags asserted).
+(`HydratedHits`/`SearchHit`; C-08 fixed in v0.64.2, suite flags asserted),
+and the multi-collection registry surface (M-D3: `create_named_collection`/
+`select_collection`/`drop_collection`/`list_collections`/
+`collection_count` + whole-registry `save_manifest`; gate
+`probe_collections`).
 Remaining: pagination, version endpoint for the future service.
 
-### G. Concurrency & scalability -- 10 %
-Done: nothing beyond a single-threaded engine.
+### G. Concurrency & scalability -- 25 %
+Done: multi-collection registry (M-D3: named collections with per-
+collection stores/payloads/index configs, create/select/drop/list, routed
+recovery + whole-registry manifest; gate `probe_collections`) and the
+benchmark harness + baseline (`docs/BENCHMARKS.md`; bench smoke in both
+batteries). The engine is still single-threaded and each call targets one
+active collection.
 Remaining: concurrent readers, write serialization model, segment growth /
-compaction, memory budget, multi-collection, benchmark harness.
+compaction policy, memory budget, scale tuning beyond the baseline.
 
 ### H. Observability & operability -- 20 %
 Done: inline counters (upserts/deletes), LSN metrics.
@@ -184,7 +193,7 @@ extraction with the packages lane.
 |---|---|---|
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
 | M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint on disk with torn-tail-safe load + atomic swap (M-D1); durable collection registry file with file-wins open (M-D2); fsync/append delta, segments, file-level kill test blocked on stdlib fsync/append |
-| M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | Not started |
+| M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | In progress: HNSW hardening (recall harness, tombstones, compaction, codec) + payload index + planner + multi-collection registry + benchmark harness landed; concurrency/serialization and scale tuning pending |
 | M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | Not started (release gate is owner's) |
 
 ## Change log
@@ -464,6 +473,17 @@ extraction with the packages lane.
   (`scripts/build.ps1` + `images/xvector-icon.ico`). I 84 -> 86; overall
   71.26 -> 71.44 -> 71 %. Evidence: full batteries (suite 171/171 x2 + 20
   probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (fortieth pass):** M-D3 multi-collection registry -- named
+  collections (create/select/drop/list; facade + engine), per-collection
+  isolation of stores/payloads/index configs, WAL ManifestUpdate v2 config
+  + v3 drop records with cid-stamped data records, routed multi-collection
+  recovery (D3 strict mode; legacy logs route to the single collection),
+  whole-registry checkpoint, whole-registry `save_manifest` + file-wins
+  `open_engine`, legacy `create_collection` -> "default". Gate
+  `probe_collections` (41 checks; batteries now 22 probes). F 73 -> 75,
+  G 10 -> 25; overall 72.04 -> 73.70 -> 74 %. Evidence: full batteries
+  (suite 171/171 x2 + 22 probes x2 + bench smoke, Windows + WSL), ALL
+  GATES GREEN; no regression across the recovery rewrite.
 - **2026-10-09 (thirty-ninth pass):** M-D2 manifest file -- new
   `durability.manifest_file` (`xvector-manifest 1` text registry: one line
   per collection `name dim mc kc m efc efs`; whole-file persist with atomic
