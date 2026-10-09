@@ -74,6 +74,19 @@ fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
   return ParsedInt{ value: v, pos: p, ok: true };
 }
 
+// Append the UTF-8 bytes of `s` to `out`. Building the checkpoint this way is
+// LINEAR: the previous `text = text + ...` builder was O(L^2) in allocations
+// (each intermediate string survives in the runtime's allocator long enough
+// to thrash a large persist; found by the M-G bench at ~150 KB logs).
+fn append_bytes(out: &mut Vec[UInt8], s: Str) {
+  var b = slice.str_bytes(s);
+  var i: Int = 0;
+  while i < b.len() {
+    out.push(b[i]);
+    i = i + 1;
+  }
+}
+
 // Whole-file checkpoint write, atomically: the text lands in `<path>.tmp`
 // and is swapped over the target with io.rename (platform rename replaces an
 // existing destination; verified on Windows + WSL by the probe). A crash
@@ -81,31 +94,32 @@ fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
 // never part of the readable state. If the rename fails the temp remains and
 // is simply overwritten by the next persist. False on any IO error.
 pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
-  var text = "xvector-wal 1\n";
+  var out = Vec[UInt8].new();
+  append_bytes(&mut out, "xvector-wal 1\n");
   var i: Int = 0;
   while i < w.records.len() {
     var r = w.records[i];
-    text = text + convert.int_to_string(r.lsn) + " "
+    var line = convert.int_to_string(r.lsn) + " "
       + convert.int_to_string(op_code(r.op)) + " "
       + convert.int_to_string(r.key) + " "
       + convert.int_to_string(r.value) + " "
       + convert.int_to_string(r.timestamp) + " "
       + convert.int_to_string(r.payload.len());
     if r.payload.len() > 0 {
-      text = text + " ";
+      line = line + " ";
       var j: Int = 0;
       while j < r.payload.len() {
-        if j > 0 { text = text + ","; }
-        text = text + convert.int_to_string(r.payload[j]);
+        if j > 0 { line = line + ","; }
+        line = line + convert.int_to_string(r.payload[j]);
         j = j + 1;
       }
     }
-    text = text + "\n";
+    line = line + "\n";
+    append_bytes(&mut out, line);
     i = i + 1;
   }
-  var bytes = slice.str_bytes(text);
   var tmp = path + ".tmp";
-  var wres = io.write_file_bytes(tmp, &bytes);
+  var wres = io.write_file_bytes(tmp, &out);
   match wres {
     Ok(_) => {}
     Err(_) => { return false; }
