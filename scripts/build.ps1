@@ -52,6 +52,12 @@ $errFile = Join-Path $env:TEMP ("xvector-build-" + [guid]::NewGuid().ToString("N
 Write-Host "build: $filePath -> $outExe"
 $buildArgs = ""
 if ($Sequential) { $buildArgs = "--sequential " }
+$iconPath = Join-Path $repoRoot "images\xvector-icon.ico"
+$iconUsed = $false
+if (-not $NoIcon -and (Test-Path -LiteralPath $iconPath)) {
+    $buildArgs += ('--icon "{0}" ' -f $iconPath)
+    $iconUsed = $true
+}
 $buildArgs += ('-o "{0}" "{1}"' -f $outExe, $filePath)
 if ($Sequential) { Write-Host "build: --sequential (XVC-C-05 A/B diagnostic)" }
 $result = Invoke-XvectorProcess -FilePath $env:XIOM_COMPILER `
@@ -75,26 +81,12 @@ if (-not (Test-Path -LiteralPath $outExe)) {
     exit 1
 }
 
-# --- Windows exe icon (workaround until `xiom --icon` ships) ----------------
-# Uses rcedit when available and images\xvector-icon.ico exists; not an error
-# when missing. Same hook as the PULSE lane.
-if (-not $NoIcon) {
-    $iconPath = Join-Path $repoRoot "images\xvector-icon.ico"
-    if (Test-Path -LiteralPath $iconPath) {
-        $rcedit = Get-Command rcedit -ErrorAction SilentlyContinue
-        if ($null -eq $rcedit) { $rcedit = Get-Command rcedit-x64 -ErrorAction SilentlyContinue }
-        if ($null -ne $rcedit) {
-            & $rcedit.Source $outExe --set-icon $iconPath 2>&1 | Out-Null
-            if ($?) {
-                Write-Host "build: exe icon set via rcedit ($iconPath)"
-            } else {
-                Write-Host "build: WARNING rcedit failed to set the icon"
-            }
-        } else {
-            Write-Host "build: rcedit not found -- exe icon not set (install rcedit or wait for 'xiom --icon')"
-        }
-    }
-}
+# --- Windows exe icon -------------------------------------------------------
+# Native embedding since compiler m214/v0.64.2 (`xiom --icon <path.ico>` via
+# llvm-rc; a requested icon that cannot be embedded is a compiler hard error,
+# never a silent skip). -NoIcon opts out; the same hook shape as the PULSE
+# lane's original rcedit workaround, retired now that --icon ships.
+if ($iconUsed) { Write-Host "build: --icon $iconPath" }
 
 Write-Host "build: OK $outExe"
 exit 0
