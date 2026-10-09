@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-09 (post multi-key intersections; E complete)
+- **As of:** 2026-10-09 (post file-backed WAL; E complete)
 - **Overall:** **70 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -26,16 +26,16 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 60 | buildable | stdlib fsync gap, file-backed segments, manifest file, file-level kill test |
+| D | Persistence & durability | 20 | 63 | buildable | stdlib fsync/append gap, delta log, file-backed segments, manifest file, file-level kill test |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
 | G | Concurrency & scalability | 10 | 10 | none | everything (single-threaded engine today) |
 | H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
-| I | Testing & verification | 9 | 82 | release-grade | reference oracle, CI runners |
+| I | Testing & verification | 9 | 83 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x60 + 0.08x100 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x82 + 0.08x48 = **69.64 -> 70 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x63 + 0.08x100 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x83 + 0.08x48 = **70.33 -> 70 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -91,17 +91,22 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 60 %
+### D. Persistence & durability -- 63 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
 kind/params survive recover and checkpoints; malformed/legacy fall back),
 **kill-recovery acceptance** (prefix exactness at the WAL model level:
 recover(prefix) + apply(record) == recover(prefix + record), incl. the
-compacted checkpoint log, empty log and corrupt-final-record cases).
+compacted checkpoint log, empty log and corrupt-final-record cases), and
+**whole-file WAL persistence** (`durability.wal_file`: `wal_persist` text
+checkpoint + `wal_load` byte-level torn-tail-safe prefix load; kill/reopen
+equality, overwrite persistence, 9-point truncation sweep, missing/
+garbage/empty cases; gate `probe_wal_file`).
 Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
-`docs/STDLIB-WISHLIST-XVECTOR.md`), file-backed segment files, file-backed
-manifest, file-level crash-kill test, WAL retention/pruning policy.
+`docs/STDLIB-WISHLIST-XVECTOR.md`), delta append log, file-backed segment
+files, separate manifest file, file-level crash-kill test, WAL
+retention/pruning policy.
 
 ### E. Metadata & filtering -- 100 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
@@ -131,13 +136,14 @@ Done: inline counters (upserts/deletes), LSN metrics.
 Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
 the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 82 %
-Done: 168-check conformance suite (x2 Windows + WSL), 17 probes, build-time
+### I. Testing & verification -- 83 %
+Done: 168-check conformance suite (x2 Windows + WSL), 18 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
-(`probe_soak_mixed`) and the kill-recovery acceptance
-(`probe_kill_recovery`).
+(`probe_soak_mixed`), the kill-recovery acceptance
+(`probe_kill_recovery`), and the file-WAL gate
+(`probe_wal_file`: live-WAL roundtrip, kill/reopen, truncation sweep).
 Remaining: reference oracle cross-check, CI runner activation.
 
 ### J. Ecosystem & release engineering -- 48 %
@@ -156,7 +162,7 @@ extraction with the packages lane.
 | Milestone | Meaning | Status |
 |---|---|---|
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
-| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | Blocked on stdlib fsync; ready to start |
+| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint on disk with torn-tail-safe load (`wal_file`); fsync/append delta, segments, manifest file, file-level kill test blocked on stdlib fsync/append |
 | M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | Not started |
 | M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | Not started (release gate is owner's) |
 
@@ -373,6 +379,19 @@ extraction with the packages lane.
   bound is selective or < k. Planner probe now 23 checks. E 99 -> 100
   (phase complete); overall 69.56 -> 70 %. Evidence: full batteries via
   ci.ps1 / ci.sh, ALL GATES GREEN.
+- **2026-10-09 (thirtieth pass):** file-backed WAL -- new
+  `durability.wal_file` (`wal_persist` whole-file text checkpoint +
+  `wal_load` byte-level torn-tail-safe prefix load) on the stdlib
+  whole-file APIs; probe `probe_wal_file` (roundtrip vs the live WAL,
+  kill/reopen incl. Hnsw config, overwrite persistence, 9-point
+  truncation sweep with per-cut prefix checks, record-boundary cuts,
+  missing/garbage/empty). Both batteries now 18 probes. Found **XVC-C-11**
+  (`io.read_file` content lost in some units) and **XVC-C-12**
+  (`io.read_file_bytes` aborts at <= 8 bytes); workarounds: byte-wise
+  parsing (never Str) + `file_size < 25` guard; repro
+  `docs/repro/xv-stdlib-file-read-defects/`. D 60 -> 63, I 82 -> 83;
+  overall 69.64 -> 70 %. Evidence: full batteries via ci.ps1 / ci.sh
+  (suite 168/168 x2 + 18 probes x2, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

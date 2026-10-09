@@ -27,7 +27,7 @@ packages/xiom-vector/
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,filter_plan,topk_heap,search_service}.xi
-    |-- durability/{wal,recovery,write_ahead_events}.xi
+    |-- durability/{wal,recovery,write_ahead_events,wal_file}.xi
     `-- api/vector_api.xi
 ```
 
@@ -216,7 +216,7 @@ removes the point's payload.
 `Segment { id; state; store }` + `segment_new/insert/transition/size/is_writable`.
 `Manifest { collection; active_segments; last_lsn }` + `manifest_new/add_segment/remove_segment/set_lsn/segment_count`.
 
-## `xiom.vector.durability.{wal,recovery,write_ahead_events}` (extracted modules)
+## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file}` (extracted modules)
 Real modules since 2026-10-08 (wave 3). `wal.xi` holds
 `WalOpKind/WalRecord/WalWriter` + `wal_writer_new/append/append_payload/
 current_lsn/flush/resume`; `recovery.xi` holds replay + compaction;
@@ -235,6 +235,19 @@ vector**.
   payload set/overwrite, malformed records skipped); `recover_store` returns
   just the store for compatibility. `engine_recover` uses both and checkpoints
   them.
+- `wal_file.xi` (2026-10-09): whole-file persistence on the stdlib APIs
+  available today (`write_file_bytes`/`read_file_bytes`/`file_exists`/
+  `file_size`). `wal_persist(w, path)` writes a text checkpoint (header + one
+  line per record: `lsn op key value timestamp payload_len [words...]`);
+  `wal_load(path)` parses byte-wise -- never as a Str (XVC-C-11) -- and
+  returns the longest prefix of complete valid records (torn-tail tolerant;
+  missing/garbage/empty files -> empty). Reads shorter than the shortest
+  valid WAL are skipped via a `file_size < 25` guard (XVC-C-12; also
+  semantically exact). No fsync/append yet (stdlib gap), so this is a
+  checkpoint rewrite, not a delta log. Gate: `tests/probes/probe_wal_file.xi`
+  (roundtrip equality vs the live WAL, kill/reopen with Hnsw config,
+  overwrite persistence, a 9-point byte-truncation sweep with per-cut prefix
+  checks, record-boundary cuts, missing/garbage/empty files).
 
 ## `xiom.vector.core.shim` (extracted module)
 Local `xiom-core` stand-ins, the porter-flow mapping target: `CoreError` (the

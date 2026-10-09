@@ -14,7 +14,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 xiom-vector is organized as a **layered engine** rather than a flat set of files. It reuses `xiom-core` (errors, ids, config, limits, contracts, WAL, metrics) as its durable-systems substrate and adds the vector-specific layers on top: types, storage, indexes, query, collections, payload/filtering, segments, durability, and a public API facade.
 
-The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, and WAL-backed recovery (vectors + metadata) -- is implemented today. Collections, segments, and the durable manifest are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
+The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, and WAL-backed recovery (vectors + metadata), plus a whole-file WAL checkpoint on disk with torn-tail-safe load -- is implemented today. Collections, segments, and the durable manifest are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
 
 See:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) -- the shared-core + vector-layer model, module tree, write/search paths, failure domains.
@@ -67,7 +67,7 @@ src/
 |-- index/                    ann_index - flat_index - hnsw (+ codec, recall harness)
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - filter_plan - topk_heap - search_service
-|-- durability/               wal - recovery - write_ahead_events
+|-- durability/               wal - recovery - write_ahead_events - wal_file
 `-- api/                      vector_api (merged stub; facade lives in engine.xi)
 ```
 
@@ -100,11 +100,11 @@ wrapper is required by compiler finding XVC-C-04
 | In-memory HNSW graph (insert + greedy search) | [OK] Done |
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
-| WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; `fsync` blocked on the stdlib fd-syscall gap) |
+| WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; whole-file checkpoint on disk with torn-tail-safe load, `durability.wal_file`; `fsync`/append blocked on the stdlib fd-syscall gap) |
 | Collections / schema / validator | [YELLOW] In progress (single active collection) |
 | Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
 | Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
-| Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint done in-memory; durable manifest pending) |
+| Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; separate durable manifest file pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md).

@@ -133,3 +133,38 @@ context-sensitive lowering again. Repro (revision-pinned):
 green on both platforms afterwards. This is the fourth member of the
 context-sensitive family (C-05/C-06/C-08/C-09/C-10) -- a single root cause
 investigation would unlock a lot for us.
+
+**Addendum 7 (2026-10-09): XVC-C-11 / XVC-C-12 -- unit-context stdlib file-read defects.**
+
+Found while landing the file-backed WAL (`src/durability/wal_file.xi`). Both
+are stdlib `io` read paths that behave correctly in a minimal unit and break
+in a larger unit -- the context-sensitive family again (the defect is the
+per-unit lowering, not the stdlib contracts).
+
+- **XVC-C-11: `io.read_file` content does not survive in some units.** In
+  `tests/probes/probe_wal_file.xi`'s unit, `io.read_file(path)` returns `Ok`
+  for a file written byte-exactly via `io.write_file_bytes`, but the returned
+  Str's content is broken: `slice.str_bytes(s)` = 0 bytes for an
+  11-/1771-byte file, and `Str::from_utf8` shows the same class in that unit
+  (correct lengths, element content reads back as address-like digits when
+  split/printed). Silent wrong data. The same calls are GREEN in the minimal
+  control `docs/repro/xv-stdlib-file-read-defects/probe_str_content.xi`.
+- **XVC-C-12: `io.read_file_bytes` aborts on files of <= 8 bytes.**
+  `contract violated: ensures at 947:12` (the ensures is
+  `result is Ok => result.len() >= 0`, which cannot be false for a
+  successful read); zero-byte files included; 9+ bytes read fine. Green in
+  the minimal control `probe_tiny_read.xi`; aborts in the file-WAL unit --
+  a fatal abort for ordinary small-file reads.
+
+Evidence: both controls pass in their own units (re-verified 2026-10-09);
+the failing context is the file-WAL probe's unit before the workarounds
+(git history around `c84ccbc`); repro bundle
+`docs/repro/xv-stdlib-file-read-defects/` (README + both controls + recipe).
+
+Workarounds adopted (green on Windows + WSL, suite + 18 probes x2):
+never handle file content as a Str -- read bytes via `read_file_bytes` and
+parse byte-wise; guard with `io.file_size` and skip reads shorter than the
+shortest valid input (the WAL guard `< 25` is also semantically exact).
+Please triage alongside the C-08/C-10 family: one root cause for the
+unit-context-sensitive lowering would unlock trustworthy file I/O and let
+the lane drop several workarounds at once.
