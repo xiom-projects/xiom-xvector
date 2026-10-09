@@ -249,6 +249,45 @@ fn main() -> Int {
     Err(_) => { fails = check(false, "index-plan search -> Ok", fails); }
   }
 
+  // --- multi-key intersection (And of index-answerable clauses) ---
+  i = 1;
+  while i <= 8 {
+    var pm = payload_new();
+    payload_set(&mut pm, "grp", FieldValue.IntVal(i % 2));
+    payload_set(&mut pm, "tier", FieldValue.IntVal(i % 4));
+    set_payload(&mut eng, i, pm);
+    i = i + 1;
+  }
+  var an_cl = Vec[FilterExpr].new();
+  an_cl.push(filter_eq("grp", FieldValue.IntVal(1)));
+  an_cl.push(filter_eq("tier", FieldValue.IntVal(1)));
+  var f_an = filter_and(an_cl);
+  fails = check(filter_matching_upper(&eng.payloads, &f_an, 12) == 2
+    && filter_index_answerable(&f_an)
+    && choose_filter_plan(&eng.payloads, &f_an, 12, 3) == filter_plan_index(),
+    "multi-key: And(grp=1, tier=1) upper=2 -> index plan", fails);
+  match search_filtered(&eng, &query, k, &f_an) {
+    Ok(h) => {
+      var ref = reference_filtered(&eng.store, &eng.payloads, &query, k, DistanceMetric.Euclidean, &f_an);
+      fails = check(results_equal(&h.items, &ref) && h.items.len() == 2
+        && h.items[0].id == 1 && h.items[1].id == 5,
+        "multi-key: intersection {1,5} bit-identical to reference", fails);
+    }
+    Err(_) => { fails = check(false, "multi-key search -> Ok", fails); }
+  }
+  var an_cl2 = Vec[FilterExpr].new();
+  an_cl2.push(filter_eq("grp", FieldValue.IntVal(1)));
+  an_cl2.push(filter_eq("tier", FieldValue.IntVal(0)));
+  var f_an2 = filter_and(an_cl2);
+  match search_filtered(&eng, &query, k, &f_an2) {
+    Ok(h) => {
+      fails = check(h.items.len() == 0
+        && choose_filter_plan(&eng.payloads, &f_an2, 12, 3) == filter_plan_index(),
+        "multi-key: disjoint And -> index plan, empty result", fails);
+    }
+    Err(_) => { fails = check(false, "multi-key disjoint -> Ok", fails); }
+  }
+
   // --- post plan fallback: majority matches, but the nearest k do not ---
   i = 4;
   while i <= 12 {

@@ -97,13 +97,61 @@ pub fn filter_matching_upper(payloads: &PayloadStore, expr: &FilterExpr, total: 
   }
 }
 
-// Exact candidate ids for the index plan (Eq/Range/Exists; [] otherwise --
-// the planner chooses the index plan exclusively for those shapes).
+// True when every leaf predicate is index-answerable (Eq/Range/Exists).
+// And([]) matches everything and is deliberately NOT answerable.
+pub fn filter_index_answerable(expr: &FilterExpr) -> Bool {
+  match expr {
+    Eq(_, _) => { return true; }
+    Range(_, _, _) => { return true; }
+    Exists(_) => { return true; }
+    And(children) => {
+      if children.len() == 0 { return false; }
+      var i: Int = 0;
+      while i < children.len() {
+        if !filter_index_answerable(&children[i]) { return false; }
+        i = i + 1;
+      }
+      return true;
+    }
+    _ => { return false; }
+  }
+}
+
+// Exact candidate ids for the index plan: Eq/Range/Exists, and And of those
+// (candidate intersection). [] otherwise -- the planner chooses the index
+// plan only for answerable shapes. The intersection is a nested membership
+// scan (candidate lists are selective by construction: the planner only
+// picks the index for bound < total/4 or bound < k).
 pub fn filter_plan_candidates(payloads: &PayloadStore, expr: &FilterExpr) -> Vec[Int] {
   match expr {
     Eq(field, value) => { return payload_store_index_eq(payloads, field, value); }
     Range(field, lo, hi) => { return payload_store_index_range(payloads, field, lo, hi); }
     Exists(field) => { return payload_store_index_field_ids(payloads, field); }
+    And(children) => {
+      if children.len() == 0 { return Vec[Int].new(); }
+      var acc = filter_plan_candidates(payloads, &children[0]);
+      var i: Int = 1;
+      while i < children.len() {
+        if acc.len() == 0 { return acc; }
+        var next = filter_plan_candidates(payloads, &children[i]);
+        var keep = Vec[Int].new();
+        var x: Int = 0;
+        while x < acc.len() {
+          var id = acc[x];
+          var j: Int = 0;
+          var found: Bool = false;
+          while j < next.len() && !found {
+            if next[j] == id { found = true; }
+            j = j + 1;
+          }
+          if found { keep.push(id); }
+          x = x + 1;
+        }
+        acc = keep;
+        i = i + 1;
+      }
+      return acc;
+    }
     _ => { return Vec[Int].new(); }
   }
 }
@@ -112,8 +160,10 @@ pub fn filter_plan_candidates(payloads: &PayloadStore, expr: &FilterExpr) -> Vec
 // top-k `k`. Exact single-predicate counts: index when clearly selective
 // (fewer than a quarter), post for a known k-or-more majority, scan
 // otherwise (including empty-match, which the index answers trivially empty).
-// Compound shapes use the upper bound (post may under-fill -> the caller
-// falls back); unknown shapes scan.
+// Compound shapes use the upper bound; index-answerable compounds
+// (And-of-single-predicates) take the index when the bound is selective or
+// tiny (candidates are the exact intersection), post may under-fill -> the
+// caller falls back; unknown shapes scan.
 pub fn choose_filter_plan(payloads: &PayloadStore, expr: &FilterExpr, total: Int, k: Int) -> Int {
   var exact: Int = filter_matching_count(payloads, expr);
   if exact >= 0 {
@@ -124,7 +174,12 @@ pub fn choose_filter_plan(payloads: &PayloadStore, expr: &FilterExpr, total: Int
   }
   var upper: Int = filter_matching_upper(payloads, expr, total);
   if upper < 0 { return filter_plan_scan(); }
-  if upper < k { return filter_plan_scan(); }
+  if filter_index_answerable(expr) {
+    if upper * 4 < total { return filter_plan_index(); }
+    if upper < k { return filter_plan_index(); }
+  } else {
+    if upper < k { return filter_plan_scan(); }
+  }
   if upper * 2 < total { return filter_plan_scan(); }
   return filter_plan_post();
 }
