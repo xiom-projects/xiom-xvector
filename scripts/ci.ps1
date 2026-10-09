@@ -30,7 +30,8 @@ $probes = @(
   "probe_hnsw_codec",
   "probe_result_shapes",
   "probe_fuzz_codecs",
-  "probe_soak_mixed"
+  "probe_soak_mixed",
+  "probe_kill_recovery"
 )
 
 $failures = 0

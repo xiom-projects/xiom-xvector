@@ -28,6 +28,7 @@ probes=(
   probe_result_shapes
   probe_fuzz_codecs
   probe_soak_mixed
+  probe_kill_recovery
 )
 
 failures=0
