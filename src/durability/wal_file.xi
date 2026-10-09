@@ -4,19 +4,21 @@
 module xiom.vector.durability.wal_file
 
 // File-backed WAL using the stdlib's whole-file APIs (write_file_bytes /
-// read_file_bytes / file_exists). The format is text: a header line plus one
-// line per record (lsn op key value timestamp payload_len [w1,w2,...]).
-// Persist is a whole-file CHECKPOINT (rewrite), not append+fsync -- the
-// stdlib fd/fsync/append ops are still stubs -- so a crash can lose records
-// written after the last persist; when the fd/fsync gap lands this path is
-// upgraded to append + fsync. Load is torn-tail tolerant: a missing,
-// corrupt, or byte-truncated file yields the longest prefix of COMPLETE
-// valid records (prefix exactness).
+// read_file_bytes / file_exists / rename). The format is text: a header line
+// plus one line per record (lsn op key value timestamp payload_len [w1,w2,..]).
+// Persist is a whole-file CHECKPOINT (rewrite), not append+fsync -- the stdlib
+// fd/fsync/append ops are still stubs -- so a crash can lose records written
+// after the last persist; when the fd/fsync gap lands this path is upgraded to
+// append + fsync. The write is ATOMIC: the checkpoint lands in `<path>.tmp`
+// first and is swapped over the target with io.rename, so a crash at any point
+// leaves either the previous or the new complete file -- never a torn one.
+// Load is torn-tail tolerant: a missing, corrupt, or byte-truncated file
+// yields the longest prefix of COMPLETE valid records (prefix exactness).
 //
-// The loader parses BYTES directly (no Str::from_utf8 / str_split): those
-// mis-lowered in this compilation unit (correct lengths, element content
-// reads as address-like digits -- XVC-C-11, C-08-family), so the reader
-// avoids Str content handling entirely and operates on the raw Vec[UInt8].
+// The loader parses BYTES directly (no Str::from_utf8 / str_split): the
+// original mislowering (XVC-C-11, C-08 family) is fixed in compiler v0.64.2,
+// but the byte parser stays as defense in depth with exact framing control;
+// the reader never handles Str content and operates on the raw Vec[UInt8].
 
 use xiom.io;
 use xiom.convert;
@@ -72,7 +74,12 @@ fn parse_int_at(b: &Vec[UInt8], start: Int) -> ParsedInt {
   return ParsedInt{ value: v, pos: p, ok: true };
 }
 
-// Whole-file checkpoint write. False on any IO error.
+// Whole-file checkpoint write, atomically: the text lands in `<path>.tmp`
+// and is swapped over the target with io.rename (platform rename replaces an
+// existing destination; verified on Windows + WSL by the probe). A crash
+// before the rename leaves the previous checkpoint untouched; the temp is
+// never part of the readable state. If the rename fails the temp remains and
+// is simply overwritten by the next persist. False on any IO error.
 pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
   var text = "xvector-wal 1\n";
   var i: Int = 0;
@@ -97,8 +104,14 @@ pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
     i = i + 1;
   }
   var bytes = slice.str_bytes(text);
-  var res = io.write_file_bytes(path, &bytes);
-  match res {
+  var tmp = path + ".tmp";
+  var wres = io.write_file_bytes(tmp, &bytes);
+  match wres {
+    Ok(_) => {}
+    Err(_) => { return false; }
+  }
+  var rres = io.rename(tmp, path);
+  match rres {
     Ok(_) => { return true; }
     Err(_) => { return false; }
   }

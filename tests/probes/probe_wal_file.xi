@@ -235,6 +235,47 @@ fn main() -> Int {
   var rec2 = engine_recover(&wal_load(pa), dim, DistanceMetric.Cosine);
   fails = check(same_state(&rec2, &eng), "overwrite: reopen equals live after the second persist", fails);
 
+  // M-D1 atomic checkpoint: persist writes `<path>.tmp` then io.rename.
+  fails = check(!io.file_exists(pa + ".tmp"), "atomic: no .tmp remains after a persist", fails);
+  var nrec_v2: Int = eng.wal.records.len();
+  var c4 = Vec[Float32].new();
+  s = rand_coords(s, dim, &mut c4);
+  upsert(&mut eng, 123, vec_from_coords(&c4));
+  // Simulate a kill between the temp write and the rename: the COMPLETE new
+  // checkpoint is staged at the temp path only (a real process would have
+  // written it and died before io.rename).
+  fails = check(wal_persist(&eng.wal, pa + ".tmp"),
+    "atomic: stage complete temp checkpoint (kill before rename)", fails);
+  var oldl = wal_load(pa);
+  fails = check(oldl.records.len() == nrec_v2,
+    "atomic: previous checkpoint intact after interrupted persist", fails);
+  var tmpl = wal_load(pa + ".tmp");
+  fails = check(tmpl.records.len() == eng.wal.records.len(),
+    "atomic: staged temp holds the new log", fails);
+  // Simulate a kill DURING the temp write: partial bytes in the temp path are
+  // never part of the readable state.
+  var fbp = io.read_file_bytes(pa + ".tmp");
+  var pbytes = Vec[UInt8].new();
+  match fbp {
+    Ok(b) => {
+      var pi: Int = 0;
+      var plim: Int = b.len() / 3;
+      while pi < plim { pbytes.push(b[pi]); pi = pi + 1; }
+    }
+    Err(_) => { fails = fails + 1; }
+  }
+  var pwr = io.write_file_bytes(pa + ".tmp", &pbytes);
+  match pwr { Ok(_) => {} Err(_) => { fails = fails + 1; } }
+  var oldl2 = wal_load(pa);
+  fails = check(oldl2.records.len() == nrec_v2,
+    "atomic: partial temp cannot damage the checkpoint", fails);
+  match io.remove_file(pa + ".tmp") { Ok(_) => {} Err(_) => { fails = fails + 1; } }
+  fails = check(!io.file_exists(pa + ".tmp"), "atomic: temp cleanup", fails);
+  // Complete the checkpoint again (the rename path applies) so the sweep
+  // below still compares the file against the live log.
+  fails = check(wal_persist(&eng.wal, pa), "atomic: completed persist after injection", fails);
+  fails = check(wal_matches_file(&eng.wal, pa), "atomic: file equals live after completed persist", fails);
+
   // Byte-truncation sweep: every prefix of the file loads as a complete-record
   // prefix of the full log.
   var fbres = io.read_file_bytes(pa);
