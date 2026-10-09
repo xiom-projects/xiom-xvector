@@ -98,7 +98,8 @@ src/
 |-- segment/
 |   |-- segment_state.xi  SegmentStateKind + transition table         [SCAFFOLD]
 |   |-- segment.xi        Segment (store + state)                     [SCAFFOLD]
-|   `-- manifest.xi       collection manifest of active segments      [SCAFFOLD]
+|   |-- manifest.xi       collection manifest of active segments      [SCAFFOLD]
+|   `-- segment_file.xi   sealed-segment codec (persist/load)         [NEW 2026-10-09]
 |
 |-- index/
 |   |-- ann_index.xi      AnnIndexKind {Flat,Hnsw,Ivf} + AnnParams    [DONE]
@@ -145,7 +146,9 @@ index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric} + storage.vector_store
                (graph codec; no query dependency)
 collection/* -> types, index.ann_index, core.shim ids
-segment/* -> storage.vector_store, segment_state, core.shim ids
+segment/* -> storage.vector_store, segment_state, core.shim ids;
+             segment_file -> index.hnsw + payload.payload + durability.wal_file
+             (sealed-segment codec; no engine dependency)
 payload.filter_eval -> payload.filter_ast -> payload.payload
 durability.manifest_file -> durability.wal_file (shared byte parsers) +
                             types.metric + index.ann_index (stable codes)
@@ -248,6 +251,40 @@ Payloads never outlive their point: `engine_delete` removes both the vector
 and the metadata record. Float32 payloads are fully gated since the v0.64.1
 fix (compiler XVC-C-06); the suite and probes assert float payloads
 bit-exactly per build.
+
+## 3c. Segment path (seal / restore, M-D4)
+
+```
+api.seal_segment
+  `-> engine_seal_segment
+        1. lifecycle: Mutable -> Sealing -> Sealed via the REAL transition
+           table (segment_state_can_transition)
+        2. build the sealed record: meta (seg_id/cid/state/dim/metric/
+           index kind/params) + every vector (vector_encode words) +
+           every payload (payload_encode words) + the Hnsw graph codec
+           (hnsw_encode words; Hnsw only)
+        3. whole-file atomic write: `<path>.tmp` -> io.rename
+           (persist refuses any non-Sealed/Immutable state)
+
+api.restore_segment
+  `-> engine_restore_segment
+        1. segment_file_load (torn-tail-safe complete-record prefix;
+           meta line required; graph optional/best-effort)
+        2. validate: cid == active collection, dim + metric match
+           (else Err, engine untouched)
+        3. swap the live store + payloads (+ decoded graph when Hnsw)
+        4. re-checkpoint the WAL (engine_checkpoint_from, LSN-continuous):
+           a reopen replays the restored state -- durable before the ack
+```
+
+Sealed segments are the immutable on-disk unit: self-describing (config
+travels in the meta line), bit-exact (vectors + payloads), and
+independently loadable. The codec shares the byte-level discipline of
+`wal_file`/`manifest_file` (never handled as a Str; temp+rename; a
+41-byte `file_size` guard for the XVC-C-12 family). Wiring sealed segments
+into the collection read path (multi-segment scans, retention/pruning) is
+D5/D6; today seal/restore is the durable transport. Gate:
+`tests/probes/probe_segment_file.xi`.
 
 ## 4. Search path (top-k query)
 

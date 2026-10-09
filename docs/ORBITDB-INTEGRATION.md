@@ -28,7 +28,11 @@ Import: `use xiom.vector.engine;` + `use xiom.vector.engine.core;` (the
   **distances smaller-is-better** (cosine = `1 - cos`).
 - Checkpoint/recover: `wal_persist(&eng.wal, path)` (atomic whole-file
   checkpoint) + `wal_load(path)` + `engine_recover(&wr, dim, metric)`.
-- Single active collection per engine value; multi-collection is M-D3.
+- Multi-collection registry (since M-D3): `create_named_collection` /
+  `select_collection` / `drop_collection` / `list_collections` with
+  per-collection isolation; whole-registry `save_manifest` + `open_engine`
+  (file-wins by name). Sealed segment files (`seal_segment` /
+  `restore_segment`) landed with M-D4.
 
 Your ordering rule and repair pattern are accepted as-is: **row commit
 first, embedding upsert second**; a crash between them leaves an

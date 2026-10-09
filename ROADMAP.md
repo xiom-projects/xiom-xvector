@@ -100,6 +100,12 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
   index configs) and routed WAL recovery (v2 config / v3 drop records;
   data records carry the collection id); whole-registry manifest save +
   file-wins open by name. Gate `probe_collections` (41 checks).
+- [OK] Sealed segment files (M-D4): `segment.segment_file` codec (vectors +
+  payloads + Hnsw graph codec; atomic whole-file persist; torn-tail-safe
+  complete-record prefix load; lifecycle Mutable -> Sealing -> Sealed) plus
+  engine `seal_segment`/`restore_segment` (cid/dim/metric validated; WAL
+  re-checkpoint after restore). Gate `probe_segment_file` (38 checks).
+  Multi-segment read path + retention stay D5/D6.
 - [STOP] Delta append + `fsync` on commit -- **blocked on the stdlib
   fd-syscall gap** (re-checked 2026-10-09 on 0.64.3; see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `wal_writer_flush` remains an
@@ -165,7 +171,7 @@ and 60 in-place updates 200/200; gates `probe_hnsw_recall`,
 **Why this phase matters:** the Phase 1 graph is correct but simplified; this
 phase is where recall, tunability, and deletes become production-ready.
 
-## Phase 5 -- Segments & compaction [ORANGE] Scaffold
+## Phase 5 -- Segments & compaction [YELLOW] In progress
 
 **Goal:** Bounded-memory, LSM-style vector storage.
 
@@ -280,7 +286,7 @@ not assumed; this phase turns a working engine into an operable one.
 | WAL write path | [YELLOW] In progress -- whole-file checkpoint + torn-tail load done; delta/fsync gated on stdlib |
 | Collections / schema / validator | [YELLOW] In progress -- multi-collection registry (M-D3: create/select/drop/list, routed recovery, whole-registry manifest); schema/validator scaffold |
 | Payload + filtering | [OK] Done |
-| Segments + manifest + recovery | [YELLOW] In progress -- in-WAL manifest + segments scaffold; segment files are M-D4 |
+| Segments + manifest + recovery | [YELLOW] In progress -- sealed-segment codec + engine seal/restore done (M-D4); multi-segment read path + retention are D5/D6 |
 | IVF / PQ / disk / SIMD / distributed | [STOP] v1.1/v2 per the production plan |
 
 ## Milestone summary

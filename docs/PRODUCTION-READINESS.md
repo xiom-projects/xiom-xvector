@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-D3 multi-collection)
-- **Overall:** **74 %** (weighted; see method)
+- **As of:** 2026-10-09 (post M-D4 segment files)
+- **Overall:** **75 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -28,7 +28,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 68 | buildable | stdlib fsync/append gap, delta log, file-backed segments, file-level kill test |
+| D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 75 | buildable | pagination, version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
@@ -36,8 +36,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 86 | release-grade | reference oracle, CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x68 + 0.08x100 +
-0.08x75 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **73.70 -> 74 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
+0.08x75 + 0.10x25 + 0.05x20 + 0.09x86 + 0.08x48 = **74.70 -> 75 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -96,7 +96,7 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 68 %
+### D. Persistence & durability -- 73 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
@@ -110,17 +110,27 @@ equality, overwrite persistence, 9-point truncation sweep, missing/
 garbage/empty cases; gate `probe_wal_file`), **atomic checkpoint swap**
 (M-D1: `<path>.tmp` -> `io.rename`; 7 fault-injection checks -- no temp
 remains, staged-complete and partial temps leave the previous checkpoint
-intact, completed persist advances the file), and the **durable collection
+intact, completed persist advances the file), the **durable collection
 registry file** (M-D2: `durability.manifest_file` -- `xvector-manifest 1`
 text registry, one line per collection `name dim mc kc m efc efs`;
 whole-file persist with atomic temp+rename; invalid entries refused with
 the target untouched; torn-tail-safe byte-level load with a
-complete-entry prefix; `engine_manifest_save` + `engine_recover_file`
-prefer the file registry with the in-WAL manifest as the migration
-fallback; gate `probe_manifest_file`, 38 checks).
+complete-entry prefix; gate `probe_manifest_file`, 38 checks), the
+**multi-collection registry** (M-D3: named collections with per-
+collection stores/payloads/indexes; WAL v2 config + v3 drop records with
+cid-stamped data; routed recovery + whole-registry checkpoint; whole-
+registry `save_manifest`/`open_engine` with file-wins by name; gate
+`probe_collections`, 41 checks), and **sealed segment files** (M-D4:
+`segment.segment_file` -- vectors + payloads + Hnsw graph codec;
+whole-file atomic persist; torn-tail-safe complete-record prefix load;
+lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/
+`restore_segment` with cid/dim/metric validation and WAL re-checkpoint
+via shared `engine_checkpoint_from`; gate `probe_segment_file`,
+38 checks).
 Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
-`docs/STDLIB-WISHLIST-XVECTOR.md`), delta append log, file-backed segment
-files, file-level crash-kill test, WAL retention/pruning policy.
+`docs/STDLIB-WISHLIST-XVECTOR.md`), delta append log, multi-segment
+collection read path, file-level crash-kill test, WAL
+retention/pruning policy.
 
 ### E. Metadata & filtering -- 100 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
@@ -192,7 +202,7 @@ extraction with the packages lane.
 | Milestone | Meaning | Status |
 |---|---|---|
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
-| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint on disk with torn-tail-safe load + atomic swap (M-D1); durable collection registry file with file-wins open (M-D2); fsync/append delta, segments, file-level kill test blocked on stdlib fsync/append |
+| M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint + atomic swap (M-D1); durable registry file (M-D2); multi-collection routed recovery + whole-registry manifest (M-D3); sealed segment files with engine seal/restore (M-D4); fsync/append delta, multi-segment reads, file-level kill test, retention blocked on stdlib fsync/append |
 | M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | In progress: HNSW hardening (recall harness, tombstones, compaction, codec) + payload index + planner + multi-collection registry + benchmark harness landed; concurrency/serialization and scale tuning pending |
 | M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | Not started (release gate is owner's) |
 
@@ -484,6 +494,17 @@ extraction with the packages lane.
   G 10 -> 25; overall 72.04 -> 73.70 -> 74 %. Evidence: full batteries
   (suite 171/171 x2 + 22 probes x2 + bench smoke, Windows + WSL), ALL
   GATES GREEN; no regression across the recovery rewrite.
+- **2026-10-09 (forty-first pass):** M-D4 sealed segment files -- new
+  `segment.segment_file` codec (meta + vector + payload + optional Hnsw
+  graph records; whole-file atomic persist; torn-tail-safe complete-record
+  prefix load; 41-byte size guard), `segment_state_from_code`, engine
+  `engine_seal_segment` (real lifecycle Mutable -> Sealing -> Sealed) and
+  `engine_restore_segment` (cid/dim/metric validated; WAL re-checkpoint via
+  the shared `engine_checkpoint_from`, LSN-continuous), facade
+  `seal_segment`/`restore_segment`. Gate `probe_segment_file` (38 checks;
+  batteries now 23 probes). D 68 -> 73; overall 73.70 -> 74.70 -> 75 %.
+  Evidence: full batteries (suite 171/171 x2 + 23 probes x2 + bench smoke,
+  Windows + WSL), ALL GATES GREEN.
 - **2026-10-09 (thirty-ninth pass):** M-D2 manifest file -- new
   `durability.manifest_file` (`xvector-manifest 1` text registry: one line
   per collection `name dim mc kc m efc efs`; whole-file persist with atomic

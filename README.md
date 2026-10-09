@@ -14,7 +14,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 xiom-vector is organized as a **layered engine** rather than a flat set of files. It reuses `xiom-core` (errors, ids, config, limits, contracts, WAL, metrics) as its durable-systems substrate and adds the vector-specific layers on top: types, storage, indexes, query, collections, payload/filtering, segments, durability, and a public API facade.
 
-The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, and WAL-backed recovery (vectors + metadata), plus a whole-file WAL checkpoint on disk with torn-tail-safe load -- is implemented today. Collections, segments, and the durable manifest are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
+The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, WAL-backed recovery (vectors + metadata), a whole-file WAL checkpoint on disk with torn-tail-safe load, the multi-collection registry, and sealed segment files (vectors + payloads + graph codec, atomic persist, seal/restore) -- is implemented today. The multi-segment read path and retention are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
 
 See:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) -- the shared-core + vector-layer model, module tree, write/search paths, failure domains.
@@ -63,7 +63,7 @@ src/
 |-- collection/               schema - collection - validator
 |-- payload/                  payload (+ sorted key index) - filter_ast - filter_eval
 |-- storage/                  vector_store - id_map
-|-- segment/                  segment_state - segment - manifest
+|-- segment/                  segment_state - segment - manifest - segment_file (sealed codec)
 |-- index/                    ann_index - flat_index - hnsw (+ codec, recall harness)
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - filter_plan - topk_heap - search_service
@@ -93,6 +93,8 @@ src/
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
 | `save_manifest(eng, path)` | Persist the whole collection registry (one entry per collection: name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2/D3) |
 | `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry entries override per-collection configs by name; the in-WAL manifests are the migration fallback (M-D2/D3) |
+| `seal_segment(eng, seg_id, path)` | Seal the active collection as an immutable segment file (vectors + payloads + Hnsw graph codec; atomic rename; M-D4) |
+| `restore_segment(eng, path)` | Restore the active collection from a sealed segment file (cid/dim/metric must match); the WAL is re-checkpointed so a reopen replays it (M-D4) |
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
 All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
@@ -110,9 +112,9 @@ is zero-cost and stable as public API).
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
 | WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; whole-file checkpoint on disk with torn-tail-safe load, `durability.wal_file`; `fsync`/append blocked on the stdlib fd-syscall gap) |
 | Collections / schema / validator | [YELLOW] In progress (multi-collection registry: create/select/drop/list, per-collection isolation + routed recovery, whole-registry manifest; schema/validator scaffold) |
-| Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
+| Segments + lifecycle state machine | [YELLOW] In progress (sealed-segment codec `segment.segment_file`: vectors + payloads + Hnsw graph, atomic whole-file persist, torn-tail-safe load, lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/`restore_segment` with WAL re-checkpoint; multi-segment read path + retention pending) |
 | Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
-| Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; fsync/delta + segment files pending) |
+| Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; sealed segment files via `segment_file` with engine seal/restore; fsync/delta + multi-segment read path pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme

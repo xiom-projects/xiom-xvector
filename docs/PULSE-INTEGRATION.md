@@ -18,9 +18,11 @@ external **Int id**; batch ops (`upsert_many`/`search_many`/`delete_many`);
 exact Flat scan and HNSW ANN; exact range search
 (`search_range(eng, query, radius, limit)` -- inclusive radius, distance
 sorted); typed payload filters with a selectivity planner; payload
-hydration; whole-file WAL checkpoint + recover.
-Single active collection per engine value (multi-collection is M-D3 in
-`docs/PRODUCTION-PLAN.md`).
+hydration; whole-file WAL checkpoint + recover. Multi-collection registry:
+`create_named_collection`/`select_collection`/`drop_collection`/
+`list_collections` with per-collection isolation, whole-registry
+`save_manifest` + `open_engine`, and sealed segment files
+(`seal_segment`/`restore_segment`).
 
 - Vector representation: `Vector { data: Vec[Float32]; dimension: Int }`
   built with `Vector.new(dim)` + `v.set(i, value)`.
