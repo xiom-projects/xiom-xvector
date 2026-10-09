@@ -8,7 +8,7 @@ This is the honest, evidence-based scorecard. It is recomputed at every lane
 wrap and every number must point at evidence (tests, probes, docs) or name
 the missing work.
 
-- **As of:** 2026-10-09 (post durable collection manifest)
+- **As of:** 2026-10-09 (post HNSW update re-linking)
 - **Overall:** **68 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -25,7 +25,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 95 | release-grade | range-search surface, batch search |
-| C | ANN index (HNSW hardening) | 14 | 97 | release-grade | file-backed persistence |
+| C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 58 | buildable | stdlib fsync gap, file-backed segments, manifest file, kill-recovery test |
 | E | Metadata & filtering | 8 | 99 | release-grade | multi-key intersection indexes |
 | F | API & query surface | 8 | 70 | buildable | batch ops, pagination |
@@ -34,8 +34,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 80 | release-grade | kill-recovery, reference oracle, CI |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x95 + 0.14x97 + 0.20x58 + 0.08x99 +
-0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.84 -> 69 %**.
+**Overall today:** 0.08x95 + 0.10x95 + 0.14x98 + 0.20x58 + 0.08x99 +
+0.08x70 + 0.10x10 + 0.05x20 + 0.09x80 + 0.08x48 = **68.98 -> 69 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -86,9 +86,10 @@ ef=8; n=800: 200/200; after-delete 300/300; compacted 200/200; engine-level
 recall 200/200 incl. ef_construction=32; gates `probe_hnsw_recall`,
 `probe_engine_hnsw`, `probe_hnsw_codec`), AnnParams validation.
 Remaining: file-backed graph segments (stdlib I/O pending). Latency proxies
-(build work + per-ef visited/recall table) are in the harness; the WSL
-segfault found while wiring the map (XVC-C-09) is worked around and pinned
-as a repro for the compiler lane.
+(build work + per-ef visited/recall table) are in the harness; updates
+re-link edges for the new vector (recall 200/200 after 60 in-place
+updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
+around and pinned as a repro for the compiler lane.
 
 ### D. Persistence & durability -- 58 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
@@ -349,6 +350,13 @@ extraction with the packages lane.
   malformed fallbacks). D 55 -> 58; overall 68.24 -> 69 %. Evidence: full
   batteries via ci.ps1 / ci.sh (suite x2 + 16 probes x2, Windows + WSL),
   ALL GATES GREEN.
+- **2026-10-09 (twenty-seventh pass):** HNSW update re-linking --
+  re-inserting an existing id refreshes the node's edges for the new vector
+  (per-layer beam through the old structure + diversified replacement);
+  connect factored into beam_select/apply_layer_edges (construction
+  behavior-identical). Gate: recall@10 200/200 after 60 in-place updates vs
+  the flat oracle; size/live unchanged. C 97 -> 98; overall 68.84 -> 69 %.
+  Evidence: full batteries via ci.ps1 / ci.sh, ALL GATES GREEN.
 
 ## Update rule
 

@@ -122,8 +122,10 @@ vector); the node keeps its edges and keeps routing traffic, but
 `hnsw_search` never adds it to results. Deleting an unknown or
 already-deleted id returns `false`. `hnsw_live_count` reports the
 non-deleted node count. Re-inserting an id updates the vector in place and
-revives the node (edges are kept; re-linking on update is a hardening TODO).
-`hnsw_compact(g, metric)` rebuilds the graph from the live nodes only (same
+revives the node, and **refreshes its edges** for the new vector (per-layer
+beam through the old structure, diversified replacement, bidirectional
+re-link; landed 2026-10-09). `hnsw_compact(g, metric)` rebuilds the graph
+from the live nodes only (same
 `m`/`ml`, insertion order preserved): tombstones are dropped, edges are
 rebuilt around the survivors, and their slots are reclaimed. The engine
 wrapper is `compact_index` (Flat -> 0 reclaimed).
@@ -180,7 +182,7 @@ Latency proxies: `hnsw_build_ops` counts construction distance ops (n=200:
 | Area | Now (working) | Production (Phase 4) |
 |------|---------------|----------------------|
 | Layers | **multi-layer** (8-layer capacity, geometric `ml`, greedy descent) | adaptive capacity / higher levels for very large n |
-| Build | **beam insertion honouring `ef_construction` + diversified pruning** | parallel/adaptive build, quantized distance |
+| Build | **beam insertion honouring `ef_construction` + diversified pruning; in-place update re-linking** | parallel/adaptive build, quantized distance |
 | Search | greedy descent + beam honouring `ef`; per-ef visited/recall table | adaptive `ef`, latency budget |
 | Metric | metric-agnostic via `vector_distance` | unchanged (done) |
 | Node position lookup | **O(log n) sorted id map** (`id_keys`/`id_vals`; duplicates rejected) | unchanged |
