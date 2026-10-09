@@ -33,8 +33,12 @@ needed) -> signed commit. Red build = rejection.
   v3 drop WAL records; cid-stamped data; routed recovery; whole-registry
   checkpoint + manifest save/open); `probe_collections` (41 checks);
   survives reopen
-- [ ] D4 segment files: sealed segments (vectors+payloads+graph codec)
-  whole-file + rename; load-on-open; `probe_segments_file`
+- [x] D4 segment files **(done 2026-10-09)**: `segment.segment_file`
+  codec (meta + vectors + payloads + Hnsw graph; whole-file atomic
+  persist; torn-tail-safe complete-record prefix load; lifecycle
+  Mutable -> Sealing -> Sealed); engine `seal_segment`/`restore_segment`
+  (cid/dim/metric validated; WAL re-checkpoint after restore);
+  `probe_segment_file` (38 checks)
 - [ ] D5 (GATED: stdlib fsync/append) WAL delta + fsync on commit;
   file-level kill harness (spawn/kill/recover) on Windows + WSL
 - [ ] D6 retention policy + snapshots/export-import + restore drill;

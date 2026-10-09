@@ -150,9 +150,12 @@ Goal: a kill never costs an acknowledged write on the available path.
   data, routed recovery + whole-registry checkpoint; manifest-backed (D2)
   whole-registry `save_manifest`/`open_engine` (file-wins by name). Gate
   `probe_collections` (41 checks); legacy `create_collection` -> "default".
-- **D4 segment files** -- sealed segments (vectors + payloads + HNSW codec)
-  written whole-file + atomic rename; load-on-open; segment lifecycle wired
-  to seal thresholds (P2 owns tuning). Probe `probe_segments_file`.
+- **D4 segment files -- DONE 2026-10-09** -- sealed segments (vectors +
+  payloads + HNSW codec) written whole-file + atomic rename; torn-tail-safe
+  load; lifecycle Mutable -> Sealing -> Sealed wired; engine
+  `seal_segment`/`restore_segment` (WAL re-checkpoint after restore). Gate
+  `probe_segment_file` (38 checks). Multi-segment read path + thresholds
+  stay with D5/D6 (P2 owns tuning).
 - **D5 WAL delta + fsync + file-level kill test** *(gated: stdlib fsync /
   append-bytes)* -- append-only delta with `fsync` on commit; harness that
   spawns a child writer, kills it mid-append, and proves recovery has every

@@ -23,7 +23,7 @@ packages/xiom-vector/
     |-- collection/{schema,collection,validator}.xi
     |-- payload/{payload,filter_ast,filter_eval}.xi
     |-- storage/{vector_store,id_map}.xi
-    |-- segment/{segment_state,segment,manifest}.xi
+    |-- segment/{segment_state,segment,manifest,segment_file}.xi
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,filter_plan,topk_heap,search_service}.xi
@@ -215,10 +215,38 @@ removes the point's payload.
   Float32 payloads can read as 0 in affected builds; lane gates use
   Int/Text/Bool.
 
-## `xiom.vector.segment.{segment_state,segment,manifest}`
-`enum SegmentStateKind { Mutable, Sealing, Sealed, Indexing, Immutable, Compacting, Dropped }` + `segment_state_is_writable/is_terminal/code/can_transition`.
+## `xiom.vector.segment.{segment_state,segment,manifest,segment_file}`
+`enum SegmentStateKind { Mutable, Sealing, Sealed, Indexing, Immutable, Compacting, Dropped }` + `segment_state_is_writable/is_terminal/code/can_transition/from_code`.
 `Segment { id; state; store }` + `segment_new/insert/transition/size/is_writable`.
 `Manifest { collection; active_segments; last_lsn }` + `manifest_new/add_segment/remove_segment/set_lsn/segment_count`.
+- `segment_file.xi` (2026-10-09, M-D4): the sealed-segment codec. Text format
+  (LF; CRLF accepted on load): header `xvector-segment 1`, a required meta
+  line `meta <seg_id> <cid> <state_code> <dim> <metric_code> <kind_code> <m>
+  <efc> <efs>`, then `v <id> <vector_encode words...>` per vector,
+  `p <id> <payload_encode words...>` per payload, and an optional
+  `g <hnsw_encode words...>` (Hnsw segments). Rules: seg_id >= 1, cid >= 1,
+  state 0..6 (persist accepts only Sealed/Immutable -- the engine drives
+  Mutable -> Sealing -> Sealed through the real transition table first),
+  dim >= 1, stable metric/kind codes, valid params. `SealedSegment {
+  valid; seg_id; cid; state; dim; metric; kind; m; ef_construction;
+  ef_search; store; payloads; has_graph; graph }` +
+  `sealed_segment_new/sealed_segment_seal`. `segment_file_persist(ss,
+  path)` is whole-file + atomic (`<path>.tmp` -> `io.rename`; invalid meta /
+  non-sealed state / IO error -> false, target untouched). `segment_file_load(path)`
+  is byte-level (never a Str) and torn-tail tolerant: missing/garbage/
+  headerless files are invalid; a truncated or malformed tail yields the
+  longest prefix of complete records (a malformed line stops the prefix);
+  the meta line is required; the graph is best-effort (undecodable ->
+  dropped, it is rebuildable); reads under 41 bytes are skipped
+  (`file_size` guard, XVC-C-12 defense). Engine wiring:
+  `engine_seal_segment(eng, seg_id, path)` seals the ACTIVE collection
+  (vectors + payloads + graph) and `engine_restore_segment(eng, path)`
+  loads a sealed file back into the active collection when cid/dim/metric
+  match (else Err, engine untouched) and re-checkpoints the WAL so a reopen
+  replays the restored state. Gate: `tests/probes/probe_segment_file.xi`
+  (38 checks: degradation, roundtrip, atomic staged/partial temp injection,
+  14-point truncation sweep, malformed prefixes, seal/restore with
+  bit-exact search, WAL durability after restore, refusals, Flat/empty).
 
 ## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file,manifest_file}` (extracted modules)
 Real modules since 2026-10-08 (wave 3). `wal.xi` holds
@@ -312,6 +340,7 @@ wraps the names (SearchHits discipline).
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- legacy single-collection replay (kept in `durability.recovery`; the engine now uses the registry path).
 - Multi-collection recovery (M-D3): `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- builds the collection set from `ManifestUpdate` records (v1 legacy `[1, dim, mc, kc, m, efc, efs]` -> "default"/cid 1; v2 config `[2, name_len, name..., dim, mc, kc, m, efc, efs]` upserted by record value = cid; v3 drop `[3, name_len, name...]`), replays data records **routed by collection id** when the log carries v2/v3 records (D3 strict mode) or into the single collection otherwise (legacy logs, where the value field is not meaningful), applies each collection's index (Hnsw graphs rebuilt), and writes a compacted checkpoint WAL carrying every alive collection's data + its v2 manifest. No manifest at all -> caller dim/metric as the single "default" collection. Malformed records are ignored; LSNs stay monotonic. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
 - `engine_manifest_save(eng, path) -> Bool` -- persist the WHOLE registry (one entry per collection, cid order; whole-file + atomic rename via the D2 codec). `engine_recover_file(w, path, dim, metric) -> VectorEngine` `requires: dim > 0` -- the same recovery, with the manifest file's entries overriding configs **by collection name** (the registry of record; the D2 first-entry rule applies to single-collection logs); names absent from the file keep the in-WAL config, and a missing/corrupt file falls back entirely to the WAL. Gates: `tests/probes/probe_manifest_file.xi`, `tests/probes/probe_collections.xi`.
+- Segments (M-D4): `engine_seal_segment(eng, seg_id, path) -> Result[Bool, CoreError]` `requires: eng.created` -- write the active collection as a sealed segment file (vectors + payloads + Hnsw graph codec; lifecycle driven Mutable -> Sealing -> Sealed through `segment_state_can_transition` before the write; atomic temp+rename). `engine_restore_segment(eng, path) -> Result[Bool, CoreError]` `requires: eng.created` -- load a sealed file into the active collection when cid/dim/metric match (else Err, engine untouched) and re-checkpoint the WAL through the shared `engine_checkpoint_from(eng, base_lsn)` (whole-registry compacted checkpoint with LSN continuity), so a reopen replays the restored state. Gate `tests/probes/probe_segment_file.xi`.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
@@ -320,7 +349,7 @@ Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`)
 `compact_index`, `upsert`, `upsert_many`, `search`, `search_many`,
 `delete_point`, `delete_many`, `get_point`, `set_payload`, `get_payload`,
 `search_filtered`, `search_range`, `search_with_request`, `save_manifest`,
-`open_engine` -- thin delegations.
+`open_engine`, `seal_segment`, `restore_segment` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 
