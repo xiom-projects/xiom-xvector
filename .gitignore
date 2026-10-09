@@ -27,6 +27,7 @@ deps/
 # Kilo / Agent Manager / editor workspace state (never commit)
 .kilo/
 .vscode/
+.VSCodeCounter/
 .idea/
 *.code-workspace
 *.swp

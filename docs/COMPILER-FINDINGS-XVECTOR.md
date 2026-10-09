@@ -13,17 +13,19 @@ Windows (`%LOCALAPPDATA%\xiom.new\bin\xiom.exe`) and Linux/WSL
 `PACKAGE-WISHLIST-XVECTOR.md`).
 All findings below were reported on v0.64.0, re-tested on v0.64.1, and
 re-tested again on v0.64.2 (2026-10-09); **XVC-C-08..C-12** were found later
-on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2.
+on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2; **XVC-C-13** was found
+on v0.64.2 (2026-10-09, M-D2) and is open.
 
-**Current status (compiler v0.64.2, 2026-10-09): no XVECTOR finding is
-open.** 12 findings total (C-01..C-12), each with a repro bundle under
-`docs/repro/`:
+**Current status (compiler v0.64.2, 2026-10-09): one XVECTOR finding is
+open (XVC-C-13, new this pass).** 13 findings total (C-01..C-13), each with
+a repro bundle under `docs/repro/`:
 
 | Range | Status |
 |---|---|
 | XVC-C-01..C-08, C-10 | **verified fixed** (C-01..C-06 in v0.64.1; C-07/C-08 in v0.64.2 after the repro re-runs; C-10 incidentally fixed in v0.64.2 -- inline pad shape no longer segfaults) |
 | XVC-C-11, C-12 | **fixed in context** (v0.64.2 re-test of the original failing unit: unguarded `read_file` Str content and 5-byte `read_file_bytes` both clean) |
 | XVC-C-09 | **repro green** on WSL + Windows; workaround retained (weaker re-test -- the crash lived in the compiled engine path, not the repro shape) |
+| XVC-C-13 | **OPEN (new)** -- `&Str` parameter types are unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values: `first_byte("A")` = 71 on Windows / 127 on WSL, expect 65) |
 | retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard |
 
 Format: `| Date | Finding | Evidence | Workaround | Impact |`.
@@ -95,6 +97,7 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-08 | **[FIXED v0.64.2]** **XVC-C-10: `hnsw_decode`'s inline pad loop (`while pad < m` pushing zeros into `g.adj`) segfaults at `m >= 512`** (Windows + WSL), even on otherwise pristine streams and with a forced `None` return afterwards. Found by the new deterministic fuzz probe. Control experiments (712k standalone `Vec[Int]` pushes; the same nested pad loop alone; interleaved pushes into two struct `Vec` fields) are all green -- context-sensitive lowering, family of XVC-C-08/C-09. | `docs/repro/xv-decode-pad-loop/` (probe + README, revision-pinned: pre-fix `e0b1f7f` segfaults after "decode start"; post-fix exits 0). General gate: `tests/probes/probe_fuzz_codecs.xi`. | v0.64.1: pad step behind a function boundary (`pad_adj_slots`) + strict bounds (`m <= 512` = AnnParams max degree; `count <= words.len()`). v0.64.2 fixed the crash (inline shape re-verified green); the bounds stay as strict-decode hygiene. | crash on malformed graph-codec input (historical) |
 | 2026-10-09 | **[fixed in context on v0.64.2]** **XVC-C-11: `io.read_file` content does not survive in some compilation units** -- `Ok` for a written file, but the returned Str's content is broken in affected units (`slice.str_bytes(s)` = 0 bytes for an 11-/1771-byte file; silent wrong data). `Str::from_utf8` shows the same class (correct lengths, address-like digits when split/printed). Same APIs are GREEN in a minimal control unit -- unit-context-sensitive, family of XVC-C-08. | `docs/repro/xv-stdlib-file-read-defects/` (`probe_str_content.xi` green in its own unit; the broken context was `probe_wal_file`'s unit while building the file-backed WAL). | Read bytes via `read_file_bytes` and parse byte-wise; never handle file content as a Str (v0.64.2 re-tested green in the original context; the pattern stays as defense in depth). | silent wrong file content for any component reading files as text (historical) |
 | 2026-10-09 | **[fixed in context on v0.64.2]** **XVC-C-12: `io.read_file_bytes` aborts on files of <= 8 bytes** -- `contract violated: ensures at 947:12` (the ensures `result is Ok => result.len() >= 0` cannot be false for a successful read); zero-byte files included; 9+ bytes read fine. The same call is GREEN in a minimal control unit (unit-context-sensitive). | `docs/repro/xv-stdlib-file-read-defects/` (`probe_tiny_read.xi` green in its own unit; the abort context was `probe_wal_file`'s unit). | Guard with `io.file_size` and skip reads shorter than the shortest valid input (WAL guard `< 25`, semantically exact; v0.64.2 re-tested green in context -- the guard stays as defense in depth). | fatal abort for ordinary small-file reads in affected units (historical) |
+| 2026-10-09 | **[OPEN, v0.64.2]** **XVC-C-13: `&Str` parameter types are unknown to the type checker** -- `xiom: warning: unknown type '&Str' -- defaulting to i64. This may produce incorrect code.`; the function body then reads the parameter as an integer (`first_byte("A")` returns **71 on Windows / 127 on WSL** instead of 65; no crash). Found while adding the M-D2 manifest file: `manifest_name_valid(name: &Str)` made every name validate as invalid (`slice.str_bytes` on the i64 yields no bytes), so `manifest_persist` refused every registry. Every stdlib/lane Str parameter is by value, so the shape had never been exercised. | `docs/repro/xv-str-ref-param/probe.xi` (warning present on both builds; Windows 71 / WSL 127, both exit nonzero). | Pass `Str` **by value** (lane + stdlib convention); the manifest validator is by-value. | warning-loud but value-silent: a `&Str` parameter compiles and returns garbage |
 
 
 ## Notes for the compiler lane
@@ -113,6 +116,9 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 - SearchRequest/hydration probe: `tests/probes/probe_search_request.xi` (real-module hydration gate;
   XVC-C-08 fixed in v0.64.2, the suite asserts the flags again too;
   run with `scripts\run-probe.ps1 tests\probes\probe_search_request.xi -Runs 2`).
+- `&Str` repro (XVC-C-13, OPEN): `docs/repro/xv-str-ref-param/probe.xi` --
+  `.\scripts\build.ps1 docs\repro\xv-str-ref-param\probe.xi -Name strref`
+  then run `out\strref.exe` (v0.64.2: prints 71, exit 1; WSL prints 127).
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
   then the suite x2 + the probes, then re-pin in `SESSION.md` (done for
   v0.64.2 on 2026-10-09 -- see the re-test section).

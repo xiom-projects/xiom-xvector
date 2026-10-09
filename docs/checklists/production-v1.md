@@ -22,8 +22,12 @@ needed) -> signed commit. Red build = rejection.
 - [x] D1 atomic checkpoint **(done 2026-10-09)**: `wal_persist` temp+
   `io.rename`; fault-injection probe (staged-complete temp + partial temp
   both leave the previous file; 7 new checks in `probe_wal_file`)
-- [ ] D2 manifest file: registry persisted whole-file + rename; load on
-  open; in-WAL manifest migration fallback; `probe_manifest_file`
+- [x] D2 manifest file **(done 2026-10-09)**: `durability.manifest_file`
+  (`xvector-manifest 1` registry; whole-file persist with atomic
+  temp+rename; invalid entries refused; torn-tail-safe complete-entry
+  prefix load); `engine_manifest_save` + `engine_recover_file`/`open_engine`
+  (file registry governs; in-WAL manifest migration fallback);
+  `probe_manifest_file` (38 checks)
 - [ ] D3 multi-collection runtime: named collections, create/drop/list,
   isolated stores/payloads/indexes; `probe_collections`; survives reopen
 - [ ] D4 segment files: sealed segments (vectors+payloads+graph codec)

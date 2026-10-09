@@ -86,9 +86,15 @@ HNSW is the general-purpose ANN the rest of the engine is built around. See
   metadata.
 - [OK] Whole-file WAL checkpoint on disk (`durability.wal_file`:
   `wal_persist` + torn-tail-safe `wal_load`; gate `probe_wal_file`) --
-  atomic temp+rename hardening queued (D1 in the production plan).
+  atomic temp+rename hardening landed (M-D1).
 - [OK] In-WAL collection manifest (`ManifestUpdate` records) -- dim/metric/
   index kind/params survive `engine_recover` and checkpoints.
+- [OK] Durable collection registry file (`durability.manifest_file`, M-D2):
+  `xvector-manifest 1` text registry (name/dim/metric/index/params per
+  entry), whole-file persist with atomic temp+rename, torn-tail-safe load;
+  `engine_manifest_save` + `engine_recover_file`/`open_engine` prefer the
+  file registry and fall back to the in-WAL manifest (migration). Gate
+  `probe_manifest_file` (38 checks).
 - [STOP] Delta append + `fsync` on commit -- **blocked on the stdlib
   fd-syscall gap** (re-checked 2026-10-09 on 0.64.3; see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `wal_writer_flush` remains an

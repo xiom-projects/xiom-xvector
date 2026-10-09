@@ -27,7 +27,7 @@ packages/xiom-vector/
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,filter_plan,topk_heap,search_service}.xi
-    |-- durability/{wal,recovery,write_ahead_events,wal_file}.xi
+    |-- durability/{wal,recovery,write_ahead_events,wal_file,manifest_file}.xi
     `-- api/vector_api.xi
 ```
 
@@ -46,6 +46,10 @@ Implemented today: `DistanceMetric` + the three distances + `vector_distance` (m
 `enum DistanceMetric { Cosine, DotProduct, Euclidean }`.
 - `dot_product_distance` -> `-Sigma(aibi)`; `cosine_distance` -> `1 - costheta` (zero vectors -> 1.0); `euclidean_distance` -> `sqrtSigma(ai-bi)2`.
 - `vector_distance(a, b, metric)` dispatches (`requires: a.dimension == b.dimension`).
+- `metric_code(m) -> Int` / `metric_from_code(c)` -- stable on-disk codes
+  (1 = Cosine, 2 = DotProduct, 3 = Euclidean), shared by the WAL collection
+  manifest and the manifest file (D2). `Str` parameters are always by value
+  (`&Str` mislowers on v0.64.2 -- XVC-C-13).
 - `metric_name(m) -> Str`.
 
 ## `xiom.vector.types.neighbor` (extracted module)
@@ -81,7 +85,7 @@ Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector 
 `IdMap` of `IdMapEntry { vector_id; segment; offset }`. `id_map_new/put/lookup/remove/len`. Maps logical id -> physical location for compaction stability.
 
 ## `xiom.vector.index.ann_index`
-`enum AnnIndexKind { Flat, Hnsw, Ivf }`; `AnnParams { m; ef_construction; ef_search }`. `ann_params_default` (`m=16, efC=200, efS=64`), `ann_params_valid` (bounds `m` by `core.limits.max_graph_degree`), `ann_index_kind_name`.
+`enum AnnIndexKind { Flat, Hnsw, Ivf }`; `AnnParams { m; ef_construction; ef_search }`. `ann_params_default` (`m=16, efC=200, efS=64`), `ann_params_valid` (bounds `m` by `core.limits.max_graph_degree`), `ann_index_kind_name`, and the stable on-disk codes `ann_kind_code(k) -> Int` / `ann_kind_from_code(c)` (1 = Flat, 2 = Hnsw, 3 = Ivf).
 
 ## `xiom.vector.index.flat_index`
 `FlatIndex { store: VectorIndex }` -- exact brute-force baseline / correctness oracle. `flat_index_new/add/remove/size`; `flat_index_search(idx, query, k, metric)` `ensures: result.len() <= k` (delegates to `search_service.search_knn`).
@@ -216,7 +220,7 @@ removes the point's payload.
 `Segment { id; state; store }` + `segment_new/insert/transition/size/is_writable`.
 `Manifest { collection; active_segments; last_lsn }` + `manifest_new/add_segment/remove_segment/set_lsn/segment_count`.
 
-## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file}` (extracted modules)
+## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file,manifest_file}` (extracted modules)
 Real modules since 2026-10-08 (wave 3). `wal.xi` holds
 `WalOpKind/WalRecord/WalWriter` + `wal_writer_new/append/append_payload/
 current_lsn/flush/resume`; `recovery.xi` holds replay + compaction;
@@ -255,6 +259,27 @@ vector**.
   kill-before/during-rename injection, a 9-point byte-truncation sweep with
   per-cut prefix checks, record-boundary cuts, missing/garbage/empty files,
   and a 1200-record scale roundtrip).
+- `manifest_file.xi` (2026-10-09, M-D2): the durable collection registry.
+  Text format: the header line `xvector-manifest 1` plus one line per entry,
+  `<name> <dim> <metric_code> <kind_code> <m> <ef_construction> <ef_search>`;
+  names are 1..64 chars from `[A-Za-z0-9_.-]` (no spaces). Types:
+  `RegistryEntry { name; dim; metric; kind; m; ef_construction; ef_search }`,
+  `CollectionRegistry { valid; version; entries }` +
+  `registry_new/registry_add/registry_entry_new`.
+  `manifest_persist(reg, path)` validates every entry BEFORE writing
+  (invalid name/dim/params -> false, target untouched) and swaps
+  `<path>.tmp` over the target with `io.rename` (atomic, the M-D1
+  discipline). `manifest_load(path)` parses byte-wise (never as a Str) and
+  is torn-tail tolerant: missing/garbage/headerless files are invalid
+  (`valid=false`); a truncated or malformed tail yields the longest prefix
+  of complete valid entries; a header-only file is a valid empty registry.
+  Reads shorter than the 19-byte header are skipped (`file_size` guard,
+  XVC-C-12 defense). Names are rebuilt from token bytes; all `Str`
+  parameters are by value (XVC-C-13: `&Str` params mislowered to i64).
+  Gate: `tests/probes/probe_manifest_file.xi` (38 checks: multi-entry
+  roundtrip, overwrite, valid-empty, invalid refusals, atomic
+  staged/partial temp injection, a 10-point truncation sweep,
+  malformed-line prefixes, the save/open matrix, 500-entry scale).
 
 ## `xiom.vector.core.shim` (extracted module)
 Local `xiom-core` stand-ins, the porter-flow mapping target: `CoreError` (the
@@ -279,13 +304,14 @@ owns the active collection, the WAL, the payload store, and (when
 - `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise), dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- replay the WAL: decode Inserts, apply Deletes, skip malformed payloads.
 - `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- replay of store + payloads, then compacted checkpoint WAL (carries store, payloads AND the latest collection manifest); LSNs stay monotonic. The latest `ManifestUpdate` record (`[version=1, dim, metric_code, kind_code, m, ef_construction, ef_search]`, logged by create_collection/set_index) governs dim/metric/index kind/params -- including rebuilding an Hnsw graph -- with the caller's dim/metric as the fallback for pre-manifest logs (Flat collection). Malformed manifests are ignored. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
+- `engine_manifest_save(eng, name, path) -> Bool` `requires: eng.created` -- persist the active collection's registry entry (name + dim/metric/index kind/params) to the manifest file (whole-file + atomic rename; false on an invalid name/config or any IO error). `engine_recover_file(w, path, dim, metric) -> VectorEngine` `requires: dim > 0` -- the same recovery as `engine_recover`, but the manifest file's **first valid entry governs** the config (the registry of record); the in-WAL manifest is the migration fallback (pre-D2 logs, or a missing/corrupt file), then the caller's dim/metric. Both paths share the private `engine_recover_with` body. Gate: `tests/probes/probe_manifest_file.xi`.
 
 ## `xiom.vector.engine` (facade)
 Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`):
 `create_collection`, `set_index`, `compact_index`, `upsert`, `upsert_many`,
 `search`, `search_many`, `delete_point`, `delete_many`, `get_point`,
 `set_payload`, `get_payload`, `search_filtered`, `search_range`,
-`search_with_request` -- thin delegations.
+`search_with_request`, `save_manifest`, `open_engine` -- thin delegations.
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 

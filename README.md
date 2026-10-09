@@ -67,7 +67,7 @@ src/
 |-- index/                    ann_index - flat_index - hnsw (+ codec, recall harness)
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - filter_plan - topk_heap - search_service
-|-- durability/               wal - recovery - write_ahead_events - wal_file
+|-- durability/               wal - recovery - write_ahead_events - wal_file - manifest_file
 `-- api/                      vector_api (merged stub; facade lives in engine.xi)
 ```
 
@@ -89,6 +89,8 @@ src/
 | `search_filtered(eng, query, k, filter)` | Filtered top-k: exact planner scan (Flat) or ANN + matching subset with exact fallback (Hnsw) |
 | `search_range(eng, query, radius, limit)` | Exact range search: every point with `distance <= radius` (inclusive), distance-sorted, at most `limit` items (M-Q1) |
 | `search_with_request(eng, req)` | Request-driven search: top_k/filter/with_payload from a `SearchRequest`; returns `Result[HydratedHits, CoreError]` (`SearchHit` carries optional payload) |
+| `save_manifest(eng, name, path)` | Persist the active collection's durable registry entry (name/dim/metric/index/params) to a manifest file (whole-file, atomic rename; M-D2) |
+| `open_engine(wal, path, dim, metric)` | Open from disk: the manifest file's registry governs the config; the in-WAL manifest is the migration fallback (M-D2) |
 | `engine_recover(wal, dim, metric)` (engine.core) | Recovery/reopen: replay a WAL, rebuild the store, continue the log (compacted checkpoint) |
 
 All fallible calls return `Result[T, CoreError]`. The `SearchHits` struct
@@ -108,7 +110,7 @@ is zero-cost and stable as public API).
 | Collections / schema / validator | [YELLOW] In progress (single active collection) |
 | Segments + lifecycle state machine | [ORANGE] Scaffold (types + transitions) |
 | Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
-| Durable recovery / manifest | [ORANGE] Scaffold (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; separate durable manifest file pending) |
+| Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; fsync/delta + segment files pending) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme

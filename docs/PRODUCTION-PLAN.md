@@ -139,9 +139,11 @@ Goal: a kill never costs an acknowledged write on the available path.
 - **D1 atomic checkpoint** -- `wal_persist` writes `path.tmp` then
   `io.rename` (available today); fault-injection probe: kill/interrupt
   between write and rename keeps the previous consistent file.
-- **D2 manifest file** -- collection registry (name/dim/metric/index/params)
-  persisted whole-file + atomic rename; load on open; migration fallback
-  for the in-WAL manifest.
+- **D2 manifest file -- DONE 2026-10-09** -- collection registry
+  (name/dim/metric/index/params) persisted whole-file + atomic rename;
+  load on open; migration fallback for the in-WAL manifest;
+  `engine_manifest_save` + `engine_recover_file`/`open_engine`; gate
+  `probe_manifest_file` (38 checks).
 - **D3 multi-collection runtime + APIs** -- named collections in the
   engine, create/drop/list, per-collection isolation of stores/payloads/
   indexes; manifest-backed (D2). Probe `probe_collections`.
@@ -265,7 +267,7 @@ deep quantization + tiered storage, client SDKs.
 | 2 | Range search -- **DONE 2026-10-09** (exact-first; ANN widening -> M-P) | Q1 | `probe_range_search` vs brute force |
 | 3 | Batch ops -- **DONE 2026-10-09** | Q2 | `probe_batch_ops` (14 checks) |
 | 4 | Benchmark harness + baseline | G2/G3 | `bench.ps1/bench.sh` green; `docs/BENCHMARKS.md` committed -- **DONE 2026-10-09** |
-| 5 | Manifest file | D2 | `probe_manifest_file` |
+| 5 | Manifest file -- **DONE 2026-10-09** | D2 | `probe_manifest_file` (38 checks) |
 | 6 | Multi-collection | D3/FR-1 | `probe_collections` |
 | 7 | Pagination | Q3 | `probe_pagination` |
 | 8 | Delete-by-filter | Q4 | `probe_delete_filter` |

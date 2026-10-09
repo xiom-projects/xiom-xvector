@@ -20,23 +20,26 @@ before that).
   (`eco-v0.1.120`); the lane repinned to compiler **v0.64.2** (its matrix:
   m228/m229/m231/m239 resolved, B-01/B-08 fixed, B-10/B-05 open, io rows
   re-tested).
-- **`xiom.wal` 0.1.0 is IN THE TREE** (`packages/xiom-wal`, tests 21/21,
-  revision `137a8200`; `docs/PACKAGE_STATUS.md`: "new name: pending ops
-  scope + native-lane allowlist append"). Scope: `xiom.durable`'s record
-  vocabulary + ORBITDB's crash-proven disk segment -- one line per record
+- **`xiom.wal` 0.1.0 is REGISTRY-LIVE** (`packages/xiom-wal`, tests 21/21,
+  revision `137a8200`; **verified 2026-10-09 via the registry metadata API:
+  version 0.1.0 published, sha256 + ed25519 signature, not yanked** -- the
+  "pending ops scope + native-lane allowlist append" gate has cleared).
+  Scope: `xiom.durable`'s record vocabulary + ORBITDB's crash-proven disk
+  segment -- one line per record
   (`lsn|op|key|value|timestamp[|payload]`), torn-tail healing before append,
   replay with malformed-line skip, temp+rename truncate; `wal_flush` is an
   honest no-op until the stdlib fsync row lands (the same gate as our M2).
 - **`xiom.btree` 0.1.0 is in the tree** (`packages/xiom-btree`, tests 22/22,
-  revision `c78fe78a`; same ops-allowlist gate). In-memory `Int -> Int`
+  revision `c78fe78a`; same publication path). In-memory `Int -> Int`
   B-tree extracted from ORBITDB -- watch for future xvector metadata/index
   use (our id -> slot map and payload key index are bespoke today).
-- The packages lane's stated remaining gate for both: **ops scope + native-lane
-  allowlist append before publish**.
-- XVECTOR consequence: `xiom.wal` is the **single home** -- XVECTOR aligns
-  its codec (our value payload `[dim, f32-bits...]` fits the record payload
-  field) and consumes the package when published; our local
-  `durability.wal` + `wal_file` stay until then. No competing WAL.
+- XVECTOR consequence: `xiom.wal` is the **single home** and the publish
+  gate is now MET -- XVECTOR aligns its codec (our value payload
+  `[dim, f32-bits...]` fits the record payload field) and adopts the
+  package. Next-slice triage: first-adoption design (codec alignment, what
+  `durability.wal`/`wal_file` keep vs delegate, `xiom.toml` source-roots
+  wiring with a C-PULSE-02 status re-check); our local codec stays until
+  that slice lands. No competing WAL.
 
 ## Proposed packages (still to extract)
 
@@ -51,7 +54,7 @@ before that).
 |---|---|---|---|
 | `xiom.metrics` 0.2.0 | **Planned** for Phase 10 observability (latency/recall histograms). | PULSE adopted it 2026-10-07 (labeled counters + latency preset + exposition); XVECTOR currently has an inline `Counter` only. | nothing intrinsic; adopt when the first metric surface lands (Phase 10), wire `source-roots` per C-PULSE-02 |
 | `xiom.kv` 0.1.0 | **Candidate** segment metadata / manifest store; **not adopted now**. | PULSE: `kv_get` returned address-like Str on WSL Linux v0.64.0 (C-PULSE-10; Windows green); packages lane repinned v0.64.2 (io rows re-tested); XVECTOR additionally needs fsync before any KV store can back a durable manifest. | C-PULSE-10 (Linux `kv_get`) + the stdlib fsync gap (`STDLIB-WISHLIST-XVECTOR.md`) |
-| `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | ops scope + allowlist before publish |
+| `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | publication+adoption path open (same as xiom.wal) |
 | `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **GATED** -- bindings relay 2026-10-09: verified incubating placeholders (tests unknown, no timeline); when built they mirror the `xiom.vectors` contract, never define it; no SIMD kernel package from that lane; pilot complete through batch 22, so **accelerators are the sole unscheduled sector**. The portable `xiom.vectors` API stays the contract. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | gated on the bindings lane scheduling (no date) |
 | `xiom.simd`-class (no exact name found) | If a pure-XIOM SIMD/vector intrinsic package appears, XVECTOR will adopt it for distance kernels; if not, `xiom.ann`/`xiom.vectors` kernels stay scalar. | `xiom-blas`/`xiom-openblas` are bindings, not pure-XIOM kernels; no `xiom-simd` in the tree. | future; coordinate with packages lane before proposing a second kernel package |
 

@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (38 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (39 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -29,17 +29,20 @@ M-D1 atomic WAL checkpoint (temp + io.rename; kill injection) ->
 consumer handshakes (PULSE + ORBITDB integration files; bindings relay) ->
 M-Q1 exact range search (kernel + engine + facade + probe) ->
 M-Q2 batch ops (upsert_many / delete_many / search_many + BatchHits) ->
-M-G bench harness + baseline [wal_persist O(L^2) fixed; native --icon]).
+M-G bench harness + baseline [wal_persist O(L^2) fixed; native --icon] ->
+M-D2 manifest file [collection registry file, atomic rename, torn-tail-safe
+load, file-wins open with in-WAL migration fallback; XVC-C-13 found]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `9fd0a06` (docs: M-G wrap) +
-this handoff commit. Recent slices: `5562f67` wal O(L^2) fix, `2a2e696`
-bench harness, `3d06d16` native --icon, `4552858`/`51db525` batch/range,
-`f3371e4` M-D1. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
-conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `6519f3a` (feat: M-D2
+manifest file) + this handoff commit. Recent slices: `6519f3a` M-D2
+(manifest file), `6c48327` handoff refresh, `9fd0a06` M-G wrap, `5562f67`
+wal O(L^2) fix, `2a2e696` bench harness, `3d06d16` native --icon,
+`4552858`/`51db525` batch/range, `f3371e4` M-D1. Identity `Lefteris Notas
+<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -48,7 +51,7 @@ conventional commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `9fd0a06` + this handoff commit | this repo |
+| xvector | `6519f3a` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -308,14 +311,33 @@ conventional commits, DCO `git commit -s`.
   `probe_wal_file` +4 scale checks (1200-record roundtrip). Native `--icon`
   embedding wired in `scripts/build.ps1` + `images/xvector-icon.ico`
   (compiler m214/v0.64.2; rcedit workaround retired).
+- **M-D2 manifest file (2026-10-09):** new `src/durability/manifest_file.xi`
+  -- `xvector-manifest 1` text registry (one line per collection:
+  `name dim mc kc m efc efs`; names 1..64 chars of `[A-Za-z0-9_.-]`),
+  whole-file persist with atomic temp+rename (invalid name/dim/params
+  refused, target untouched), byte-level torn-tail-safe load (longest
+  complete-entry prefix; header-only = valid empty; missing/garbage =
+  invalid; `file_size < 19` reads skipped). Engine: `engine_manifest_save`
+  + `engine_recover_file` (facade `save_manifest` / `open_engine`) -- the
+  file registry governs the config on open; the in-WAL manifest is the
+  migration fallback (shared private `engine_recover_with`). Stable
+  metric/kind codes moved to the leaf modules (`metric_code/_from_code`,
+  `ann_kind_code/_from_code`); `wal_file` byte helpers (`parse_int_at`/
+  `append_bytes`) shared with the new codec. Gate `probe_manifest_file`
+  (38 checks: roundtrip/overwrite/valid-empty, invalid refusals, atomic
+  staged/partial temp injection, 10-point truncation sweep, malformed-line
+  prefixes, save/open wins-vs-fallback matrix, 500-entry scale). **Found
+  XVC-C-13**: `&Str` parameters are unknown to the checker (i64 fallback,
+  silent wrong values -- `first_byte("A")` = 71 Win / 127 WSL); repro
+  `docs/repro/xv-str-ref-param/`; lane convention is `Str` by value.
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **70 % today**; recompute at every wrap.
+  scorecard, **72 % today**; recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
-`82ac2f3` = 0.64.3; latest re-verification = v0.64.2 re-test pass with the
-workarounds reverted):**
+`ed6d46c` = 0.64.3; latest re-verification = M-D2 manifest pass on the
+current tree):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
   (the new-module import gate: `xiom.vector.engine` + `xiom.vector.engine.core`
@@ -329,13 +351,18 @@ workarounds reverted):**
 - **M-Q2 batch pass:** suite **171/171 x2** + **20 probes x2** (Windows +
   WSL), ALL GATES GREEN; new `probe_batch_ops` (14 checks) plus the batch
   ops suite mirror test.
-- All **20 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-D2 manifest pass:** suite **171/171 x2** + **21 probes x2** + bench
+  smoke (Windows + WSL), ALL GATES GREEN; new `probe_manifest_file`
+  (38 checks, atomic/torn-tail/fallback matrix) wired into both batteries;
+  WSL spot x2 bit-identical diagnostics.
+- All **21 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
   `probe_engine_hnsw`, `probe_hnsw_codec`, `probe_result_shapes`,
   `probe_fuzz_codecs`, `probe_soak_mixed`, `probe_kill_recovery`,
-  `probe_wal_file`, `probe_range_search`, `probe_batch_ops` (run via `scripts\run-probe.ps1`).
+  `probe_wal_file`, `probe_manifest_file`, `probe_range_search`,
+  `probe_batch_ops` (run via `scripts\run-probe.ps1`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
   quick` green (Windows + WSL), wired into both CI batteries; baseline
   numbers in `docs/BENCHMARKS.md` (M-G).
@@ -395,10 +422,10 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 + M-Q1 + M-Q2 + M-G2/G3 DONE.** Next per the backlog: D2
-   manifest file -> D3 multi-collection -> D4 segment files; then M-S1
-   server & security, M-O observability; Q3-Q6 continue the query surface.
-   G1 (reference oracle) remains the open M-G item.
+1. **M-D1 + M-Q1 + M-Q2 + M-G2/G3 + M-D2 DONE.** Next per the backlog: D3
+   multi-collection -> D4 segment files; then M-S1 server & security, M-O
+   observability; Q3-Q6 continue the query surface. G1 (reference oracle)
+   remains the open M-G item.
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -413,7 +440,9 @@ signed commits, docs updated).
    P5 mmap segments. Re-check each pass (0.64.3: still stubs --
    `docs/STDLIB-WISHLIST-XVECTOR.md`).
 6. **Porter flow (owner-gated):** `xiom.vectors`/`xiom.ann` extraction on
-   greenlight; `xiom.wal` adoption when its ops allowlist clears
+   greenlight; **`xiom.wal` adoption gate CLEARED** (0.1.0 registry-live,
+   verified 2026-10-09) -- triage the first-adoption slice (codec alignment,
+   source-roots wiring with a C-PULSE-02 re-check) alongside the backlog
    (`docs/PACKAGE-WISHLIST-XVECTOR.md`).
 7. **Release gate:** when the M-R criteria are met the lane tells the owner
    -- the owner sets up the public release + benchmark (PULSE-style).
@@ -471,6 +500,11 @@ signed commits, docs updated).
   file content as bytes and parse byte-wise; guard short reads with
   `io.file_size` (WAL guard `< 25`).** Repro
   `docs/repro/xv-stdlib-file-read-defects/`.
+- **XVC-C-13 (OPEN on v0.64.2; the workaround is the lane convention):
+  never declare `&Str` parameters -- the checker warns `unknown type
+  '&Str'` and defaults the parameter to i64, then the body reads garbage
+  (`first_byte("A")` = 71 Windows / 127 WSL, expect 65). Pass `Str` by
+  value.** Repro `docs/repro/xv-str-ref-param/`; relayed in Addendum 9.
 - **filter_plan helper quirk (loud T001, not silent):** a private helper
   with two `&Vec[Int]` parameters can report `undefined variable` for its
   second parameter (three shapes tried, v0.64.1); inline the logic or use
@@ -504,16 +538,21 @@ signed commits, docs updated).
 - **compiler:** **v0.64.2 installed** (2026-10-09; tag `c51170a6`; nine-tool
   install Windows + WSL). Re-test done: all relayed XVECTOR fixes verified
   (C-03/06/07/08), C-10..C-12 also green; workarounds reverted where
-  applicable (Addendum 8). No residual reds from this lane.
+  applicable (Addendum 8). No residual reds from the re-test; **one new
+  finding since: XVC-C-13** (`&Str` parameters unknown to the checker ->
+  i64 fallback, silent wrong values) -- OPEN, relayed (Addendum 9); the
+  lane convention (`Str` by value) sidesteps it.
 - **packages:** lane HEAD `26f7d0ae`; bindings batch 23 published
   (`xiom.box2d` 0.2.0 + `xiom.imgui` 0.2.0, `eco-v0.1.123`); **36+ eco
-  releases** (`xiom.http` 0.1.4 published). **`xiom.wal` 0.1.0 and
-  `xiom.btree` 0.1.0 are in the tree** (`packages/xiom-wal` 21/21,
-  `packages/xiom-btree` 22/22) --
-  pending ops scope + native-lane allowlist append. `xiom.wal` is the single
-  WAL home (durable record shape + ORBITDB disk segment; `wal_flush` no-op
-  on the same fsync gap); XVECTOR aligns its codec and consumes it when
-  published. No `xiom.vectors`/`xiom.ann` dirs yet (names frozen);
+  releases** (`xiom.http` 0.1.4 published). **`xiom.wal` 0.1.0 is
+  PUBLISHED** (registry metadata verified at the M-D2 wrap: 0.1.0 signed,
+  not yanked; `xiom.btree` 0.1.0 in-tree) -- the ops-allowlist publish
+  gate has CLEARED. `xiom.wal` is the single WAL home (durable record shape
+  + ORBITDB disk segment; `wal_flush` no-op on the same fsync gap);
+  **next-slice triage: first-adoption design** (codec alignment +
+  `xiom.toml` source-roots with a C-PULSE-02 re-check); the local
+  `durability.wal`/`wal_file` stay until that slice lands. No
+  `xiom.vectors`/`xiom.ann` dirs yet (names frozen);
   wishlist ledger (2026-10-09): **`xiom.vectors` extraction gate MET,
   awaiting owner greenlight**, then the porter flow. `xiom.metrics` planned
   for Phase 10; `xiom.kv` gated on C-PULSE-10 + fsync. Bindings relay
@@ -530,11 +569,11 @@ signed commits, docs updated).
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.2: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
-| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-8 (8 = v0.64.2 re-test + workaround reverts) |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.2: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green; **C-13 OPEN (new)** |
+| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-9 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-09 on 0.64.3: fsync/fd/append + f32-bits + truncate + flush_stdout all still open |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09: `xiom.wal`/`xiom.btree` in-tree (ops-allowlist gate); `xiom.vectors` gate MET awaiting owner greenlight |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-09 at the M-D2 wrap: `xiom.wal` 0.1.0 registry-LIVE (publish gate cleared; adoption triage next); `xiom.vectors` gate MET awaiting owner greenlight |
 | `docs/PULSE-INTEGRATION.md` | PULSE (consumer) | written 2026-10-09; PULSE builds `probe_pkg_xvector` from it |
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
@@ -554,15 +593,15 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `9fd0a06` (docs: M-G wrap) + the handoff commit; clean
-tree; `git log --oneline -12` shows the recent slice commits. Lane pins:
-stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490` (installed
-compiler v0.64.2, tag c51170a6).
+Orientation: HEAD `6519f3a` (feat: M-D2 manifest file) + the handoff
+commit; clean tree; `git log --oneline -12` shows the recent slice commits.
+Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
+(installed compiler v0.64.2, tag c51170a6).
 
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: D2 manifest file -> D3 multi-collection -> D4 segment files;
+slice backlog: D3 multi-collection -> D4 segment files;
 M-Q3 pagination -> Q4 delete-by-filter -> Q5 index admin -> Q6 request
 extensions; M-G1 reference oracle; M-S1 HTTP service -> S2 config/limits/
 errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
@@ -591,7 +630,7 @@ release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 20 probes x2
+runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 21 probes x2
 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -626,8 +665,12 @@ search (`search_range` facade/engine + `search_range_scan` kernel; gate
 `delete_many`/`search_many` + `BatchHits`; gate `probe_batch_ops`: 14
 checks); M-G bench harness + baseline (`docs/BENCHMARKS.md`; bench smoke in
 both batteries) [found + fixed the O(L^2) `wal_persist`; linear builder now
-scale-guarded]; native `--icon` embedding wired (images/xvector-icon.ico)
--- 20 probes, suite 171).
+scale-guarded]; native `--icon` embedding wired (images/xvector-icon.ico);
+M-D2 manifest file (`xvector-manifest 1` collection registry, atomic
+temp+rename, torn-tail-safe load, `engine_manifest_save` +
+`engine_recover_file` with facade `save_manifest`/`open_engine`, file-wins
+open with in-WAL migration fallback; gate `probe_manifest_file`, 38 checks)
+[XVC-C-13 found: `&Str` params mislower to i64] -- 21 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -636,22 +679,24 @@ C-10 FIXED (inline pad no longer crashes); C-11/C-12 re-tested green in the
 original context unit; C-09 repro green on WSL (workaround retained).
 Retained workarounds (deliberate): SearchHits wrapper (C-04), suite direct
 dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
-bounds (C-10), byte parser + file_size guard (C-11/C-12).
+bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
+value (C-13).
 
-NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-Q1 +
-M-Q2 + M-G2/G3 done; next: D2 manifest file, D3 multi-collection, D4
-segment files; then Q3-Q6, M-S server/security, M-O observability; G1
-reference oracle pending). Non-gated work proceeds while the stdlib
+NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
+M-Q1 + M-Q2 + M-G2/G3 done; next: D3 multi-collection, D4 segment files;
+then Q3-Q6, M-S server/security, M-O observability; G1 reference oracle
+pending). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 20 probes x2 + bench smoke), signed commits, docs updated.
++ 21 probes x2 + bench smoke), signed commits, docs updated.
 
-Discipline: struct literals list every field; locals initialized; numeric
-gates per build; watchdogs + exit codes; check free memory before trusting a
-red build; suite x2 green before any wrap; WSL spot every wrap; update
+Discipline: struct literals list every field; locals initialized; `Str`
+params by value (XVC-C-13); numeric gates per build; watchdogs + exit
+codes; check free memory before trusting a red build; suite x2 green before
+any wrap; WSL spot every wrap; update
 SESSION.md STATE + relay rows + docs/PRODUCTION-READINESS.md at every wrap;
 commit signed at every step.
 ```
