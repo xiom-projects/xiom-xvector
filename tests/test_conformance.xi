@@ -75,10 +75,10 @@ pub type SearchHits = {
 }
 
 // Hydrated hit mirroring query/search_service.xi (SearchRequest.with_payload).
-// NOTE (XVC-C-08): this large unit miscompiles reads of the trailing
-// has_payload field after a Vec-bearing field (repro:
-// docs/repro/xv-trailing-field-vec), so no suite test asserts hydration
-// flags. The real-module gate is tests/probes/probe_search_request.xi.
+// XVC-C-08 (the trailing has_payload after the Vec-bearing payload field read
+// as garbage in this unit) is FIXED in compiler v0.64.2; the suite asserts
+// the flags again in test_request_hydration (the real-module probe stays the
+// independent gate).
 pub type SearchHit = {
   id: Int;
   distance: Float32;
@@ -1076,7 +1076,7 @@ fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
       j = j + 1;
     }
     pos = pos + klen;
-    var key = Str::from_utf8(kb);
+    var key = Str::from_utf8(&kb);
     if pos >= words.len() { return None; }
     var kind = words[pos];
     pos = pos + 1;
@@ -1102,7 +1102,7 @@ fn payload_decode(words: &Vec[Int]) -> Option[Payload] {
         k = k + 1;
       }
       pos = pos + tlen;
-      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(tb)));
+      payload_set(&mut out, key, FieldValue.TextVal(Str::from_utf8(&tb)));
     } elif kind == 4 {
       if pos >= words.len() { return None; }
       var bv = words[pos];
@@ -3353,10 +3353,58 @@ fn search_request_set_with_payload(req: &mut SearchRequest, on: Bool) {
   req.with_payload = on;
 }
 
-// NOTE (XVC-C-08): the hydration mirror test is intentionally absent. Reads
-// of the trailing has_payload field miscompile in this large unit (it reads
-// as uninitialized garbage; repro docs/repro/xv-trailing-field-vec). The
-// real-module gate for hydration flags is tests/probes/probe_search_request.xi.
+// Restored 2026-10-09 after compiler v0.64.2 fixed XVC-C-08: hydration flags
+// and payload content are asserted in this large unit again (mirrors the
+// real-module gate tests/probes/probe_search_request.xi).
+fn run_request_hydration() -> Int {
+  var eng = engine_new();
+  engine_create_collection(&mut eng, 3, DistanceMetric.Cosine);
+  engine_upsert(&mut eng, 1, mk_vec3(1.0, 0.0, 0.0));
+  engine_upsert(&mut eng, 2, mk_vec3(0.9, 0.1, 0.0));
+  engine_upsert(&mut eng, 3, mk_vec3(0.0, 0.0, 1.0));
+  var p1 = payload_new();
+  payload_set(&mut p1, "color", FieldValue.TextVal("red"));
+  payload_set(&mut p1, "stock", FieldValue.IntVal(7));
+  engine_set_payload(&mut eng, 1, p1);
+  var p2 = payload_new();
+  payload_set(&mut p2, "color", FieldValue.TextVal("blue"));
+  engine_set_payload(&mut eng, 2, p2);
+
+  var req = search_request_new(mk_vec3(1.0, 0.0, 0.0), 10, DistanceMetric.Cosine);
+  search_request_set_with_payload(&mut req, true);
+  match engine_search_request(&eng, &req) {
+    Ok(h) => {
+      if h.items.len() != 3 { return 1; }
+      if h.items[0].id != 1 { return 2; }
+      if !h.items[0].has_payload { return 3; }
+      var stock_ok: Bool = false;
+      var hp = payload_new();
+      if h.items[0].has_payload { hp = h.items[0].payload; }
+      match payload_get(&hp, "stock") { Some(v) => { var w = FieldValue.IntVal(7); stock_ok = field_value_eq(&v, &w); } None => {} }
+      if !stock_ok { return 4; }
+      if h.items[1].id != 2 { return 5; }
+      if !h.items[1].has_payload { return 6; }
+      if h.items[2].id != 3 { return 7; }
+      if h.items[2].has_payload { return 8; }
+    }
+    Err(_) => { return 9; }
+  }
+
+  var req2 = search_request_new(mk_vec3(1.0, 0.0, 0.0), 10, DistanceMetric.Cosine);
+  match engine_search_request(&eng, &req2) {
+    Ok(h2) => {
+      if h2.items.len() != 3 { return 10; }
+      if h2.items[0].has_payload { return 11; }
+      if h2.items[2].has_payload { return 12; }
+    }
+    Err(_) => { return 13; }
+  }
+  return 0;
+}
+fn test_request_hydration() -> TestResult {
+  if run_request_hydration() == 0 { return assert(true, "SearchRequest: hydration flags + payload content"); }
+  return assert(false, "SearchRequest: hydration mirror failed");
+}
 
 fn run_request_filtered() -> Int {
   var eng = engine_new();
@@ -3377,15 +3425,16 @@ fn run_request_filtered() -> Int {
       if h.items.len() != 2 { return 1; }
       if h.items[0].id != 1 { return 2; }
       if h.items[1].id != 3 { return 3; }
-      // No has_payload assertion here (XVC-C-08: trailing-field reads are
-      // unreliable in this unit; the probe covers hydration flags).
+      // Hydration is OFF for this request: flags must be detached (C-08 gate).
+      if h.items[0].has_payload { return 4; }
+      if h.items[1].has_payload { return 4; }
       return 0;
     }
     Err(_) => { return 5; }
   }
 }
 fn test_request_filtered() -> TestResult {
-  if run_request_filtered() == 0 { return assert(true, "SearchRequest: Eq filter -> {1,3} (ids only, no hydrate)"); }
+  if run_request_filtered() == 0 { return assert(true, "SearchRequest: Eq filter -> {1,3}, flags detached"); }
   return assert(false, "SearchRequest: filtered request failed");
 }
 
@@ -4441,6 +4490,7 @@ fn main() -> Int {
   failed = failed + run_one_test(test_f32_approx_epsilon()); total = total + 1;
   failed = failed + run_one_test(test_search_request_fields()); total = total + 1;
   failed = failed + run_one_test(test_request_filtered()); total = total + 1;
+  failed = failed + run_one_test(test_request_hydration()); total = total + 1;
   failed = failed + run_one_test(test_request_metric_mismatch()); total = total + 1;
 
   let passed = total - failed;
