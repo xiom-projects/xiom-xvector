@@ -121,14 +121,13 @@ Goal: every later number is measured, not assumed.
   (Float64 reference math + metric identities/axioms: symmetry, triangle
   bounds, self-distance, normalization; randomized vectors, deterministic
   seeds) vs the engine kernels. Probe `probe_reference_oracle`.
-- **G2 benchmark harness** (`bench/`) -- deterministic workloads: ingest,
-  KNN (per metric/ef), filtered (selective/majority), range, batch, mixed
-  soak; metrics: build time, QPS, p50/p95/p99, recall@k vs the exact
-  oracle, bytes/vector proxy, recovery time. JSON + markdown report.
-  `scripts/bench.ps1` / `.sh` twins.
-- **G3 baseline report** -- `docs/BENCHMARKS.md` with the first numbers +
-  methodology + how to reproduce; protocol doc for the owner's benchmark
-  (CLI flags in, JSON out).
+- **G2 benchmark harness** (`bench/`) -- **DONE 2026-10-09**: deterministic
+  workloads (ingest, KNN per metric/ef, filtered, range, batch, recovery),
+  integer JSON + human report, CI smoke; `scripts/bench.ps1`/`.sh` twins.
+- **G3 baseline report** -- **DONE 2026-10-09**: `docs/BENCHMARKS.md` with
+  methodology, the n=5000 baseline, WSL spot, and the external-benchmark
+  protocol notes; the harness found and fixed the O(L^2) `wal_persist`
+  builder.
 
 Exit: oracle probe green both platforms; one-command bench reproducible;
 baseline committed.
@@ -265,7 +264,7 @@ deep quantization + tiered storage, client SDKs.
 | 1 | Atomic checkpoint (temp+rename) | D1 | `probe_wal_file` extension + suite x2 + probes x2 |
 | 2 | Range search -- **DONE 2026-10-09** (exact-first; ANN widening -> M-P) | Q1 | `probe_range_search` vs brute force |
 | 3 | Batch ops -- **DONE 2026-10-09** | Q2 | `probe_batch_ops` (14 checks) |
-| 4 | Benchmark harness + baseline | G2/G3 | bench script green; `docs/BENCHMARKS.md` |
+| 4 | Benchmark harness + baseline | G2/G3 | `bench.ps1/bench.sh` green; `docs/BENCHMARKS.md` committed -- **DONE 2026-10-09** |
 | 5 | Manifest file | D2 | `probe_manifest_file` |
 | 6 | Multi-collection | D3/FR-1 | `probe_collections` |
 | 7 | Pagination | Q3 | `probe_pagination` |

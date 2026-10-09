@@ -12,10 +12,10 @@ needed) -> signed commit. Red build = rejection.
 
 - [ ] G1 reference-oracle cross-check: independent Float64 oracle + metric
   identities/axioms; randomized deterministic vectors; `probe_reference_oracle`
-- [ ] G2 benchmark harness `bench/` + `scripts/bench.ps1` / `scripts/bench.sh`
-  (ingest/knn/filtered/range/batch/soak/recovery; JSON + markdown)
-- [ ] G3 baseline report `docs/BENCHMARKS.md` (methodology + first numbers +
-  external-benchmark protocol)
+- [x] G2 benchmark harness **(done 2026-10-09)**: `bench/bench_main.xi` +
+  `scripts/bench.ps1/.sh` + CI smoke (W1-W7, JSON, stage diagnostics)
+- [x] G3 baseline report **(done 2026-10-09)**: `docs/BENCHMARKS.md`
+  (methodology + n=5000 baseline + WSL spot + fixed O(L^2) builder note)
 
 ## M-D -- On-disk durability
 
