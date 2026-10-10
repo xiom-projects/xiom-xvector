@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-10 (v1.0.0-rc.1 candidate; two registry adoptions
-  landed)
+- **As of:** 2026-10-10 (v1.0.0-rc.1 candidate; three registry adoptions
+  + compiler v0.64.3 re-pin; lane-local toolchain isolation)
 - **Overall:** **81 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -772,6 +772,18 @@ extraction with the packages lane.
   next pass). No score change (capability identical; adoption depth
   tracked in J). Evidence: full batteries (suite 171/171 x2 + sbom + 35
   probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-10 (fifty-seventh pass):** compiler v0.64.3 re-pin + lane
+  isolation -- v0.64.3 (release run `38071481303`) installed lane-local
+  on Windows + WSL; full re-test on it (all 12 repro bundles re-run;
+  XVC-C-13/C-14 **UNCHANGED** -> release-check verdicts filed); the
+  shared toolchain homes were deleted by concurrent activity mid-battery
+  (diagnosed; incident `REL-20261010-1835-xvector`, to ops), and the
+  lane is now immune via lane-local toolchain + package homes in the
+  dev-env scripts (found on the way: WSL `xiom pkg` custom-`XIOM_HOME`
+  misplacement, `REL-20261010-1937-xvector`). No score change (same
+  capability; environment hardening). Evidence: Windows + WSL isolated
+  batteries ALL GATES GREEN (suite 171/171 x2 + sbom + 35 probes x2 +
+  bench smoke each).
 
 ## Update rule
 
