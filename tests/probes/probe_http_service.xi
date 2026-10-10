@@ -14,7 +14,7 @@ module probe_http_service
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.api.http_service;
-use xiom.vector.types.dense_vector;
+use xiom.vectors;
 use xiom.serialize.json;
 use xiom.string.slice;
 use xiom.io;

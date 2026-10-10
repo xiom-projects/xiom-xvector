@@ -10,9 +10,7 @@
 module probe_hnsw_codec
 
 use xiom.vector.index.hnsw;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
-use xiom.vector.types.neighbor;
+use xiom.vectors;
 use xiom.io;
 use xiom.num.float;
 

@@ -3,7 +3,7 @@
 
 module xiom.vector.collection.schema
 
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.core.contracts;
 
 // The immutable description of a collection: its vector dimension, distance

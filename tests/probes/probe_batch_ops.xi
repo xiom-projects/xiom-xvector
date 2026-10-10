@@ -15,8 +15,7 @@ use xiom.vector.engine.core;
 use xiom.vector.index.ann_index;
 use xiom.vector.durability.wal;
 use xiom.vector.durability.wal_file;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.io;
 use xiom.convert;
 

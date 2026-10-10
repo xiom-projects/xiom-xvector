@@ -13,9 +13,7 @@ module xiom.vector.engine.core
 use xiom.metrics;
 use xiom.vector.core.shim;
 use xiom.string.slice;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
-use xiom.vector.types.neighbor;
+use xiom.vectors;
 use xiom.vector.storage.vector_store;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;

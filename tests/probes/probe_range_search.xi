@@ -19,8 +19,7 @@ use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
 use xiom.vector.durability.wal;
 use xiom.vector.durability.wal_file;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.io;
 use xiom.convert;
 

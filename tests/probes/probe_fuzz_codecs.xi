@@ -17,8 +17,7 @@ use xiom.vector.durability.wal;
 use xiom.vector.durability.recovery;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.io;
 
 fn int_to_str(n: Int) -> Str {

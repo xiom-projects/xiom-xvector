@@ -19,8 +19,7 @@ use xiom.vector.index.hnsw;
 use xiom.vector.query.filter_plan;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.io;
 use xiom.convert;
 
