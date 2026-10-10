@@ -461,6 +461,21 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   rate limit -> parse -> auth/scope -> route (auth disabled behaves
   exactly like `handle_cfg`); exhaustion -> 429 `rate_limited`. Gate:
   `tests/probes/probe_service_auth.xi` (24 checks).
+- S4 (security pass): every JSON route runs a pre-parse depth guard,
+  `json_depth_ok(body, 64)` (string-aware linear scan): the stdlib
+  `json_parse` recurses per nesting level and a ~60 KB run of `[`
+  (inside the 64 KiB body limit) overflowed the stack with an access
+  violation -- found by `probe_http_fuzz`; deeper bodies are now
+  rejected with 400 before the parser sees them (stdlib row filed in
+  `docs/STDLIB-WISHLIST-XVECTOR.md`). `docs/SECURITY.md` carries the
+  threat model, secure defaults and the no-unsafe audit statement;
+  `scripts/sbom.ps1`/`scripts/sbom.sh` emit `out/sbom.json` (project +
+  compiler + stdlib pin + per-module sha256 + registry deps) and fail
+  when `unsafe` appears in `src/` (0 across 43 modules); both batteries
+  run the SBOM + unsafe gate. Gate: `tests/probes/probe_http_fuzz.xi`
+  (14 checks: 2500 deterministic fuzz inputs all well-formed; targeted
+  abuse incl. lying Content-Length, header floods, 60 KB unbalanced
+  JSON, 8000-deep nesting, NUL bytes, path/segment bombs, bursts).
 
 ---
 

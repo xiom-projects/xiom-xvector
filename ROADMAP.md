@@ -234,6 +234,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   `XVECTOR_API_KEYS`), 401/403 kinds, `/health` public, token-bucket
   `RateLimiter` with 429; `ServiceState` + `http_service_handle_state`.
   Gate `probe_service_auth` (24 checks).
+- [OK] Security pass (M-S4): `docs/SECURITY.md` (threat model + secure
+  defaults + no-unsafe audit); fuzz + resource-exhaustion gate
+  (`probe_http_fuzz`, 2500 deterministic inputs) with the JSON depth
+  guard fixing a found stack-overflow DoS; SBOM + unsafe gate
+  (`scripts/sbom.ps1`/`sbom.sh`) wired into both batteries.
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

@@ -96,8 +96,11 @@ needed) -> signed commit. Red build = rejection.
   `RateLimiter` (429), `ServiceState` + `http_service_handle_state`
   (embedded default off; service adapter enables);
   `probe_service_auth` (24 checks)
-- [ ] S4 security pass: threat model, HTTP fuzz gate, resource-exhaustion
-  tests, dependency pins + SBOM, `docs/SECURITY.md`, unsafe audit statement
+- [x] S4 security pass **(done 2026-10-09)**: threat model + secure
+  defaults (`docs/SECURITY.md`); HTTP fuzz + resource-exhaustion gate
+  (`probe_http_fuzz`, 14 checks, 2500 inputs) with the JSON depth guard
+  fixing a found stack-overflow DoS; `scripts/sbom.ps1`/`sbom.sh` SBOM +
+  unsafe gate wired into both batteries; no-unsafe audit statement
 
 ## M-O -- Observability & operability
 

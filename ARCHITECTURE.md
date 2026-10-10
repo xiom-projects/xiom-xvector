@@ -326,7 +326,9 @@ http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
 
   parse    HTTP/1.1: CRLF framing, method/path/query, lowercased headers,
            Content-Length must match the body EXACTLY
-           (incomplete -> 400 "incomplete request"; trailing -> 400)
+           (incomplete -> 400 "incomplete request"; trailing -> 400);
+           JSON bodies pass json_depth_ok(body, 64) first (M-S4 guard
+           against the stdlib parser's per-level recursion)
   route    GET  /health | GET/POST /collections
            GET/POST/DELETE /collections/{n}/points
            POST /search   (knn/range/pagination; "requests" array = batch)

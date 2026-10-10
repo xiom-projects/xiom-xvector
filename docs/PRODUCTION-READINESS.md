@@ -10,7 +10,7 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-S3 auth + rate limiting)
+- **As of:** 2026-10-09 (post M-S4 security pass)
 - **Overall:** **77 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -33,11 +33,11 @@ the code merely exists. Blockers are named; blocked work still scores.
 | F | API & query surface | 8 | 89 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 28 | scaffold | metrics surface, /metrics + readiness, latency/recall histograms, structured logs |
-| I | Testing & verification | 9 | 92 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
+| I | Testing & verification | 9 | 94 | release-grade | CI runners |
+| J | Ecosystem & release engineering | 8 | 52 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x28 + 0.09x92 + 0.08x48 = **76.76 -> 77 %**.
+0.08x89 + 0.10x25 + 0.05x28 + 0.09x94 + 0.08x52 = **77.26 -> 77 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -182,8 +182,8 @@ skeleton's `GET /health` endpoint (`api.http_service`; gate
 Remaining: `xiom.metrics` adoption (Phase 10), `/metrics` + readiness
 wiring per the OPS pattern, latency/recall histograms, structured logs.
 
-### I. Testing & verification -- 92 %
-Done: 171-check conformance suite (x2 Windows + WSL), 28 probes, build-time
+### I. Testing & verification -- 94 %
+Done: 171-check conformance suite (x2 Windows + WSL), 31 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
@@ -196,19 +196,24 @@ deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
 Float64 oracle vs the kernels + axioms + all ranked/paged/cursor/range/
 Hnsw search paths; deviations at Float32-ulp scale, bit-identical
 Windows/WSL), the **HTTP service gate** (`probe_http_service`: framing,
-routing, wire shapes, honest statuses), and
+routing, wire shapes, honest statuses), the **HTTP fuzz + abuse gate**
+(`probe_http_fuzz`: 2500 deterministic inputs all well-formed; targeted
+resource-exhaustion cases), and
 the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 (C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
 workarounds reverted; the suite asserts trailing-field flags again.
 Remaining: CI runner activation.
 
-### J. Ecosystem & release engineering -- 48 %
+### J. Ecosystem & release engineering -- 52 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
 version/hash recording, the acyclic porter-ready tree, **release-prep
 drafts**: `scripts/ci.ps1` + `scripts/ci.sh` (full pre-release battery with
 aggregated exit codes, both verified green), `VERSION` (0.1.0-dev), a
-SHA-pinned `.github/workflows/ci.yml` draft, and
-`docs/RELEASE-CHECKLIST.md` (owner-gated flow).
+SHA-pinned `.github/workflows/ci.yml` draft,
+`docs/RELEASE-CHECKLIST.md` (owner-gated flow), and the **security release
+artifacts**: `docs/SECURITY.md` (threat model + secure defaults) and the
+**SBOM + unsafe gate** (`scripts/sbom.ps1`/`sbom.sh` -> `out/sbom.json`;
+wired into both batteries).
 Remaining: self-hosted runners activation, branch rulesets on greenlight,
 staging E2E (parked until the owner greenlights public release), porter
 extraction with the packages lane.
@@ -633,6 +638,26 @@ extraction with the packages lane.
   batteries now 30 probes). F 88 -> 89; overall 76.68 -> 76.76 -> 77 %.
   Evidence: full batteries (suite 171/171 x2 + 30 probes x2 + bench
   smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (fiftieth pass):** M-S4 security pass -- `docs/SECURITY.md`
+  (assets, trust boundaries, secure-defaults table, threat/control
+  matrix, dependency + SBOM statement, no-unsafe audit, honest
+  out-of-scope list). `probe_http_fuzz` (14 checks): 1200 seeded mutations
+  + 1300 random streams all well-formed; targeted abuse (lying
+  Content-Length, 2000-header flood, 30 KB header, 60 KB unbalanced JSON,
+  8000-deep nesting, NUL bytes, 500-segment path, 300-burst) bounded.
+  **Found + fixed a remote stack-exhaustion DoS:** stdlib `json_parse`
+  recurses per nesting level and ~60 KB of `[` (inside the body limit)
+  crashed with an access violation; the HTTP edge now pre-scans bodies
+  with `json_depth_ok(body, 64)` and rejects deeper payloads with 400
+  (stdlib row filed in `docs/STDLIB-WISHLIST-XVECTOR.md`).
+  `scripts/sbom.ps1`/`sbom.sh` emit `out/sbom.json` (compiler, stdlib
+  pin, per-module sha256, unsafe=0) and fail on any `unsafe` in src/;
+  both batteries run the SBOM + unsafe gate. Lane re-check at the wrap:
+  stdlib advanced `ed6d46c` -> `d2b18dc` (waves 100-101) but
+  fsync/fdatasync/truncate/append remain stubs -- D5/D6/P5 stay gated.
+  I 92 -> 94, J 48 -> 52; overall 76.76 -> 77.26 -> 77 %. Evidence: full
+  batteries (suite 171/171 x2 + sbom + 31 probes x2 + bench smoke,
+  Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 
