@@ -235,6 +235,23 @@ fn main() -> Int {
   var rec2 = engine_recover(&wal_load(pa), dim, DistanceMetric.Cosine);
   fails = check(same_state(&rec2, &eng), "overwrite: reopen equals live after the second persist", fails);
 
+  // Chained persist of a RECOVERED log (regression: XV-ORBITDB-01 /
+  // REL-20261010-1550-orbitdb-11): the recovered engine's checkpoint
+  // resumes LSNs, so its first record is > 1; wal_load must accept any
+  // starting LSN and reload the full prefix (it used to reload EMPTY).
+  var pchain = "out/wal_file_chain_probe.txt";
+  fails = check(wal_persist(&rec2.wal, pchain),
+    "chained: persist a recovered engine's checkpoint", fails);
+  var lchain = wal_load(pchain);
+  fails = check(lchain.records.len() == rec2.wal.records.len() && lchain.records.len() > 0
+    && rec2.wal.records[0].lsn > 1
+    && lchain.records[0].lsn == rec2.wal.records[0].lsn,
+    "chained: recovered log reloads non-empty with resumed first LSN", fails);
+  var rec3 = engine_recover(&lchain, dim, DistanceMetric.Cosine);
+  fails = check(same_state(&rec3, &eng) && rec3.index_kind == AnnIndexKind.Hnsw,
+    "chained: second recovery equals the live engine", fails);
+  io.remove_file(pchain);
+
   // M-D1 atomic checkpoint: persist writes `<path>.tmp` then io.rename.
   fails = check(!io.file_exists(pa + ".tmp"), "atomic: no .tmp remains after a persist", fails);
   var nrec_v2: Int = eng.wal.records.len();

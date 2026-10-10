@@ -239,7 +239,18 @@ pub fn wal_load(path: Str) -> WalWriter {
     if bad {
       stop = true;
     } else {
-      if fields[0] != lsn + 1 || fields[1] < 1 || fields[1] > 7 {
+      // LSNs must be consecutive, but the FIRST record may start at any
+      // LSN >= 1: compacted/checkpointed logs resume LSNs, and requiring
+      // 1 made a re-persisted recovered log reload EMPTY (silent data
+      // loss; XV-ORBITDB-01 / REL-20261010-1550-orbitdb-11). Strict +1
+      // stepping still detects corruption inside the prefix.
+      var lsn_ok: Bool = false;
+      if lsn == 0 {
+        if fields[0] >= 1 { lsn_ok = true; }
+      } elif fields[0] == lsn + 1 {
+        lsn_ok = true;
+      }
+      if !lsn_ok || fields[1] < 1 || fields[1] > 7 {
         stop = true;
       } else {
         var rec = WalRecord{
