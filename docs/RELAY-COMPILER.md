@@ -228,3 +228,53 @@ Re-run recipe:
 .\scripts\build.ps1 docs\repro\xv-str-ref-param\probe.xi -Name strref
 .\out\strref.exe; "exit=$LASTEXITCODE"        # v0.64.2: prints 71, exit 1
 ```
+
+**Addendum 10 (2026-10-10): XVC-C-14 (new, OPEN) -- two same-named struct types across modules: one layout takes over the other.**
+
+Found in the `xiom.metrics` 0.2.0 adoption. With the package `Counter` and
+the xvector core shim's `Counter` both in the program, `VectorEngine`
+(module `xiom.vector.engine.core`, importing only the shim) was emitted
+with the package `Counter` layout for its `upserts`/`deletes` fields while
+`engine_new` still produced shim values:
+
+```
+clang ... xiominput.ll:20528:38: error: '%tmp24' defined with type
+'%struct.xiom.vector.core.shim.Counter = type { ptr, i64 }'
+but expected '%struct.xiom.metrics.Counter = type { i64 }'
+```
+
+All XIOM-level checks passed; clang caught it only because the layouts
+differ. Minimal repro `docs/repro/xv-counter-type-shadow/` (4 tiny modules
++ `xiom.toml`; run from the bundle dir): `repro.tally` (which imports
+`xiom.metrics`) gets the **shim** layout for its `Tally.hits` field while
+`metric_counter_new()` returns the package type -- same store mismatch at
+`xiominput.ll:850`, Windows + WSL identical (WSL `opt` reports "LLVM IR
+verification failed" first and keeps the IR). Tested trigger: two modules
+each declare a struct field typed by the same short name resolving to
+different same-named types; a single such struct stays green, and the
+winning side is program-order dependent. When the two layouts are
+compatible this compiles **silently wrong** -- the hazard for any consumer
+that defines a type sharing a short name with a consumed package
+(`Counter`, `Histogram`, `Registry`, ...).
+
+Lane workaround (adopted): one type name, one type. The engine stat
+counters moved onto `xiom.metrics` and the shim `Counter` was retired in
+the adoption slice; full batteries green (suite 171/171 x2 + sbom + 34
+probes x2 + bench smoke, Windows + WSL). Ask: make struct-field type
+resolution strictly module-scoped, or reject duplicate short names across
+modules at check time.
+
+Re-run recipe:
+
+```powershell
+. .\scripts\dev-env.ps1
+Push-Location docs\repro\xv-counter-type-shadow
+& $env:XIOM_COMPILER -o $env:TEMP\xv_counter_shadow.exe src\main.xi
+Pop-Location        # v0.64.2: clang exit 1 (store mismatch, line 850)
+```
+
+Archive status (checked 2026-10-10, lane HEAD `1f0994eb`): v0.64.3 is in
+the compiler lane's release gate (`docs/RELEASE_GATE_v0.64.3.md`;
+release-notes-fragment blocker tracked), and no v0.64.3 archive is
+installable on this machine yet (`release/` carries v0.61.0 artifacts
+only). C-13/C-14 re-tests run at the next archive install.

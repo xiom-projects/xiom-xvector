@@ -608,44 +608,27 @@ pub fn http_text_response(status: Int, body: Str) -> Vec[UInt8] {
   return out;
 }
 
-fn render_hist_lines(name: Str, h: &Histogram) -> Str {
-  var out = "# TYPE " + name + " histogram\n";
-  var cum: Int = 0;
-  var b: Int = 0;
-  while b < h.counts.len() {
-    cum = cum + h.counts[b];
-    if b < h.bounds.len() {
-      out = out + name + "_bucket{le=\"" + convert.int_to_string(h.bounds[b]) + "\"} " + convert.int_to_string(cum) + "\n";
-    } else {
-      out = out + name + "_bucket{le=\"+Inf\"} " + convert.int_to_string(cum) + "\n";
-    }
-    b = b + 1;
-  }
-  out = out + name + "_sum " + convert.int_to_string(h.total_ms) + "\n";
-  out = out + name + "_count " + convert.int_to_string(h.observations) + "\n";
-  out = out + name + "_p50 " + convert.int_to_string(histogram_percentile(h, 50)) + "\n";
-  out = out + name + "_p95 " + convert.int_to_string(histogram_percentile(h, 95)) + "\n";
-  out = out + name + "_p99 " + convert.int_to_string(histogram_percentile(h, 99)) + "\n";
-  return out;
-}
+// The Prometheus histogram block moved into observability.metrics as
+// histogram_render_lines in the xiom.metrics adoption slice (consumers no
+// longer name the value types; the byte output is unchanged).
 
 // Prometheus-style exposition (O2): counters, latency histograms and live
 // gauges from the engine (collections / active points / lsn).
 fn render_metrics(eng: &VectorEngine, st: &ServiceState) -> Str {
   var out = "# TYPE xvector_requests_total counter\n";
-  out = out + "xvector_requests_total " + convert.int_to_string(st.metrics.requests_total.value) + "\n";
+  out = out + "xvector_requests_total " + convert.int_to_string(service_counter_value(&st.metrics.requests_total)) + "\n";
   out = out + "# TYPE xvector_errors_total counter\n";
-  out = out + "xvector_errors_total " + convert.int_to_string(st.metrics.errors_total.value) + "\n";
+  out = out + "xvector_errors_total " + convert.int_to_string(service_counter_value(&st.metrics.errors_total)) + "\n";
   out = out + "# TYPE xvector_search_ops counter\n";
-  out = out + "xvector_search_ops " + convert.int_to_string(st.metrics.search_ops.value) + "\n";
+  out = out + "xvector_search_ops " + convert.int_to_string(service_counter_value(&st.metrics.search_ops)) + "\n";
   out = out + "# TYPE xvector_upsert_ops counter\n";
-  out = out + "xvector_upsert_ops " + convert.int_to_string(st.metrics.upsert_ops.value) + "\n";
+  out = out + "xvector_upsert_ops " + convert.int_to_string(service_counter_value(&st.metrics.upsert_ops)) + "\n";
   out = out + "# TYPE xvector_auth_failures counter\n";
-  out = out + "xvector_auth_failures " + convert.int_to_string(st.metrics.auth_failures.value) + "\n";
+  out = out + "xvector_auth_failures " + convert.int_to_string(service_counter_value(&st.metrics.auth_failures)) + "\n";
   out = out + "# TYPE xvector_rate_limited counter\n";
-  out = out + "xvector_rate_limited " + convert.int_to_string(st.metrics.rate_limited.value) + "\n";
-  out = out + render_hist_lines("xvector_latency_ms", &st.metrics.latency_ms);
-  out = out + render_hist_lines("xvector_search_latency_ms", &st.metrics.search_latency_ms);
+  out = out + "xvector_rate_limited " + convert.int_to_string(service_counter_value(&st.metrics.rate_limited)) + "\n";
+  out = out + histogram_render_lines("xvector_latency_ms", &st.metrics.latency_ms);
+  out = out + histogram_render_lines("xvector_search_latency_ms", &st.metrics.search_latency_ms);
   out = out + "# TYPE xvector_collections gauge\n";
   out = out + "xvector_collections " + convert.int_to_string(engine_collection_count(eng)) + "\n";
   out = out + "# TYPE xvector_points_active gauge\n";
@@ -677,12 +660,12 @@ pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec<UInt8], st: &
   // Nested-field mutation through a &mut param does not persist (XVC-C-09
   // family): copy the metrics struct out, mutate, write back once.
   var mt = st.metrics;
-  counter_inc(&mut mt.requests_total);
+  service_counter_inc(&mut mt.requests_total);
   histogram_observe(&mut mt.latency_ms, ms);
   var status = response_status(&resp);
-  if status >= 400 { counter_inc(&mut mt.errors_total); }
-  if status == 401 || status == 403 { counter_inc(&mut mt.auth_failures); }
-  if status == 429 { counter_inc(&mut mt.rate_limited); }
+  if status >= 400 { service_counter_inc(&mut mt.errors_total); }
+  if status == 401 || status == 403 { service_counter_inc(&mut mt.auth_failures); }
+  if status == 429 { service_counter_inc(&mut mt.rate_limited); }
   var m: Str = "";
   var p: Str = "";
   if req.ok {
@@ -690,12 +673,12 @@ pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec<UInt8], st: &
     p = req.path;
   }
   if m == "POST" && p == "/search" {
-    counter_inc(&mut mt.search_ops);
+    service_counter_inc(&mut mt.search_ops);
     histogram_observe(&mut mt.search_latency_ms, ms);
   }
   var segs = path_segments(p);
   if m == "POST" && segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
-    counter_inc(&mut mt.upsert_ops);
+    service_counter_inc(&mut mt.upsert_ops);
   }
   st.metrics = mt;
   log_ring_push(&mut st.log, m, p, status, ms);

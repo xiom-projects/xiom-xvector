@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Probe: observability (M-O / O1+O2). Verifies the histogram math
-// (bucket placement, cumulative exposition, percentiles, empty), the
-// service counters/histograms wired through http_service_handle_state,
+// Probe: observability (M-O / O1+O2; surface re-gated on the xiom.metrics
+// 0.2.0 adoption). Verifies the histogram math (bucket placement,
+// cumulative exposition, percentiles, package min/max/mean stats, empty),
+// the service counters/histograms wired through http_service_handle_state,
 // `GET /metrics` (public, text/plain, prometheus-style values incl. live
 // gauges), `/health` readiness, the bounded JSON log ring (cap, drop
 // count, sanitization, slow flag) and the auth/rate counter paths.
@@ -97,10 +98,10 @@ fn main() -> Int {
   io.println("=== xvector probe: observability (M-O) ===");
   var fails: Int = 0;
 
-  // ---- histogram math ----
+  // ---- histogram math (xiom.metrics-backed lane surface) ----
   var h = histogram_new();
-  fails = check(h.bounds.len() == 7 && h.counts.len() == 8 && h.observations == 0
-    && histogram_percentile(&h, 50) == 0,
+  fails = check(histogram_bounds_len(&h) == 7 && histogram_bucket_len(&h) == 8
+    && histogram_count(&h) == 0 && histogram_percentile(&h, 50) == 0,
     "histogram: fresh bounds/counts + empty percentile", fails);
   histogram_observe(&mut h, 0);
   histogram_observe(&mut h, 1);
@@ -110,14 +111,22 @@ fn main() -> Int {
   histogram_observe(&mut h, 120);
   histogram_observe(&mut h, 600);
   histogram_observe(&mut h, 1200);
-  fails = check(h.counts[0] == 2 && h.counts[1] == 1 && h.counts[2] == 0 && h.counts[3] == 1
-    && h.counts[4] == 1 && h.counts[5] == 1 && h.counts[6] == 1 && h.counts[7] == 1,
+  fails = check(histogram_bucket_count(&h, 0) == 2 && histogram_bucket_count(&h, 1) == 1
+    && histogram_bucket_count(&h, 2) == 0 && histogram_bucket_count(&h, 3) == 1
+    && histogram_bucket_count(&h, 4) == 1 && histogram_bucket_count(&h, 5) == 1
+    && histogram_bucket_count(&h, 6) == 1 && histogram_bucket_count(&h, 7) == 1,
     "histogram: bucket placement exact", fails);
-  fails = check(h.observations == 8 && h.total_ms == 1998,
+  fails = check(histogram_count(&h) == 8 && histogram_sum(&h) == 1998,
     "histogram: count + sum", fails);
   fails = check(histogram_percentile(&h, 50) == 50 && histogram_percentile(&h, 95) == 1001
     && histogram_percentile(&h, 99) == 1001,
     "histogram: p50/p95/p99 (upper bounds; +Inf sentinel)", fails);
+  // Adoption alignment (2026-10-10): min/max/mean exist ONLY in the
+  // package layer (the pre-adoption lane histogram had count/sum only);
+  // asserting them pins xiom.metrics underneath the lane surface.
+  fails = check(histogram_min(&h) == 0 && histogram_max(&h) == 1200 && histogram_mean(&h) == 249
+    && histogram_bound(&h, 3) == 50,
+    "histogram: package min/max/mean + bounds (xiom.metrics underneath)", fails);
 
   // ---- service counters via the state pipeline ----
   var eng = engine_new();
@@ -137,10 +146,13 @@ fn main() -> Int {
   fails = check(status_of(&c1) == 201 && status_of(&u1) == 200 && status_of(&s3) == 200
     && status_of(&e1) == 404 && status_of(&e2) == 400,
     "service: operations executed", fails);
-  fails = check(st.metrics.requests_total.value == 7 && st.metrics.errors_total.value == 2
-    && st.metrics.search_ops.value == 4 && st.metrics.upsert_ops.value == 1,
+  fails = check(service_counter_value(&st.metrics.requests_total) == 7
+    && service_counter_value(&st.metrics.errors_total) == 2
+    && service_counter_value(&st.metrics.search_ops) == 4
+    && service_counter_value(&st.metrics.upsert_ops) == 1,
     "service: requests/errors/search/upsert counters exact (attempts counted)", fails);
-  fails = check(st.metrics.latency_ms.observations == 7 && st.metrics.search_latency_ms.observations == 4,
+  fails = check(histogram_count(&st.metrics.latency_ms) == 7
+    && histogram_count(&st.metrics.search_latency_ms) == 4,
     "service: latency histograms observe every request / every search", fails);
   fails = check(st.log.lines.len() == 7 && st.log.dropped == 0,
     "service: log ring has one line per request", fails);
@@ -229,8 +241,8 @@ fn main() -> Int {
   service_auth_add_key(&mut st2.auth, "mo_read_0001", ApiScope.Read);
   var na = http_service_handle_state(&mut eng2, &mk_req("GET", "/collections", ""), &mut st2);
   var na2 = http_service_handle_state(&mut eng2, &mk_req("GET", "/collections", ""), &mut st2);
-  fails = check(status_of(&na) == 401 && st2.metrics.auth_failures.value == 2
-    && st2.metrics.errors_total.value == 2,
+  fails = check(status_of(&na) == 401 && service_counter_value(&st2.metrics.auth_failures) == 2
+    && service_counter_value(&st2.metrics.errors_total) == 2,
     "counters: auth failures counted (and errors)", fails);
   var ok_key = http_service_handle_state(&mut eng2,
     &mk_req_key("GET", "/collections", "", "mo_read_0001"), &mut st2);
@@ -241,7 +253,8 @@ fn main() -> Int {
   st3.rate = rate_limiter_new(1, 0);
   var r1 = http_service_handle_state(&mut eng3, &mk_req("GET", "/health", ""), &mut st3);
   var r2 = http_service_handle_state(&mut eng3, &mk_req("GET", "/health", ""), &mut st3);
-  fails = check(status_of(&r1) == 200 && status_of(&r2) == 429 && st3.metrics.rate_limited.value == 1,
+  fails = check(status_of(&r1) == 200 && status_of(&r2) == 429
+    && service_counter_value(&st3.metrics.rate_limited) == 1,
     "counters: rate-limited requests counted", fails);
 
   // ---- log ring cap + sanitization + slow flag ----
@@ -289,7 +302,8 @@ fn main() -> Int {
     http_service_handle_state(&mut eng4, &mk_req("GET", "/health", ""), &mut st4);
     bi = bi + 1;
   }
-  fails = check(st4.log.lines.len() == 3 && st4.log.dropped == 2 && st4.metrics.requests_total.value == 5,
+  fails = check(st4.log.lines.len() == 3 && st4.log.dropped == 2
+    && service_counter_value(&st4.metrics.requests_total) == 5,
     "service ring: capped at 3 with 2 dropped after 5 requests", fails);
 
   io.println("");

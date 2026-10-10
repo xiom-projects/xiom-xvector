@@ -47,6 +47,7 @@ $probes = @(
   "probe_http_fuzz",
   "probe_metrics",
   "probe_package_wal",
+  "probe_package_metrics",
   "probe_batch_ops"
 )
 

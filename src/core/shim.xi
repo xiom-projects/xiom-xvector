@@ -3,11 +3,17 @@
 
 module xiom.vector.core.shim
 
-// Local xiom-core stand-ins: error type, metrics counter, the shared id
-// vocabulary, and the validity predicates used by contracts/runtime guards.
-// The porter flow later maps these onto the real xiom.core package (same
-// surface: error - ids - contracts - metrics). Extracted from the
-// consolidated engine in the final extraction wave.
+// Local xiom-core stand-ins: the error type, the shared id vocabulary,
+// and the validity predicates used by contracts/runtime guards. The
+// metrics counter moved to the `xiom.metrics` registry package in the
+// 2026-10-10 adoption (see docs/XIOM-METRICS-ADOPTION.md): the shim
+// Counter was retired -- two same-named Counter types in one program
+// made the compiler mis-layout one of them (XVC-C-14), and having a
+// single metrics home is the lane's declared intent anyway. The porter
+// flow maps the rest onto the real xiom.core package (same surface:
+// error - ids - contracts).
+//
+// Extracted from the consolidated engine in the final extraction wave.
 
 // ---- Inline CoreError (from xiom.core.error) ----
 pub enum CoreError {
@@ -21,20 +27,6 @@ pub enum CoreError {
   InvalidState(msg: Str),
   ChecksumMismatch,
   VersionMismatch,
-}
-
-// ---- Inline Counter (from xiom.core.metrics) ----
-pub type Counter = {
-  name: Str;
-  value: Int;
-}
-
-pub fn counter_new(name: Str) -> Counter {
-  return Counter{ name: name, value: 0 };
-}
-
-pub fn counter_inc(c: &mut Counter) {
-  c.value = c.value + 1;
 }
 
 // ---- Inline CollectionId, VectorId, SegmentId (from xiom.core.ids) ----
