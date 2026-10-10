@@ -41,6 +41,7 @@ probes=(
   probe_http_service
   probe_service_limits
   probe_service_auth
+  probe_http_fuzz
   probe_batch_ops
 )
 
@@ -50,6 +51,12 @@ echo "ci: suite x2"
 if ! bash scripts/run-suite.sh 2 240; then
   failures=$((failures + 1))
   echo "ci: SUITE FAILED"
+fi
+
+echo "ci: sbom + unsafe gate"
+if ! bash scripts/sbom.sh; then
+  failures=$((failures + 1))
+  echo "ci: SBOM FAILED"
 fi
 
 for p in "${probes[@]}"; do
@@ -70,5 +77,5 @@ if [ "$failures" -ne 0 ]; then
   echo "ci: FAILED ($failures gate(s) red)"
   exit 1
 fi
-echo "ci: ALL GATES GREEN (suite x2 + ${#probes[@]} probes x2 + bench smoke)"
+echo "ci: ALL GATES GREEN (suite x2 + sbom + ${#probes[@]} probes x2 + bench smoke)"
 exit 0
