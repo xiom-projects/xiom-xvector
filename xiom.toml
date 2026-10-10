@@ -1,16 +1,20 @@
 # XIOM XVECTOR -- compiler project manifest (xiom.toml is the canonical
 # project manifest; package.xi remains the registry/pkg manifest).
 #
-# NOTE (C-PULSE-02, inherited): on v0.64.0 the compiler's dependency graph
-# only adds the project's own source roots + stdlib to the module catalog;
-# registry [dependencies] are parsed but not mapped to source directories.
-# xvector currently has NO registry dependencies (stdlib + inline core
-# substrate only), so "src" alone is the whole catalog. Re-test when the
-# first registry package is adopted.
+# C-PULSE-02 UPDATE (2026-10-10, compiler v0.64.2): the dependency-root
+# resolver DOES read [dependencies] and adds installed package roots from
+# $XIOM_HOME/packages to the catalog (the legacy package.xi `deps:` block
+# is not consumed for source roots). xvector now consumes `xiom.wal` --
+# the single WAL home -- for record-shape alignment (see
+# docs/XIOM-WAL-ADOPTION.md); the lane's own durability codec stays until
+# the migration slices land.
 [project]
 name = "xiom.xvector"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 root = "src"
 source-roots = [
   "src",
 ]
+
+[dependencies]
+xiom.wal = "0.1.0"
