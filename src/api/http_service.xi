@@ -33,6 +33,7 @@ use xiom.os.env;
 use xiom.time;
 use xiom.crypto.mac;
 use xiom.rate;
+use xiom.http.status;
 use xiom.vector.observability.metrics;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
@@ -722,19 +723,15 @@ fn handle_state_inner(eng: &mut VectorEngine, raw: &Vec<UInt8>, st: &mut Service
 
 // ---- Response writing ----
 
+// Status reason phrases come from the xiom.http package (adoption
+// 2026-10-10; docs/XIOM-HTTP-EVAL.md). Lane delta kept deliberately:
+// xiom.http.status has no 507 entry (it returns "Unknown"), and the lane
+// fallback for codes outside the table stays "Error" -- every code the
+// service emits therefore keeps its pre-adoption text byte-for-byte
+// (probe_http_service pins the 507 line).
 fn status_text(status: Int) -> Str {
-  if status == 200 { return "OK"; }
-  if status == 201 { return "Created"; }
-  if status == 400 { return "Bad Request"; }
-  if status == 401 { return "Unauthorized"; }
-  if status == 403 { return "Forbidden"; }
-  if status == 404 { return "Not Found"; }
-  if status == 405 { return "Method Not Allowed"; }
-  if status == 409 { return "Conflict"; }
-  if status == 413 { return "Payload Too Large"; }
-  if status == 429 { return "Too Many Requests"; }
-  if status == 500 { return "Internal Server Error"; }
-  if status == 501 { return "Not Implemented"; }
+  var t = http_status_text(status);
+  if t != "Unknown" { return t; }
   if status == 507 { return "Insufficient Storage"; }
   return "Error";
 }

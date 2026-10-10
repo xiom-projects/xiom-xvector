@@ -23,3 +23,4 @@ source-roots = [
 xiom.wal = "0.1.0"
 xiom.metrics = "0.2.0"
 xiom.rate = "0.2.0"
+xiom.http = "0.1.4"
