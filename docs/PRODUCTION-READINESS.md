@@ -35,10 +35,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 58 | buildable | runners activation, rulesets, staging E2E, porter extraction |
+| J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x74 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x58 = **80.94 -> 81 %**.
+0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.10 -> 81 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -800,8 +800,15 @@ extraction with the packages lane.
   `probe_package_vectors` (13 checks) added, the package's own codec
   probe green from the lane home; internals swap (lane facades) planned
   in `docs/XIOM-VECTORS-EVAL.md` behind owner greenlight `-12`.
-  Batteries now 37 probes. No score change (porter-flow depth tracked
-  in J). Evidence: suite 171/171 x2 + sbom + 37 probes x2 + bench
+- **2026-10-10 (sixtieth pass):** xiom.vectors internals swap executed --
+  the atomic change set put every consumer on the package (11 source
+  modules + 27 probes; five local modules deleted; WAL value codec
+  extracted from `vector_store`); behavior-identical (extraction pins
+  byte-exact), full batteries green on Windows AND WSL; docs swept to
+  the package paths; the silent-unresolvable-import diagnostic gap found
+  and filed (`REL-20261010-2124-xvector`). J 58 -> 60 (porter cycle
+  completed: extract -> wire -> swap -> verify); overall 80.94 -> 81.10
+  -> 81 %. Evidence: suite 171/171 x2 + sbom + 37 probes x2 + bench
   smoke, Windows + WSL, ALL GATES GREEN.
 
 ## Update rule
