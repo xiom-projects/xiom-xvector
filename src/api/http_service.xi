@@ -26,8 +26,10 @@ module xiom.vector.api.http_service
 // proof) are deliberately out of this module: it stays transport-agnostic.
 
 use xiom.convert;
+use xiom.io;
 use xiom.string.slice;
 use xiom.serialize.json;
+use xiom.os.env;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.core.shim;
@@ -225,6 +227,154 @@ pub fn http_header(req: &HttpRequest, name: Str) -> Option[Str] {
   return None;
 }
 
+// ---- Service config + limits (M-S2) ----
+
+// Hard limits enforced at the service edge. Defaults are deliberately
+// generous but finite; environment variables (XVECTOR_MAX_*) and a
+// key=value config file can lower them.
+pub type ServiceConfig = {
+  max_request_bytes: Int;
+  max_top_k: Int;
+  max_batch: Int;
+  max_dim: Int;
+}
+
+pub fn service_config_default() -> ServiceConfig {
+  return ServiceConfig{
+    max_request_bytes: 65536,
+    max_top_k: 1000,
+    max_batch: 256,
+    max_dim: 1024,
+  };
+}
+
+// Apply one `key=value` pair; false when the key is unknown (ignored by
+// loaders) -- values below 1 are rejected by the caller as malformed.
+pub fn service_config_apply(cfg: &mut ServiceConfig, key: Str, value: Int) -> Bool {
+  if value < 1 { return false; }
+  if key == "max_request_bytes" {
+    cfg.max_request_bytes = value;
+    return true;
+  }
+  if key == "max_top_k" {
+    cfg.max_top_k = value;
+    return true;
+  }
+  if key == "max_batch" {
+    cfg.max_batch = value;
+    return true;
+  }
+  if key == "max_dim" {
+    cfg.max_dim = value;
+    return true;
+  }
+  return false;
+}
+
+fn env_apply(cfg: &mut ServiceConfig, env_name: Str, key: Str) -> Bool {
+  var got = env.var_opt(env_name);
+  match got {
+    Some(v) => {
+      var vb = slice.str_bytes(v);
+      var r = parse_int_at(vb, 0);
+      if r.ok && r.pos == vb.len() && vb.len() > 0 {
+        return service_config_apply(cfg, key, r.value);
+      }
+    }
+    None => {}
+  }
+  return false;
+}
+
+// Environment overrides: XVECTOR_MAX_REQUEST_BYTES / XVECTOR_MAX_TOP_K /
+// XVECTOR_MAX_BATCH / XVECTOR_MAX_DIM. Malformed values are ignored
+// (defaults/previous values stay); returns the number applied.
+pub fn service_config_from_env(cfg: &mut ServiceConfig) -> Int {
+  var n: Int = 0;
+  if env_apply(cfg, "XVECTOR_MAX_REQUEST_BYTES", "max_request_bytes") { n = n + 1; }
+  if env_apply(cfg, "XVECTOR_MAX_TOP_K", "max_top_k") { n = n + 1; }
+  if env_apply(cfg, "XVECTOR_MAX_BATCH", "max_batch") { n = n + 1; }
+  if env_apply(cfg, "XVECTOR_MAX_DIM", "max_dim") { n = n + 1; }
+  return n;
+}
+
+pub type LoadedServiceConfig = {
+  valid: Bool;
+  loaded: Bool;
+  cfg: ServiceConfig;
+}
+
+// Config file: `key=value` lines (`#` comments, blank lines skipped, CRLF
+// tolerated). Unknown keys are ignored (forward-compatible); a malformed
+// line sets valid=false while the valid lines still apply. Missing or
+// empty files report loaded=false (defaults stay).
+pub fn service_config_load(path: Str) -> LoadedServiceConfig {
+  var out = LoadedServiceConfig{ valid: false, loaded: false, cfg: service_config_default() };
+  if !io.file_exists(path) { return out; }
+  var fsz = io.file_size(path);
+  var sz: Int = -1;
+  match fsz {
+    Some(n) => { sz = n; }
+    None => { return out; }
+  }
+  if sz < 1 { return out; }
+  var rb = io.read_file_bytes(path);
+  var b = Vec[UInt8].new();
+  match rb {
+    Ok(x) => { b = x; }
+    Err(_) => { return out; }
+  }
+  out.loaded = true;
+  out.valid = true;
+  var pos: Int = 0;
+  while pos < b.len() {
+    var lend: Int = pos;
+    while lend < b.len() && b[lend] != 10 { lend = lend + 1; }
+    var lto: Int = lend;
+    if lto > pos && b[lto - 1] == 13 { lto = lto - 1; }
+    if lto > pos && b[pos] != 35 {
+      var eq: Int = -1;
+      var i: Int = pos;
+      while i < lto {
+        if b[i] == 61 {
+          eq = i;
+          i = lto;
+        } else {
+          i = i + 1;
+        }
+      }
+      if eq > pos {
+        var key = bytes_to_str(&b, pos, eq);
+        var vb2 = Vec[UInt8].new();
+        var j: Int = eq + 1;
+        while j < lto {
+          vb2.push(b[j]);
+          j = j + 1;
+        }
+        var r2 = parse_int_at(vb2, 0);
+        if !r2.ok || r2.pos != vb2.len() || r2.value < 1 {
+          out.valid = false;
+        } else {
+          if !service_config_apply(&mut out.cfg, key, r2.value) {
+            // unknown key: ignored on purpose
+          }
+        }
+      } else {
+        out.valid = false;
+      }
+    }
+    pos = lend + 1;
+  }
+  return out;
+}
+
+// Graceful shutdown (M-S2): embedded mode has no in-flight requests
+// (drain is a no-op), so the durable action is the whole-file WAL
+// checkpoint. False when the checkpoint cannot be written.
+pub fn http_service_shutdown(eng: &VectorEngine, wal_path: Str) -> Bool {
+  return wal_persist(&eng.wal, wal_path);
+}
+
 // ---- Response writing ----
 
 fn status_text(status: Int) -> Str {
@@ -234,8 +384,24 @@ fn status_text(status: Int) -> Str {
   if status == 404 { return "Not Found"; }
   if status == 405 { return "Method Not Allowed"; }
   if status == 409 { return "Conflict"; }
+  if status == 413 { return "Payload Too Large"; }
   if status == 500 { return "Internal Server Error"; }
+  if status == 501 { return "Not Implemented"; }
+  if status == 507 { return "Insufficient Storage"; }
   return "Error";
+}
+
+// Stable error kinds for the JSON error model (mapped from statuses and
+// from CoreError; consumers can switch on `kind` without parsing text).
+fn kind_for_status(status: Int) -> Str {
+  if status == 400 { return "invalid_input"; }
+  if status == 404 { return "not_found"; }
+  if status == 405 { return "method_not_allowed"; }
+  if status == 409 { return "conflict"; }
+  if status == 413 { return "too_large"; }
+  if status == 501 { return "unsupported"; }
+  if status == 507 { return "capacity_exceeded"; }
+  return "internal";
 }
 
 pub fn http_response(status: Int, doc: JsonValue) -> Vec[UInt8] {
@@ -260,6 +426,8 @@ pub fn http_response(status: Int, doc: JsonValue) -> Vec[UInt8] {
 fn jerror(status: Int, msg: Str) -> Vec[UInt8] {
   var o = json.json_object_new();
   o = json.json_set(o, "error", json.json_string(msg));
+  o = json.json_set(o, "kind", json.json_string(kind_for_status(status)));
+  o = json.json_set(o, "status", json.json_number(status as Float64));
   return http_response(status, o);
 }
 
@@ -504,7 +672,7 @@ fn hits_json(hits: &Vec[SearchHit]) -> JsonValue {
 // Dispatch a parsed request on the engine. `fallback` metric is used when
 // the request body does not carry one (the body's metric must match the
 // collection anyway; we always overwrite with the collection's).
-fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue) -> Vec[UInt8] {
+fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
   var sel = select_collection(eng, collection);
   match sel {
     Ok(_) => {}
@@ -519,6 +687,7 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue) -> Vec[U
       match b {
         Array(items) => {
           if items.len() == 0 { return jerror(400, "empty batch"); }
+          if items.len() > cfg.max_batch { return jerror(413, "batch exceeds service limit"); }
           batch_items = items;
           is_batch = true;
         }
@@ -534,6 +703,7 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue) -> Vec[U
       match search_req_from_json(batch_items[i]) {
         Some(r) => {
           var rr = mutate_req(r, eng.metric);
+          if rr.top_k > cfg.max_top_k { return jerror(400, "top_k exceeds service limit"); }
           match search_with_request(eng, &rr) {
             Ok(h) => { sets.push(h); }
             Err(e) => { return core_err_response(e); }
@@ -556,6 +726,7 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue) -> Vec[U
   match search_req_from_json(body) {
     Some(r) => {
       var rr = mutate_req(r, eng.metric);
+      if rr.top_k > cfg.max_top_k { return jerror(400, "top_k exceeds service limit"); }
       match search_with_request(eng, &rr) {
         Ok(h) => {
           var out = json.json_object_new();
@@ -580,13 +751,20 @@ fn core_err_response(e: CoreError) -> Vec[UInt8] {
   match e {
     NotFound => { return jerror(404, "not found"); }
     InvalidInput(msg) => { return jerror(400, msg); }
-    _ => { return jerror(500, "internal error"); }
+    OutOfBounds => { return jerror(400, "out of bounds"); }
+    Corruption(msg) => { return jerror(500, msg); }
+    IOFailure(msg) => { return jerror(500, msg); }
+    Unsupported(msg) => { return jerror(501, msg); }
+    CapacityExceeded => { return jerror(507, "capacity exceeded"); }
+    InvalidState(msg) => { return jerror(409, msg); }
+    ChecksumMismatch => { return jerror(500, "checksum mismatch"); }
+    VersionMismatch => { return jerror(409, "version mismatch"); }
   }
 }
 
 // ---- Route handlers ----
 
-fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue) -> Vec[UInt8] {
+fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
   var name_opt = jget_str(body, "name");
   var name: Str = "";
   var have_name: Bool = false;
@@ -600,6 +778,7 @@ fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue) -> Vec[UInt
     Some(d) => { dim = d as Int; }
     None => {}
   }
+  if dim > cfg.max_dim { return jerror(400, "dimension exceeds service limit"); }
   var mname_opt = jget_str(body, "metric");
   var metric: DistanceMetric = DistanceMetric.Euclidean;
   match mname_opt {
@@ -631,7 +810,7 @@ fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue) -> Vec[UInt
   }
 }
 
-fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue) -> Vec<UInt8> {
+fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
   var sel = select_collection(eng, name);
   match sel {
     Ok(_) => {}
@@ -673,6 +852,7 @@ fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue) -> Vec<UInt
     None => {}
   }
   if !have_ids || !have_vecs || ids.len() == 0 { return jerror(400, "bad points body"); }
+  if ids.len() > cfg.max_batch { return jerror(413, "batch exceeds service limit"); }
   var res = upsert_many(eng, &ids, &vecs);
   match res {
     Ok(n) => {
@@ -714,7 +894,18 @@ fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
 
 // ---- The router (transport-agnostic entry point) ----
 
+// Default-config entry point (S1-compatible).
 pub fn http_service_handle(eng: &mut VectorEngine, raw: &Vec[UInt8]) -> Vec[UInt8] {
+  var cfg = service_config_default();
+  return http_service_handle_cfg(eng, raw, &cfg);
+}
+
+// Config-aware entry point (M-S2): enforces the request-size limit before
+// any parsing and threads the configured limits into the handlers.
+pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &ServiceConfig) -> Vec[UInt8] {
+  if raw.len() > cfg.max_request_bytes {
+    return jerror(413, "request exceeds service limit");
+  }
   var req = http_parse_request(raw);
   if !req.ok {
     if req.incomplete { return jerror(400, "incomplete request"); }
@@ -744,7 +935,7 @@ pub fn http_service_handle(eng: &mut VectorEngine, raw: &Vec[UInt8]) -> Vec[UInt
     if req.method == "POST" {
       var parsed = json.json_parse(req.body);
       match parsed {
-        Ok(body) => { return handle_create_collection(eng, body); }
+        Ok(body) => { return handle_create_collection(eng, body, cfg); }
         Err(_) => { return jerror(400, "bad json"); }
       }
     }
@@ -755,7 +946,7 @@ pub fn http_service_handle(eng: &mut VectorEngine, raw: &Vec[UInt8]) -> Vec[UInt
     if req.method == "POST" {
       var parsed = json.json_parse(req.body);
       match parsed {
-        Ok(body) => { return handle_upsert(eng, name, body); }
+        Ok(body) => { return handle_upsert(eng, name, body, cfg); }
         Err(_) => { return jerror(400, "bad json"); }
       }
     }
@@ -847,7 +1038,7 @@ pub fn http_service_handle(eng: &mut VectorEngine, raw: &Vec[UInt8]) -> Vec[UInt
           }
         }
         if !have_coll { return jerror(400, "missing collection"); }
-        return run_search(eng, coll, body);
+        return run_search(eng, coll, body, cfg);
       }
       Err(_) => { return jerror(400, "bad json"); }
     }
