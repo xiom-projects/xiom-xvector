@@ -55,25 +55,39 @@ cross-check without importing both same-named surfaces into one unit.
 
 ## 3. Internals swap -- migration plan (future slice)
 
-Adopting the package's code in place of the local copies is a
-mechanical, behavior-identical refactor, but it touches every consumer
-(the type is used across engine/HNSW/payloads/probes), so it runs as
-its own migration:
+**Atomicity constraint (XVC-C-14, found while planning):** the package
+defines `Vector`, `DistanceMetric`, `Neighbor`, `Dimension` and
+`TopKHeap` -- the same short names as the local modules. A **partial**
+swap (e.g. only `Neighbor` switched to the package while local
+`Vector`/`dense_vector` is still compiled) puts two same-named type
+families into one program: exactly the short-name layout-shadow shape
+that cost a build in the xiom.metrics adoption. The migration therefore
+swaps **every extracted surface in one atomic step** -- never a partial
+introduction of `xiom.vectors` alongside the local modules, in any
+program.
 
-1. Keep the lane module paths as **facades**: `src/types/dense_vector.xi`,
-   `types/metric.xi`, `types/neighbor.xi`, `types/dimension.xi`,
-   `query/topk_heap.xi`, `storage/vector_store.xi` (codec part) import
-   `xiom.vectors` and re-export the same names (the
-   `observability.metrics` seam pattern: the lane module stays the only
-   place that names the package).
-2. Delete the local bodies once the facades are green (the extraction
-   pins guarantee no semantic delta; the full batteries + suite keep
-   every numeric gate).
-3. The recovery replay loop can delegate to `vectors_replay_into` at
+Adopting the package's code in place of the local copies is a
+mechanical, behavior-identical refactor, but it touches ~45 files
+(every consumer's import line; the type is used across
+engine/HNSW/payloads/probes), so it runs as its own atomic slice:
+
+1. Replace the local-module imports (`xiom.vector.types.dense_vector`,
+   `types.metric`, `types.neighbor`, `types.dimension`,
+   `query.topk_heap`, `storage.vector_store` codec) with
+   `use xiom.vectors;` in every consumer, in one change set.
+2. Delete the local bodies: `types/dense_vector.xi`, `types/metric.xi`,
+   `types/neighbor.xi`, `types/dimension.xi`, `query/topk_heap.xi`
+   (already unused in-lane -- nothing but the package probe calls its
+   functions), and strip the codec functions from
+   `storage/vector_store.xi` (its internal encode/decode calls resolve
+   to the package through the new import).
+3. The extraction pins guarantee no semantic delta; the full batteries +
+   suite keep every numeric gate (169-check suite, 37 probes).
+4. The recovery replay loop can delegate to `vectors_replay_into` at
    value level when the store migration (D-ledger) lands.
-4. Preconditions: owner greenlight (wishlist item `-12` still open) and
-   a quiet battery window; no behavior change expected, so it can ride
-   any maintenance pass.
+5. Preconditions: owner greenlight (`-12`) and a **quiet battery
+   window** (the change set is tree-wide: no long-lived broken
+   intermediate state), single signed commit.
 
 ## 4. Notes
 
