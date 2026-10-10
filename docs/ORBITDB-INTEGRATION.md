@@ -82,19 +82,23 @@ over-fetch ratio makes it necessary.
 - **Project key:** `xiom.xvector` `0.2.0` (`xiom.toml`); registry manifest
   `xiom-vector` `0.2.0` (`package.xi`) -- **not published yet**; source-level
   composition until the owner's release.
-- **Dependencies:** stdlib only; core substrate is an inline shim
-  (`src/core/shim.xi`), porter-mapped later. No registry dependency yet
-  (C-PULSE-02 `source-roots` applies at first adoption).
+- **Dependencies:** stdlib **plus five registry packages** (the 2026-10-10
+  adoptions: `xiom.wal` 0.1.0, `xiom.metrics` 0.2.0, `xiom.rate` 0.2.0,
+  `xiom.http` 0.1.4, `xiom.vectors` 0.1.0; `xiom.toml [dependencies]`).
+  Consumers building the facade source need these in their package home
+  (C-PULSE-02 resolved in v0.64.2). The core shim (`src/core/shim.xi`) is
+  error/ids/contracts only now.
 - **C ABI:** none -- pure XIOM composition; neither side links the other's
   internals.
 - **Platform matrix:** windows-x64 **GREEN**; linux-x64 (WSL Ubuntu)
-  **GREEN** (suite 169/169 x2 + 18 probes x2 on compiler v0.64.2 each);
+  **GREEN** (suite 171/171 x2 + 37 probes x2 + sbom + bench smoke on
+  compiler v0.64.3, lane-local each);
   macos-x64 / macos-arm64 **UNTESTED** (no toolchain; upstream Darwin items
   gate macOS broadly).
 
 ## 3. Pin + stability + on-disk layout
 
-- **Pin:** `de1db14` (2026-10-09) + this file's commit; re-read every wrap.
+- **Pin:** `06f7204` (2026-10-10) + this file's commit; re-read every wrap.
 - **Guaranteed:** facade (create/upsert/search/delete/get/set_payload/
   get_payload/search_filtered), `engine_new`, WAL checkpoint+recover, filter
   semantics, numeric results bit-exact per build.
@@ -109,8 +113,11 @@ over-fetch ratio makes it necessary.
 
 ## 4. Consumer-affecting findings + lifecycle
 
-- **Open findings: none** on compiler v0.64.2 (XVC-C-01..C-12 verified;
-  `docs/COMPILER-FINDINGS-XVECTOR.md`).
+- **Open findings: two caller-side rules** on compiler v0.64.2/v0.64.3 --
+  XVC-C-13 (`Str` by value; no `&Str` parameters) and XVC-C-14 (no
+  same-named type families across modules; do not name your types like
+  consumed package types) -- XVC-C-01..C-12 verified
+  (`docs/COMPILER-FINDINGS-XVECTOR.md`).
 - **C-PULSE-14 (RSS growth) matters for your bulk repair pass:** Windows
   flat on v0.64.2; **Linux still grows (~87 KB/req in PULSE's measurement;
   compiler-side item pending)**. XVECTOR's own sustained-load RSS is being
