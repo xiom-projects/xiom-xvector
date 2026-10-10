@@ -41,6 +41,7 @@ $probes = @(
   "probe_delete_filter",
   "probe_index_admin",
   "probe_reference_oracle",
+  "probe_http_service",
   "probe_batch_ops"
 )
 
