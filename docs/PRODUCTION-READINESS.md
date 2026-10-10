@@ -28,7 +28,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
+| D | Persistence & durability | 20 | 74 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 89 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
@@ -36,8 +36,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 58 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x58 = **79.84 -> 80 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x74 + 0.08x100 +
+0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x58 = **80.04 -> 80 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -715,6 +715,17 @@ extraction with the packages lane.
   79.68 -> 79.84 -> 80 %. Evidence: full batteries (suite 171/171 x2 +
   sbom + 33 probes x2 + bench smoke, Windows + WSL) with the dependency
   active in every build, ALL GATES GREEN.
+- **2026-10-10 (fifty-fourth pass):** XV-ORBITDB-01 fix (first bus item,
+  reported by the orbitdb lane): `wal_load` required the first record's
+  LSN to be exactly 1, so a re-persisted recovered checkpoint (resumed
+  LSNs) reloaded EMPTY -- silent vector loss on the next open. Fixed in
+  commit `3c36f34`: any starting LSN >= 1 accepted, consecutive +1
+  stepping still enforced, torn-tail/corruption behavior unchanged. Gate
+  `probe_wal_file` +3 chained checks (34 total in that probe; batteries
+  still 33 probes). Bus item `REL-20261010-1550-orbitdb-11` moved
+  open -> acked -> fixed with the commit ref. D 73 -> 74; overall 79.84
+  -> 80.04 -> 80 %. Evidence: full batteries (suite 171/171 x2 + sbom +
+  33 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

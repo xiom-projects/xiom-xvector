@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-10 (53 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-10 (54 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -68,12 +68,12 @@ gate; D5 migration plan]).
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `4c02577` (feat:
-xiom.wal adoption) + this handoff commit; tag `v1.0.0-rc.1` still on
-`530b041`. Recent slices: `4c02577` xiom.wal adoption, `530b041` M-R wrap,
-`5226226` M-R (rc + handoff), `7d9b8d7` M-O wrap, `814b7a5` M-O
-(observability). Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
-conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `3c36f34` (fix: wal_load
+any starting LSN) + this handoff commit; tag `v1.0.0-rc.1` still on
+`530b041`. Recent slices: `3c36f34` XV-ORBITDB-01 fix, `1db0550` relay
+bus adoption, `4c02577` xiom.wal adoption, `530b041` M-R wrap.
+Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
+commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -82,7 +82,7 @@ conventional commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `d2b18dc` (waves 100-101: math clauses + docs; release **0.64.3 registry-LIVE**); durability primitives still stubs (re-checked at the M-S4 wrap) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `4c02577` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `3c36f34` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -556,13 +556,24 @@ conventional commits, DCO `git commit -s`.
   Discovery: `XIOM_HOME/packages` also carries `xiom.metrics` 0.2.0,
   `xiom.rate` 0.2.0, `xiom.router` 0.1.0, `xiom.http` 0.1.4 -- scheduled
   as gated adoption slices (metrics first).
+- **XV-ORBITDB-01 fix (2026-10-10):** relay item from the orbitdb lane on
+  the new bus: chained persist/load of a RECOVERED engine's WAL reloaded
+  EMPTY because `wal_load` required the first record's LSN to be exactly
+  1, while recovered checkpoints resume LSNs (silent vector loss on the
+  next open). Fixed in `wal_file.wal_load` (commit `3c36f34`): the first
+  record may start at any LSN >= 1, consecutive +1 stepping still
+  enforced, torn-tail/corruption behavior unchanged. Gate
+  `probe_wal_file` +3 chained checks (persist a recovered checkpoint,
+  non-empty reload with the resumed first LSN, second recovery equals
+  live). Bus item moved open -> acked -> fixed with the commit ref
+  (orbitdb verifies at its next release check).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **72 % today**; recompute at every wrap.
+  scorecard, **80 % today**; recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
-`d2b18dc` = 0.64.3; latest re-verification = M-O observability pass on
+`d2b18dc` = 0.64.3; latest re-verification = XV-ORBITDB-01 fix pass on
 the current tree):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
@@ -636,6 +647,10 @@ the current tree):**
   **33 probes x2** + bench smoke on **Windows AND WSL**, ALL GATES GREEN
   with the registry dependency active in every build; `probe_package_wal`
   (9 checks) wired into both batteries; WSL spot x2 bit-identical.
+- **XV-ORBITDB-01 fix pass:** suite **171/171 x2** + **SBOM/unsafe gate** +
+  **33 probes x2** + bench smoke on **Windows AND WSL**, ALL GATES GREEN;
+  `probe_wal_file` gained the three chained-reopen checks; the relay item
+  is `fixed` with commit `3c36f34`; WSL spot x2 bit-identical.
 - All **33 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -716,24 +731,25 @@ signed commits, docs updated).
    owner's public release + benchmark. Gated pivots: D5/D6 on the stdlib
    fsync chain, the socket adapter on the stdlib `xiom.net` proof, P5 on
    stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
-2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
-   pagination (Q3), delete-by-filter (Q4), per-collection stats + index
-   admin (Q5), SearchRequest extensions incl. range mode (Q6).
-3. **M-G truth & measurement:** reference-oracle cross-check (G1), `bench/`
-   harness (G2), `docs/BENCHMARKS.md` baseline + external-benchmark
-   protocol (G3) -- this is what the owner's benchmark drives.
-4. **M-S server & security:** HTTP skeleton (S1), config/limits/errors
-   (S2), API-key auth (S3), security pass + SBOM (S4); **M-O**
-   observability (metrics/health/logs/runbook) in the same wave.
+2. **M-Q query surface: DONE (Q1-Q6** -- range search, batch ops,
+   pagination, delete-by-filter, per-collection stats + index admin,
+   SearchRequest extensions). All gated by their probes.
+3. **M-G truth & measurement: DONE (G1-G3)** -- reference-oracle
+   cross-check, `bench/` harness, `docs/BENCHMARKS.md` baseline +
+   external-benchmark protocol (this is what the owner's benchmark
+   drives).
+4. **M-S server & security: DONE (S1-S4** -- HTTP skeleton,
+   config/limits/errors, API-key auth + rate limiting, security pass +
+   SBOM); **M-O observability DONE** (metrics//metrics/logs/runbook).
 5. **Gated (pick up when the stdlib lane lands the primitives):** D5 delta
    append + fsync + file-level kill-matrix; D6 truncate-based retention;
    P5 mmap segments. Re-check each pass (0.64.3: still stubs --
    `docs/STDLIB-WISHLIST-XVECTOR.md`).
 6. **Porter flow (owner-gated):** `xiom.vectors`/`xiom.ann` extraction on
-   greenlight; **`xiom.wal` adoption gate CLEARED** (0.1.0 registry-live,
-   verified 2026-10-09) -- triage the first-adoption slice (codec alignment,
-   source-roots wiring with a C-PULSE-02 re-check) alongside the backlog
-   (`docs/PACKAGE-WISHLIST-XVECTOR.md`).
+   greenlight (items `REL-20261010-1550-xvector-9/-10/-12`); **`xiom.wal`
+   ADOPTED** (0.1.0 registry install + trust pin + `xiom.toml
+   [dependencies]`; C-PULSE-02 resolved; gate `probe_package_wal`);
+   `docs/PACKAGE-WISHLIST-XVECTOR.md` keeps the lane ledger.
 7. **Release gate:** when the M-R criteria are met the lane tells the owner
    -- the owner sets up the public release + benchmark (PULSE-style).
 
@@ -830,7 +846,7 @@ signed commits, docs updated).
   OutOfMemory interrupts in the shell. Re-run on a quiet machine before
   filing anything.
 
-## 5. Ecosystem status (2026-10-09)
+## 5. Ecosystem status (2026-10-10)
 
 - **stdlib:** current lane HEAD `d2b18dc` (waves 100-101: graph-theory/
   machine-learning/finance/information-theory math clauses + wave-101
@@ -888,7 +904,8 @@ signed commits, docs updated).
 | `docs/PULSE-INTEGRATION.md` | PULSE (consumer) | written 2026-10-09; PULSE builds `probe_pkg_xvector` from it |
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
-| `docs/PRODUCTION-READINESS.md` | owner | 70 %; recompute every wrap |
+| `docs/PRODUCTION-READINESS.md` | owner | 80 %; recompute every wrap |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector`, stdlib `-2..-8`, packages `-9/-10`, bindings `-11`, owner `-12`; orbitdb item `REL-20261010-1550-orbitdb-11` = **fixed** (`3c36f34`); 3-hour doorbell cron armed (owner rollout 2026-10-10) |
 
 ---
 
@@ -904,12 +921,20 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `4c02577` (feat: xiom.wal adoption) + the handoff
-commit; tag `v1.0.0-rc.1` on `530b041`; clean tree; `git log --oneline -12`
-shows the recent slice commits. Lane pins: stdlib `d2b18dc` (fsync chain
-still stubs), packages `47202b72` (xiom.durable/WAL reconciliation
-wrapped), compiler lane `da7798da` (installed compiler v0.64.2, tag
-c51170a6; no newer archive).
+Orientation: HEAD `3c36f34` (fix: wal_load any starting LSN;
+XV-ORBITDB-01) + the handoff commit; tag `v1.0.0-rc.1` on `530b041`;
+clean tree; `git log --oneline -12` shows the recent slice commits. Lane
+pins: stdlib `d2b18dc` (fsync chain still stubs), packages `47202b72`
+(xiom.durable/WAL reconciliation wrapped), compiler lane `da7798da`
+(installed compiler v0.64.2, tag c51170a6; no newer archive).
+
+Coordination bus (owner rollout 2026-10-10): the private `xiom-lang/
+xiom-relays` repo is the only cross-lane channel. At session start and
+before finishing any task: `git -C E:\xiom-lang\xiom-relays pull --ff-only`
+then `python tools/relay.py view --lane xvector` from that repo; process
+items addressed to xvector; never edit another lane's item (open a new
+one); commits in the bus are pushed (it is the shared mailbox). A 3-hour
+doorbell cron is armed for this session.
 
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
@@ -941,8 +966,8 @@ without a memory monitor, and never leave a rebuilt binary from a red build.
 
 Toolchain (latest-tracking): compiler v0.64.2 installed on Windows
 (%LOCALAPPDATA%\xiom.new\bin\xiom.exe) and WSL (~/.local/share/xiom, use
-`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD ed6d46c =
-release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
+`wsl.exe -d Ubuntu`); stdlib lane E:\xiom-lang\stdlib (lane HEAD d2b18dc =
+release 0.64.3 registry-LIVE, waves 100-101; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
@@ -1028,8 +1053,13 @@ probe_metrics, 23 checks); M-R release candidate v1.0.0-rc.1 (checklist
 audit + repro re-runs + release notes + SBOM snapshot + owner handoff;
 final batteries green at the tagged commit); xiom.wal first adoption
 (registry install + trust pin + xiom.toml dependency; op-code alignment
-gate `probe_package_wal`, 9 checks; D5 migration plan) -- 33 probes +
-sbom, suite 171).
+gate `probe_package_wal`, 9 checks; D5 migration plan); relay-bus
+onboarding (owner rollout; ack + all open items migrated; 3-hour
+doorbell cron armed); XV-ORBITDB-01 fix (bus item from orbitdb: chained
+persist/load of a recovered WAL reloaded EMPTY because wal_load required
+first-LSN == 1; fixed in 3c36f34 -- any starting LSN >= 1, +1 steps
+enforced; probe_wal_file +3 chained checks) -- 33 probes + sbom,
+suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +

@@ -309,7 +309,12 @@ vector**.
   leaves either the previous or the new complete file, never a torn one.
   `wal_load(path)` parses byte-wise (never as a Str; defense in depth) and
   returns the longest prefix of complete valid records (torn-tail tolerant;
-  missing/garbage/empty files -> empty). Reads shorter than the shortest
+  missing/garbage/empty files -> empty). The first record may start at ANY
+  LSN >= 1 (compacted/checkpointed logs resume LSNs; requiring exactly 1
+  made a re-persisted recovered log reload empty -- XV-ORBITDB-01 fixed
+  2026-10-10, commit `3c36f34`), while every subsequent record must step
+  LSN +1 (corruption inside the prefix still stops the load). Reads shorter
+  than the shortest
   valid WAL are skipped via a `file_size < 25` guard (also semantically
   exact). No fsync/append yet (stdlib gap), so this is a checkpoint rewrite,
   not a delta log. The checkpoint bytes are built LINEARLY (`append_bytes`
