@@ -21,13 +21,14 @@ Registry consumption note (C-PULSE-02): the v0.64.0 concern (registry
 v0.64.2** -- the dependency-root resolver reads `xiom.toml [dependencies]`
 and adds installed package roots from `$XIOM_HOME/packages` to the catalog
 (the legacy `package.xi deps:` block is not consumed for source roots).
-XVECTOR completed its first adoptions on 2026-10-10 (`xiom.wal` 0.1.0 and
-`xiom.metrics` 0.2.0; see below) and verified file-mode builds against the
-installed packages.
+XVECTOR completed its first adoptions on 2026-10-10 (`xiom.wal` 0.1.0,
+`xiom.metrics` 0.2.0, `xiom.rate` 0.2.0; see below) and verified file-mode
+builds against the installed packages.
 
 ## Packages lane status (2026-10-10) -- wishlist deltas
 
-- HEAD `47202b72`: **xiom.durable port + WAL reconciliation wrapped**
+- HEAD `7ee0058e` (2026-10-10, bindings batch 29 wrap -- `xiom.assimp`
+  0.5.0): **xiom.durable port + WAL reconciliation wrapped earlier**
   (152/152 x2; modules 597->591) -- the reconciliation confirms `xiom.wal`
   is the shared WAL vocabulary (`xiom.durable` consumes it via
   `xiom.toml [dependencies]`), which is what our first adoption verified
@@ -55,11 +56,20 @@ installed packages.
   `probe_package_metrics` (12 checks, direct package) + `probe_metrics`
   (24 checks, lane surface incl. package min/max/mean alignment); full
   design record: `docs/XIOM-METRICS-ADOPTION.md`.
+- **`xiom.rate` 0.2.0 is ADOPTED by XVECTOR** (2026-10-10, third
+  adoption): the S3 `RateLimiter` internals run on the package behind the
+  same API (`rate_limiter_new/_allow` unchanged; 429 path + counters
+  unchanged). Accuracy delta: unearned sub-token remainders are now
+  carried (fractional refill exact -- the lane limiter discarded them);
+  all gate-visible boundaries unchanged. Gates: `probe_package_rate`
+  (14 checks, direct package, incl. the carry case) +
+  `probe_service_auth`/`probe_metrics` re-run green; full design record:
+  `docs/XIOM-RATE-ADOPTION.md`.
 - **Discovery (2026-10-10):** `XIOM_HOME/packages` on this machine already
   carries several lane-relevant primitives the wishlist had marked "later
-  phase": `xiom.rate` 0.2.0 (next slice), `xiom.router` 0.1.0,
-  `xiom.http` 0.1.4 (+ `xiom.kv` 0.1.0, still fsync-gated). Scheduled as
-  gated adoption slices in the same style as `xiom.wal`/`xiom.metrics`
+  phase": `xiom.rate` 0.2.0 (adopted), `xiom.router` 0.1.0,
+  `xiom.http` 0.1.4 (+ `xiom.kv` 0.1.0, still fsync-gated). Gated
+  adoption slices in the same style as `xiom.wal`/`xiom.metrics`
   (install + trust + dependency + probe + migration note).
 
 ## Proposed packages (still to extract)
@@ -74,8 +84,8 @@ installed packages.
 | Package | Status for XVECTOR | Evidence | Blocked by |
 |---|---|---|---|
 | `xiom.metrics` 0.2.0 | **ADOPTED 2026-10-10** (second adoption after `xiom.wal`): `observability.metrics` internals on the package behind the same surface; engine stat counters unified; shim `Counter` retired (XVC-C-14). | Gates `probe_package_metrics` (12 checks) + `probe_metrics` (24 checks, incl. package min/max/mean alignment); full batteries green (suite 171/171 x2 + sbom + 34 probes x2 + bench smoke, Windows + WSL); record: `docs/XIOM-METRICS-ADOPTION.md`. | -- (done) |
-| `xiom.rate` 0.2.0 | **NEXT SLICE** (installed, 2026-10-10): replace the internals of the S3 token-bucket `RateLimiter` behind the same API (429 path + counters unchanged). | The S3 plan preferred `xiom.rate` "if suitable, else minimal token bucket"; the registry package was not known to this lane at S3 time. | none; verify its window semantics against our capacity/refill probe before swapping |
-| `xiom.router` 0.1.0 / `xiom.http` 0.1.4 | **Evaluate** (installed, 2026-10-10): routing/HTTP helpers for `api.http_service` -- keep the byte-level pipeline; adopt helpers only where they preserve the strict framing + error model. | The service deliberately owns parsing/limits/errors; helpers may simplify dispatch but must not change the gate-visible wire behavior. | none; adoption slice must keep `probe_http_service`/`probe_service_limits`/`probe_http_fuzz` green byte-for-byte |
+| `xiom.rate` 0.2.0 | **ADOPTED 2026-10-10** (third adoption): S3 `RateLimiter` internals on the package behind the same API; remainder carry makes fractional refill exact (all gate-visible boundaries unchanged). | Gates `probe_package_rate` (14 checks, direct package) + `probe_service_auth` (24) / `probe_metrics` (24) re-run green; batteries 35 probes; record: `docs/XIOM-RATE-ADOPTION.md`. | -- (done) |
+| `xiom.router` 0.1.0 / `xiom.http` 0.1.4 | **NEXT: Evaluate** (installed, 2026-10-10): routing/HTTP helpers for `api.http_service` -- keep the byte-level pipeline; adopt helpers only where they preserve the strict framing + error model. | The service deliberately owns parsing/limits/errors; helpers may simplify dispatch but must not change the gate-visible wire behavior. | none; adoption slice must keep `probe_http_service`/`probe_service_limits`/`probe_http_fuzz` green byte-for-byte |
 | `xiom.kv` 0.1.0 | **Candidate** segment metadata / manifest store; **not adopted now**. | PULSE: `kv_get` returned address-like Str on WSL Linux v0.64.0 (C-PULSE-10; Windows green); packages lane repinned v0.64.2 (io rows re-tested); XVECTOR additionally needs fsync before any KV store can back a durable manifest. | C-PULSE-10 (Linux `kv_get`) + the stdlib fsync gap (`STDLIB-WISHLIST-XVECTOR.md`) |
 | `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | publication+adoption path open (same as xiom.wal) |
 | `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **GATED** -- bindings relay 2026-10-09: verified incubating placeholders (tests unknown, no timeline); when built they mirror the `xiom.vectors` contract, never define it; no SIMD kernel package from that lane; pilot complete through batch 22, so **accelerators are the sole unscheduled sector**. The portable `xiom.vectors` API stays the contract. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | gated on the bindings lane scheduling (no date) |

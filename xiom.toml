@@ -8,7 +8,9 @@
 # single WAL home -- for record-shape alignment (see
 # docs/XIOM-WAL-ADOPTION.md); the lane's own durability codec stays until
 # the migration slices land. `xiom.metrics` 0.2.0 backs the
-# observability.metrics internals (see docs/XIOM-METRICS-ADOPTION.md).
+# observability.metrics internals (see docs/XIOM-METRICS-ADOPTION.md) and
+# `xiom.rate` 0.2.0 backs the S3 token-bucket RateLimiter (see
+# docs/XIOM-RATE-ADOPTION.md).
 [project]
 name = "xiom.xvector"
 version = "1.0.0-rc.1"
@@ -20,3 +22,4 @@ source-roots = [
 [dependencies]
 xiom.wal = "0.1.0"
 xiom.metrics = "0.2.0"
+xiom.rate = "0.2.0"

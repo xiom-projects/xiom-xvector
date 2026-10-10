@@ -48,6 +48,7 @@ $probes = @(
   "probe_metrics",
   "probe_package_wal",
   "probe_package_metrics",
+  "probe_package_rate",
   "probe_batch_ops"
 )
 

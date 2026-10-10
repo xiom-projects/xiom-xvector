@@ -32,6 +32,7 @@ use xiom.serialize.json;
 use xiom.os.env;
 use xiom.time;
 use xiom.crypto.mac;
+use xiom.rate;
 use xiom.vector.observability.metrics;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
@@ -508,42 +509,37 @@ pub fn service_auth_from_env(auth: &mut ServiceAuth) -> Int {
   return 0;
 }
 
-// Minimal token bucket: capacity + refill/second; consumes one token per
-// allowed request. `now_ms` is explicit so the math is deterministic in
-// tests (the service passes monotonic time).
+// Token-bucket rate limiter backed by the `xiom.rate` registry package
+// (adoption 2026-10-10; see docs/XIOM-RATE-ADOPTION.md). `enabled` gates
+// the limiter (capacity < 1 -> disabled: the same construction policy as
+// before) and `now_ms` stays explicit so the math is deterministic in
+// tests (the service passes monotonic time). The package carries unearned
+// sub-token remainders across calls, so fractional refill is now exact
+// (the pre-adoption lane limiter consumed the whole elapsed span and
+// discarded the remainder); every gate-visible boundary -- capacity
+// drain, rate 0, whole-second refill -- is unchanged.
 pub type RateLimiter = {
   enabled: Bool;
-  capacity: Int;
-  refill_per_sec: Int;
-  tokens: Int;
-  last_ms: Int;
+  bucket: TokenBucket;
 }
 
 pub fn rate_limiter_disabled() -> RateLimiter {
-  return RateLimiter{ enabled: false, capacity: 0, refill_per_sec: 0, tokens: 0, last_ms: 0 };
+  return RateLimiter{ enabled: false, bucket: rate_bucket_new(1, 0, 0) };
 }
 
 pub fn rate_limiter_new(capacity: Int, refill_per_sec: Int) -> RateLimiter {
   if capacity < 1 { return rate_limiter_disabled(); }
-  return RateLimiter{ enabled: true, capacity: capacity, refill_per_sec: refill_per_sec, tokens: capacity, last_ms: -1 };
+  return RateLimiter{ enabled: true, bucket: rate_bucket_new(capacity, refill_per_sec, 0) };
 }
 
 pub fn rate_limiter_allow(lim: &mut RateLimiter, now_ms: Int) -> Bool {
   if !lim.enabled { return true; }
-  if lim.last_ms < 0 { lim.last_ms = now_ms; }
-  var elapsed: Int = now_ms - lim.last_ms;
-  if elapsed < 0 { elapsed = 0; }
-  if elapsed > 0 {
-    var refill: Int = elapsed * lim.refill_per_sec / 1000;
-    if refill > 0 {
-      lim.tokens = lim.tokens + refill;
-      if lim.tokens > lim.capacity { lim.tokens = lim.capacity; }
-    }
-    lim.last_ms = now_ms;
-  }
-  if lim.tokens < 1 { return false; }
-  lim.tokens = lim.tokens - 1;
-  return true;
+  // Nested-field mutation through a &mut param does not persist (XVC-C-09
+  // family): copy the bucket out, mutate, write back once.
+  var b = lim.bucket;
+  var ok = rate_bucket_allow(&mut b, now_ms, 1);
+  lim.bucket = b;
+  return ok;
 }
 
 // The full service state: limits/config (S2), auth (S3), rate limiting,
