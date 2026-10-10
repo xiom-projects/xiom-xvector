@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (46 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (47 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -47,17 +47,19 @@ probe_index_admin]) -> M-Q6 request extensions [SearchRequest mode
 (knn/range) + offset/after-id pagination; SearchBatchRequest +
 search_batch_with_request; probe_search_request extended]) -> M-G1
 reference oracle [independent Float64 oracle vs kernels + axioms + all
-ranked/paged/cursor/range/Hnsw paths; probe_reference_oracle]).
+ranked/paged/cursor/range/Hnsw paths; probe_reference_oracle]) -> M-S1
+HTTP service skeleton [api.http_service byte-level HTTP/1.1 pipeline +
+router; probe_http_service]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `3b01fb0` (test: M-G1
-reference oracle) + this handoff commit. Recent slices: `3b01fb0` M-G1
-(reference oracle), `d01eba1` M-Q6 wrap, `2647d2f` M-Q6 (request
-extensions), `7014d86` M-Q5 wrap, `91d75fa` M-Q5 (index admin), `1ea8aa2`
-M-Q4 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
+**Repo:** private, no pushes; clean tree. HEAD `8693cff` (feat: M-S1
+HTTP service skeleton) + this handoff commit. Recent slices: `8693cff`
+M-S1 (HTTP service), `6000882` M-G1 wrap, `3b01fb0` M-G1 (reference
+oracle), `d01eba1` M-Q6 wrap, `2647d2f` M-Q6 (request extensions),
+`7014d86` M-Q5 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
 conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -67,7 +69,7 @@ conventional commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `3b01fb0` + this handoff commit | this repo |
+| xvector | `8693cff` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -445,6 +447,22 @@ conventional commits, DCO `git commit -s`.
   distances within tolerance; page ranks 5..12; cursor ranks 7..14;
   inclusive-range subset at a midpoint radius + engine-distance boundary
   inclusion; Hnsw recall@5 == 5/5 + distance fidelity).
+- **M-S1 HTTP service skeleton (2026-10-09):** new `src/api/http_service.xi`
+  -- transport-agnostic `http_service_handle(eng, raw) -> response`
+  (parse -> route -> JSON -> serialize; bytes in, bytes out; no sockets
+  until the `xiom.net` proof, C-PULSE-02). Strict HTTP/1.1 parsing (CRLF
+  framing, lowercased headers, Content-Length must match the body
+  exactly; incomplete -> 400 "incomplete request", trailing -> 400).
+  Endpoints: GET /health, GET/POST /collections, GET/POST/DELETE
+  /collections/{n}/points, POST /search (knn/range/page/batch), GET
+  /stats?collection=; honest statuses 400/404/405/409/500. Uses the
+  stdlib JSON engine with QUALIFIED calls (`json.json_*`): unqualified
+  names misresolve to the parent `xiom.serialize` helpers in this unit
+  (BUG 25 #1 -- documented in the json module header) and silently built
+  empty string values; numeric request fields are strictly typed. Two
+  real parser bugs found via the probe: the method was validated but
+  never stored, and the header scan dropped the final header line
+  (Content-Length). Gate `probe_http_service` (40 checks).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -498,7 +516,10 @@ the current tree):**
   bench smoke (Windows + WSL), ALL GATES GREEN; new
   `probe_reference_oracle` (22 checks) wired into both batteries; WSL
   spot x2 bit-identical (same Float32-ulp deviations).
-- All **27 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-S1 service pass:** suite **171/171 x2** + **28 probes x2** + bench
+  smoke (Windows + WSL), ALL GATES GREEN; new `probe_http_service`
+  (40 checks) wired into both batteries; WSL spot x2 bit-identical.
+- All **28 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -507,7 +528,7 @@ the current tree):**
   `probe_wal_file`, `probe_manifest_file`, `probe_collections`,
   `probe_segment_file`, `probe_range_search`, `probe_pagination`,
   `probe_delete_filter`, `probe_index_admin`, `probe_reference_oracle`,
-  `probe_batch_ops` (run via `scripts\run-probe.ps1`).
+  `probe_http_service`, `probe_batch_ops` (run via `scripts\run-probe.ps1`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
   quick` green (Windows + WSL), wired into both CI batteries; baseline
   numbers in `docs/BENCHMARKS.md` (M-G).
@@ -568,11 +589,11 @@ verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
 1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6
-   + M-G1 + M-G2/G3 DONE -- the M-Q and M-G backlogs are complete.**
-   Next: M-S1 server & security (HTTP skeleton -> S2 config/limits/errors
-   -> S3 auth -> S4 security pass + SBOM), then M-O observability
-   (metrics/health/logs/runbook). D5/D6 (delta+fsync, retention) stay
-   gated on the stdlib fsync chain.
+   + M-G1 + M-G2/G3 + M-S1 DONE.** Next: S2 config/limits/errors -> S3
+   auth -> S4 security pass; then M-O observability (metrics/health/logs/
+   runbook). D5/D6 (delta+fsync, retention) stay gated on the stdlib
+   fsync chain; the socket adapter for the service is gated on the
+   stdlib `xiom.net` proof (C-PULSE-02).
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -652,6 +673,12 @@ signed commits, docs updated).
   '&Str'` and defaults the parameter to i64, then the body reads garbage
   (`first_byte("A")` = 71 Windows / 127 WSL, expect 65). Pass `Str` by
   value.** Repro `docs/repro/xv-str-ref-param/`; relayed in Addendum 9.
+- **Stdlib JSON calls must be QUALIFIED (`json.json_*`) in this lane: the
+  parent `xiom.serialize` defines same-named helpers that misresolve
+  under the compiler (BUG 25 #1, documented in the stdlib json module
+  header); unqualified `json_string()` silently built empty string
+  values in `api.http_service`.** Gate `probe_http_service` pins the
+  wire behavior.
 - **filter_plan helper quirk (loud T001, not silent):** a private helper
   with two `&Vec[Int]` parameters can report `undefined variable` for its
   second parameter (three shapes tried, v0.64.1); inline the logic or use
@@ -740,16 +767,16 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `3b01fb0` (test: M-G1 reference oracle) + the handoff
-commit; clean tree; `git log --oneline -12` shows the recent slice commits.
-Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane `d481c490`
-(installed compiler v0.64.2, tag c51170a6).
+Orientation: HEAD `8693cff` (feat: M-S1 HTTP service skeleton) + the
+handoff commit; clean tree; `git log --oneline -12` shows the recent slice
+commits. Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler lane
+`d481c490` (installed compiler v0.64.2, tag c51170a6).
 
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: M-S1 HTTP service -> S2 config/limits/
-errors -> S3 auth -> S4 security pass; M-O metrics/health/logs/runbook.
+slice backlog: S2 config/limits/errors -> S3 auth -> S4 security pass;
+M-O metrics/health/logs/runbook.
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
 and pivot immediately when primitives land. Per slice: implement, extend
@@ -775,7 +802,7 @@ release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 27 probes x2
+runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 28 probes x2
 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -837,8 +864,10 @@ after-id pagination; SearchBatchRequest + search_batch_with_request
 ordered all-or-nothing; gate probe_search_request, 24 checks); M-G1
 reference oracle (independent Float64 oracle vs the kernels + axioms +
 all ranked/paged/cursor/range/Hnsw paths; deviations at Float32-ulp
-scale, bit-identical Win/WSL; gate probe_reference_oracle, 22 checks)
--- 27 probes, suite 171).
+scale, bit-identical Win/WSL; gate probe_reference_oracle, 22 checks);
+M-S1 HTTP service skeleton (`api.http_service` byte-level HTTP/1.1
+pipeline + router; strict parsing, qualified stdlib-JSON wire, honest
+statuses; gate probe_http_service, 40 checks) -- 28 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -852,14 +881,14 @@ value (C-13).
 
 NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
 M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G1 + M-G2/G3
-done -- the M-Q and M-G backlogs are complete; next: M-S1 server &
-security, then S2-S4, M-O observability). Non-gated work proceeds while the stdlib
++ M-S1 done; next: S2 config/limits/errors -> S3 auth -> S4 security
+pass; then M-O observability). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 27 probes x2 + bench smoke), signed commits, docs updated.
++ 28 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; `Str`
 params by value (XVC-C-13); numeric gates per build; watchdogs + exit

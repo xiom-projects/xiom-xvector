@@ -389,6 +389,39 @@ Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
 `src/engine.xi`.
 
+## `xiom.vector.api.http_service` (M-S1)
+Transport-agnostic HTTP/1.1 service skeleton:
+`http_service_handle(eng, raw_bytes) -> response_bytes` -- parse -> route ->
+JSON -> serialize, pure and deterministic (no sockets; the real socket
+adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
+- Parsing (`http_parse_request -> HttpRequest { ok; incomplete; method;
+  path; query; header_names; header_values; body }`): CRLF framing, strict
+  method/path/query split, header names lowercased, `http_header` lookup,
+  and Content-Length that must match the body EXACTLY -- a missing
+  terminator or a short body -> `incomplete` (400 "incomplete request"),
+  trailing bytes -> 400 malformed. Head bytes are ASCII in practice and
+  sliced from one materialized Str.
+- Routes: `GET /health` (`{"status":"ok","service":"xvector"}`), `GET
+  /collections` (names), `POST /collections`
+  (`{"name","dim","metric"}`; duplicate -> 409), `GET
+  /collections/{n}/points?id=`, `POST /collections/{n}/points`
+  (`{"ids":[...],"vectors":[[...]]}`), `DELETE
+  /collections/{n}/points?id=`, `POST /search` (knn/range/pagination via
+  `SearchRequest` fields; a `"requests":[...]` array runs a batch),
+  `GET /stats?collection=`. Unknown route -> 404; wrong method -> 405;
+  requests are routed to the named collection (`select_collection`).
+- Wire: responses are `HTTP/1.1 <status> <text>` + `Content-Type:
+  application/json` + byte-exact `Content-Length` + `Connection: close`;
+  errors are `{"error": "..."}` with 400/404/405/409/500
+  (`core_err_response` maps `CoreError`). JSON comes from the stdlib
+  `xiom.serialize.json` engine with **qualified calls** (`json.json_*`):
+  the parent `xiom.serialize` helpers misresolve in this unit (BUG 25 #1,
+  documented in the json module header) -- unqualified calls produced
+  empty string values. Numeric request fields are strictly typed
+  (wrong-typed `top_k`/`offset`/`radius`/`after_id`/`mode` -> 400).
+- Limits, config, auth and structured logs are S2/S3/M-O. Gate:
+  `tests/probes/probe_http_service.xi` (40 checks).
+
 ---
 
 ## Distance formulas

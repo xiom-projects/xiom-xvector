@@ -128,7 +128,8 @@ src/
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/
-    `-- vector_api.xi     merged stub -- the facade lives in engine.xi  [MERGED]
+    |-- vector_api.xi     merged stub -- the facade lives in engine.xi  [MERGED]
+    `-- http_service.xi   HTTP/1.1 byte pipeline + router            [NEW 2026-10-09]
 ```
 
 ### Dependency direction
@@ -150,6 +151,9 @@ collection/* -> types, index.ann_index, core.shim ids
 segment/* -> storage.vector_store, segment_state, core.shim ids;
              segment_file -> index.hnsw + payload.payload + durability.wal_file
              (sealed-segment codec; no engine dependency)
+api.http_service -> engine facade + engine.core + serialize.json +
+             durability.wal_file (parse_int_at) -- transport-agnostic:
+             bytes in, bytes out; no sockets in the module
 payload.filter_eval -> payload.filter_ast -> payload.payload
 durability.manifest_file -> durability.wal_file (shared byte parsers) +
                             types.metric + index.ann_index (stable codes)
@@ -314,6 +318,33 @@ Stats never switch the active collection, so reporting is read-only. The
 rebuild is the admin recovery valve for a tombstone-heavy graph;
 `compact_index` remains the Int-returning compatibility wrapper over the
 same rebuild. Gate: `tests/probes/probe_index_admin.xi`.
+
+## 3e. Service path (M-S1)
+
+```
+http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
+
+  parse    HTTP/1.1: CRLF framing, method/path/query, lowercased headers,
+           Content-Length must match the body EXACTLY
+           (incomplete -> 400 "incomplete request"; trailing -> 400)
+  route    GET  /health | GET/POST /collections
+           GET/POST/DELETE /collections/{n}/points
+           POST /search   (knn/range/pagination; "requests" array = batch)
+           GET  /stats?collection=
+           (unknown route 404, wrong method 405)
+  JSON     stdlib xiom.serialize.json, calls QUALIFIED (json.json_*):
+           the parent xiom.serialize helpers misresolve in this unit
+           (BUG 25 #1) -- unqualified calls silently built empty strings
+  reply    HTTP/1.1 <status> + Content-Type: application/json +
+           Content-Length (byte-exact) + Connection: close
+           errors: {"error": ...} with 400/404/405/409/500
+```
+
+The module is deliberately transport-agnostic (bytes in, bytes out): the
+socket adapter over the stdlib `xiom.net` server binds this same handle
+once that lane's proof lands (C-PULSE-02 pending); config/limits/errors
+(S2), auth (S3) and the security pass (S4) layer on top. Gate:
+`tests/probes/probe_http_service.xi` (40 checks).
 
 ## 4. Search path (top-k query)
 
