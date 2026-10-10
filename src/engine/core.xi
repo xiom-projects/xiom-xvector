@@ -10,6 +10,7 @@ module xiom.vector.engine.core
 // consolidated engine in the final extraction wave (acyclic: core.shim <-
 // engine.core <- engine facade).
 
+use xiom.metrics;
 use xiom.vector.core.shim;
 use xiom.string.slice;
 use xiom.vector.types.dense_vector;
@@ -89,8 +90,11 @@ pub fn engine_new() -> VectorEngine {
     dimension: 0,
     created: false,
     wal: wal_writer_new(),
-    upserts: counter_new("vector.upserts"),
-    deletes: counter_new("vector.deletes"),
+    // Stat counters ride the xiom.metrics package (adoption 2026-10-10;
+    // see docs/XIOM-METRICS-ADOPTION.md). The shim Counter was retired so
+    // the program carries a single Counter type (XVC-C-14 layout shadow).
+    upserts: metric_counter_new(),
+    deletes: metric_counter_new(),
     next_collection: 1,
     payloads: payload_store_new(),
     collections: Vec[CollectionEntry].new(),
@@ -685,7 +689,7 @@ pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[
     hnsw_insert_ref(&mut eng.graph, point, &vec, eng.metric);
   }
   var ok = index_add(&mut eng.store, point, vec);
-  counter_inc(&mut eng.upserts);
+  metric_counter_inc(&mut eng.upserts);
   return Ok(ok);
 }
 
@@ -728,7 +732,7 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
     hnsw_delete(&mut eng.graph, point);
   }
   payload_store_remove(&mut eng.payloads, point);   // no orphan metadata
-  counter_inc(&mut eng.deletes);
+  metric_counter_inc(&mut eng.deletes);
   return Ok(ok);
 }
 

@@ -3,31 +3,28 @@
 
 module xiom.vector.observability.metrics
 
-// In-repo observability primitives (M-O / O1). `xiom.metrics` is planned
-// for a later phase (and the compiler does not map registry deps yet), so
-// the lane keeps a small, dependency-free surface behind the same idea:
-// shim counters (the xiom.core.metrics stand-in), fixed-bucket histograms,
-// and a bounded structured-log ring. The service exposes them via
-// `GET /metrics` and the JSON log lines; the socket adapter can pipe the
-// ring to stdout/file unchanged.
+// In-repo observability surface (M-O / O1), now backed by the registry
+// package `xiom.metrics` 0.2.0 (adoption slice 2026-10-10; see
+// docs/XIOM-METRICS-ADOPTION.md). The exported surface is unchanged for
+// consumers: fixed-bucket latency histograms + a percentile view, the
+// ServiceMetrics bundle, and the bounded structured-log ring. The value
+// types and the bucket mechanics come from the package; percentiles, the
+// Prometheus histogram block, and the log ring stay lane-owned (the
+// package deliberately excludes percentile estimation and log storage --
+// see its SPEC Non-goals).
 //
 // This module is pure (no engine/no io): everything is probe-able with
 // plain function calls, and the numbers are deterministic.
 
 use xiom.convert;
 use xiom.string.slice;
-use xiom.vector.core.shim;
+use xiom.metrics;
 
 // ---- Histogram (fixed upper bounds in ms; last bucket is +Inf) ----
 
-pub type Histogram = {
-  bounds: Vec[Int];
-  counts: Vec[Int];
-  total_ms: Int;
-  observations: Int;
-}
-
-pub fn histogram_new() -> Histogram {
+// The lane's fixed latency bounds; passed to the package histogram so the
+// bucket layout stays a lane decision (same 7 bounds as pre-adoption).
+fn histogram_lane_bounds() -> Vec[Int] {
   var bounds = Vec[Int].new();
   bounds.push(1);
   bounds.push(5);
@@ -36,56 +33,113 @@ pub fn histogram_new() -> Histogram {
   bounds.push(100);
   bounds.push(500);
   bounds.push(1000);
-  var counts = Vec[Int].new();
-  var i: Int = 0;
-  while i <= bounds.len() {
-    counts.push(0);
-    i = i + 1;
-  }
-  return Histogram{ bounds: bounds, counts: counts, total_ms: 0, observations: 0 };
+  return bounds;
 }
 
+pub fn histogram_new() -> Histogram {
+  var bounds = histogram_lane_bounds();
+  return metric_histogram_new(&bounds);
+}
+
+// Record one observation; negative values clamp to 0 (lane contract; the
+// package records the given value verbatim).
 pub fn histogram_observe(h: &mut Histogram, ms: Int) {
   var v: Int = ms;
   if v < 0 { v = 0; }
-  var b: Int = 0;
-  var placed: Bool = false;
-  while b < h.bounds.len() && !placed {
-    if v <= h.bounds[b] {
-      h.counts[b] = h.counts[b] + 1;
-      placed = true;
-    } else {
-      b = b + 1;
-    }
-  }
-  if !placed {
-    h.counts[h.bounds.len()] = h.counts[h.bounds.len()] + 1;
-  }
-  h.total_ms = h.total_ms + v;
-  h.observations = h.observations + 1;
+  metric_histogram_observe(h, v);
+}
+
+// ---- Lane accessors over the package histogram. Consumers (http_service,
+// probes) read through these so the module stays the only seam that names
+// the package value types. ----
+
+pub fn histogram_count(h: &Histogram) -> Int {
+  return metric_histogram_count(h);
+}
+
+pub fn histogram_sum(h: &Histogram) -> Int {
+  return metric_histogram_sum(h);
+}
+
+pub fn histogram_min(h: &Histogram) -> Int {
+  return metric_histogram_min(h);
+}
+
+pub fn histogram_max(h: &Histogram) -> Int {
+  return metric_histogram_max(h);
+}
+
+pub fn histogram_mean(h: &Histogram) -> Int {
+  return metric_histogram_mean(h);
+}
+
+pub fn histogram_bucket_len(h: &Histogram) -> Int {
+  return metric_histogram_bucket_len(h);
+}
+
+pub fn histogram_bucket_count(h: &Histogram, index: Int) -> Int {
+  return metric_histogram_bucket_count(h, index);
+}
+
+pub fn histogram_bounds_len(h: &Histogram) -> Int {
+  return h.bounds.len();
+}
+
+// Upper bound of bucket window `i`; callers pass a valid index
+// (0 <= i < histogram_bounds_len).
+pub fn histogram_bound(h: &Histogram, i: Int) -> Int {
+  return h.bounds[i];
 }
 
 // Percentile as the upper bound of the bucket where the rank falls
 // (rank = ceil(p/100 * observations)); 0 when empty. The +Inf bucket
-// reports as `last bound + 1` (documented sentinel).
+// reports as `last bound + 1` (documented sentinel). Lane-owned: the
+// package exposes raw bucket counts only (SPEC Non-goals).
 pub fn histogram_percentile(h: &Histogram, p: Int) -> Int {
-  if h.observations == 0 { return 0; }
-  var rank: Int = (p * h.observations + 99) / 100;
+  var n: Int = histogram_count(h);
+  if n == 0 { return 0; }
+  var rank: Int = (p * n + 99) / 100;
   if rank < 1 { rank = 1; }
+  var nbounds: Int = histogram_bounds_len(h);
   var cum: Int = 0;
   var b: Int = 0;
-  while b < h.counts.len() {
-    cum = cum + h.counts[b];
+  while b < histogram_bucket_len(h) {
+    cum = cum + histogram_bucket_count(h, b);
     if cum >= rank {
-      if b < h.bounds.len() { return h.bounds[b]; }
-      return h.bounds[h.bounds.len() - 1] + 1;
+      if b < nbounds { return histogram_bound(h, b); }
+      return histogram_bound(h, nbounds - 1) + 1;
     }
     b = b + 1;
   }
-  return h.bounds[h.bounds.len() - 1] + 1;
+  return histogram_bound(h, nbounds - 1) + 1;
 }
 
-// ---- Service metrics bundle ----
+// Prometheus histogram block (moved here from http_service in the adoption
+// slice so consumers never name the package types): # TYPE, cumulative
+// bucket lines incl. the +Inf bucket, _sum/_count, and the lane's
+// p50/p95/p99 percentile lines. Byte-identical to the pre-adoption render.
+pub fn histogram_render_lines(name: Str, h: &Histogram) -> Str {
+  var out = "# TYPE " + name + " histogram\n";
+  var cum: Int = 0;
+  var b: Int = 0;
+  while b < histogram_bucket_len(h) {
+    cum = cum + histogram_bucket_count(h, b);
+    if b < histogram_bounds_len(h) {
+      out = out + name + "_bucket{le=\"" + convert.int_to_string(histogram_bound(h, b)) + "\"} " + convert.int_to_string(cum) + "\n";
+    } else {
+      out = out + name + "_bucket{le=\"+Inf\"} " + convert.int_to_string(cum) + "\n";
+    }
+    b = b + 1;
+  }
+  out = out + name + "_sum " + convert.int_to_string(histogram_sum(h)) + "\n";
+  out = out + name + "_count " + convert.int_to_string(histogram_count(h)) + "\n";
+  out = out + name + "_p50 " + convert.int_to_string(histogram_percentile(h, 50)) + "\n";
+  out = out + name + "_p95 " + convert.int_to_string(histogram_percentile(h, 95)) + "\n";
+  out = out + name + "_p99 " + convert.int_to_string(histogram_percentile(h, 99)) + "\n";
+  return out;
+}
+
+// ---- Service metrics bundle (package value types behind the seam) ----
 
 pub type ServiceMetrics = {
   requests_total: Counter;
@@ -100,15 +154,27 @@ pub type ServiceMetrics = {
 
 pub fn service_metrics_new() -> ServiceMetrics {
   return ServiceMetrics{
-    requests_total: counter_new("xvector.requests_total"),
-    errors_total: counter_new("xvector.errors_total"),
-    search_ops: counter_new("xvector.search_ops"),
-    upsert_ops: counter_new("xvector.upsert_ops"),
-    auth_failures: counter_new("xvector.auth_failures"),
-    rate_limited: counter_new("xvector.rate_limited"),
+    requests_total: metric_counter_new(),
+    errors_total: metric_counter_new(),
+    search_ops: metric_counter_new(),
+    upsert_ops: metric_counter_new(),
+    auth_failures: metric_counter_new(),
+    rate_limited: metric_counter_new(),
     latency_ms: histogram_new(),
     search_latency_ms: histogram_new(),
   };
+}
+
+// Counter seam. The names cannot be the package's own (`metric_counter_*`:
+// a module-level definition would shadow the import) and cannot be the
+// core shim's `counter_inc` (http_service imports the shim for CoreError
+// alongside this module), hence the service_* spelling.
+pub fn service_counter_inc(c: &mut Counter) {
+  metric_counter_inc(c);
+}
+
+pub fn service_counter_value(c: &Counter) -> Int {
+  return metric_counter_value(c);
 }
 
 // ---- Bounded structured-log ring (JSON lines) ----

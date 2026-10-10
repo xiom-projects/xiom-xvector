@@ -4,10 +4,11 @@
 # C-PULSE-02 UPDATE (2026-10-10, compiler v0.64.2): the dependency-root
 # resolver DOES read [dependencies] and adds installed package roots from
 # $XIOM_HOME/packages to the catalog (the legacy package.xi `deps:` block
-# is not consumed for source roots). xvector now consumes `xiom.wal` --
-# the single WAL home -- for record-shape alignment (see
+# is not consumed for source roots). xvector consumes `xiom.wal` -- the
+# single WAL home -- for record-shape alignment (see
 # docs/XIOM-WAL-ADOPTION.md); the lane's own durability codec stays until
-# the migration slices land.
+# the migration slices land. `xiom.metrics` 0.2.0 backs the
+# observability.metrics internals (see docs/XIOM-METRICS-ADOPTION.md).
 [project]
 name = "xiom.xvector"
 version = "1.0.0-rc.1"
@@ -18,3 +19,4 @@ source-roots = [
 
 [dependencies]
 xiom.wal = "0.1.0"
+xiom.metrics = "0.2.0"
