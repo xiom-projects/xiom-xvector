@@ -758,6 +758,20 @@ extraction with the packages lane.
   overall 80.04 -> 80.94 -> 81 %. Evidence: full batteries (suite
   171/171 x2 + sbom + 34 probes x2 + bench smoke, Windows + WSL), ALL
   GATES GREEN.
+- **2026-10-10 (fifty-sixth pass):** xiom.rate 0.2.0 adoption -- the S3
+  `RateLimiter` internals run on the registry package `TokenBucket`
+  behind the same API (429 path + the rate-limited counter unchanged);
+  the package carries unearned sub-token remainders, so fractional
+  refill is now exact (the lane limiter consumed the whole elapsed span
+  and discarded them); every gate-visible boundary unchanged. Gates:
+  `probe_package_rate` (14 checks, direct package incl. the carry case)
+  added; batteries now 35 probes; `probe_service_auth` (24) /
+  `probe_metrics` (24) re-run green. Also: orbitdb closed the
+  XV-ORBITDB-01 bus item after verification, and compiler **v0.64.3
+  released** (upgrade + full re-test + XVC-C-13/C-14 verdicts are the
+  next pass). No score change (capability identical; adoption depth
+  tracked in J). Evidence: full batteries (suite 171/171 x2 + sbom + 35
+  probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 
