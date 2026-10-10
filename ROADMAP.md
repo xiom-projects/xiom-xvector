@@ -224,6 +224,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   honest statuses); `/health`, `/collections`, points CRUD, `/search`
   (knn/range/page/batch), `/stats`. Socket adapter gated on the stdlib
   `xiom.net` proof (C-PULSE-02). Gate `probe_http_service` (40 checks).
+- [OK] Service config/limits/errors (M-S2): `ServiceConfig` (defaults +
+  env `XVECTOR_MAX_*` + key=value file), enforced limits (413 size/batch,
+  400 named top_k/dim), the `{error,kind,status}` model over the full
+  `CoreError` enum, and `http_service_shutdown` (drain + WAL checkpoint).
+  Gate `probe_service_limits` (27 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;
