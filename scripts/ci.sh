@@ -43,6 +43,7 @@ probes=(
   probe_service_auth
   probe_http_fuzz
   probe_metrics
+  probe_package_wal
   probe_batch_ops
 )
 
