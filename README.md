@@ -69,6 +69,7 @@ src/
 |-- query/                    search_request - filter_plan - topk_heap - search_service - pagination
 |-- durability/               wal - recovery - write_ahead_events - wal_file - manifest_file
 `-- api/                      vector_api (merged stub) - http_service (HTTP/1.1 byte pipeline)
+`-- observability/            metrics (histogram - counters - log ring)
 ```
 
 ## Public API (`xiom.vector.engine` facade; `engine_*` internals in `xiom.vector.engine.core`)

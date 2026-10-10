@@ -104,12 +104,22 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-O -- Observability & operability
 
-- [ ] O1 `xiom.metrics` adoption: counters/gauges/histograms (ops, errors,
-  latency, lsn, sizes); metrics probe
-- [ ] O2 `/metrics` + `/health` (live/ready) + structured logs + slow-query
-  log; signals asserted by probe
-- [ ] O3 `docs/OPERATIONS.md` runbook: start/stop, backup/restore drill,
-  upgrade/migration, failure modes
+- [x] O1 metrics surface **(done 2026-10-09)**: `observability.metrics`
+  (dependency-free; `xiom.metrics` adoption stays Phase 10) -- counters
+  (requests/errors/search/upsert/auth_failures/rate_limited), latency
+  histograms (global + search; 1/5/10/50/100/500/1000 ms + `+Inf`,
+  p50/p95/p99), live gauges (collections/points/lsn); `probe_metrics`
+  (23 checks)
+- [x] O2 `/metrics` + `/health` (live/ready) + structured logs + slow-query
+  log **(done 2026-10-09)**: public `GET /metrics` (prometheus text;
+  counters + histograms + gauges), `/health` carries `ready:true`, bounded
+  JSON-line `LogRing` (method/path/status/ms/slow, sanitized, eviction
+  count) wired through `http_service_handle_state`; signals asserted by
+  `probe_metrics`
+- [x] O3 `docs/OPERATIONS.md` runbook **(done 2026-10-09)**: start/stop +
+  shutdown checkpoint, config reference, monitoring + alerts,
+  backup/restore drill, failure-domain table, upgrade/migration notes,
+  quick diagnostics
 
 ## M-P -- Performance & scale
 

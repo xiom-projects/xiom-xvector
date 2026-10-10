@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (50 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (51 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -56,17 +56,19 @@ shutdown checkpoint; probe_service_limits]) -> M-S3 auth + rate limiting
 token-bucket RateLimiter; ServiceState; probe_service_auth]) -> M-S4
 security pass [fuzz gate (2500 inputs) + JSON depth guard (found+fixed a
 stdlib stack-overflow); SBOM + unsafe gate scripts; SECURITY.md;
-probe_http_fuzz]).
+probe_http_fuzz]) -> M-O observability [metrics module (histograms +
+counters + JSON log ring), /metrics + health readiness, runbook;
+probe_metrics]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `9f7bf78` (feat: M-S4
-security pass) + this handoff commit. Recent slices: `9f7bf78` M-S4
+**Repo:** private, no pushes; clean tree. HEAD `814b7a5` (feat: M-O
+observability core) + this handoff commit. Recent slices: `814b7a5` M-O
+(metrics//metrics/logs/runbook), `ba35fed` M-S4 wrap, `9f7bf78` M-S4
 (fuzz/SBOM/security), `6511922` M-S3 wrap, `4574220` M-S3 (auth/rate),
-`70301bc` M-S2 wrap, `fdd4a35` M-S2 (config/limits/errors), `53296bf`
-M-S1 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
+`70301bc` M-S2 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
 conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
@@ -76,7 +78,7 @@ conventional commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `d2b18dc` (waves 100-101: math clauses + docs; release **0.64.3 registry-LIVE**); durability primitives still stubs (re-checked at the M-S4 wrap) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `9f7bf78` + this handoff commit | this repo |
+| xvector | `814b7a5` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -509,13 +511,29 @@ conventional commits, DCO `git commit -s`.
   `out/sbom.json` (compiler, stdlib pin, per-module sha256, unsafe=0) and
   FAIL on any `unsafe` in src/; both batteries now run the SBOM + unsafe
   gate.
-- **FloatVal workaround unwound** after the v0.64.1 fix: float payload
+- **M-O observability core (2026-10-09):** new
+  `src/observability/metrics.xi` -- fixed-bucket latency `Histogram`
+  (1/5/10/50/100/500/1000 ms + `+Inf`; `_sum`/`_count`/p50/p95/p99),
+  `ServiceMetrics` (requests/errors/search_ops/upsert_ops/auth_failures/
+  rate_limited counters + global and search histograms) and a bounded
+  JSON-log `LogRing` (method/path/status/ms/slow, hostile strings
+  sanitized, oldest-first eviction + `dropped`). Service: public
+  `GET /metrics` (prometheus text: counters, cumulative buckets +
+  percentiles, live gauges collections/points_active/lsn), `/health`
+  gains `ready:true`, and `http_service_handle_state` instruments every
+  request (status-derived counters, latency, op classification, one log
+  line). Worked around the XVC-C-09 family AGAIN: nested-field mutation
+  through a `&mut` param (`st.metrics.counter`) silently does not
+  persist -- the wrapper copies the metrics struct out and writes back
+  once. `docs/OPERATIONS.md` runbook (start/stop, config, monitoring +
+  alerts, backup/restore drill, failure domains, migration, diagnostics).
+  Gate `probe_metrics` (23 checks).- **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **72 % today**; recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
-`d2b18dc` = 0.64.3; latest re-verification = M-S4 security pass on
+`d2b18dc` = 0.64.3; latest re-verification = M-O observability pass on
 the current tree):**
 
 - `scripts\run-probe.ps1 tests\probes\probe_engine_import.xi -Runs 2` green
@@ -576,7 +594,11 @@ the current tree):**
   `probe_http_fuzz` (14 checks) wired into both batteries; the JSON depth
   guard fixed a found stack-overflow DoS; WSL spot (sbom.sh + fuzz x2)
   bit-identical.
-- All **31 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-O observability pass:** suite **171/171 x2** + **SBOM/unsafe gate** +
+  **32 probes x2** + bench smoke (Windows + WSL), ALL GATES GREEN; new
+  `probe_metrics` (23 checks) wired into both batteries; WSL spot x2
+  bit-identical.
+- All **32 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -586,7 +608,7 @@ the current tree):**
   `probe_segment_file`, `probe_range_search`, `probe_pagination`,
   `probe_delete_filter`, `probe_index_admin`, `probe_reference_oracle`,
   `probe_http_service`, `probe_service_limits`, `probe_service_auth`,
-  `probe_http_fuzz`, `probe_batch_ops` (run via
+  `probe_http_fuzz`, `probe_metrics`, `probe_batch_ops` (run via
   `scripts\run-probe.ps1`); plus the SBOM + unsafe gate (`scripts/sbom.ps1`,
   `scripts\sbom.sh`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
@@ -648,14 +670,12 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6
-   + M-G1 + M-G2/G3 + M-S1 + M-S2 + M-S3 + M-S4 DONE -- the M-S wave is
-   complete.** Next: **M-O observability** (O1 `xiom.metrics` wiring ->
-   O2 `/metrics` + `/health` readiness + structured logs -> O3 runbook +
-   failure modes). D5/D6 (delta+fsync, retention) stay gated on the
-   stdlib fsync chain (re-checked at M-S4: still stubs); the socket
-   adapter for the service is gated on the stdlib `xiom.net` proof
-   (C-PULSE-02). P5 (mmap) stays gated on stdlib mmap.
+1. **Every planned M-D + M-Q + M-G + M-S slice and the M-O core are DONE.**
+   Next: **M-R release-criteria audit + v1.0.0-rc prep** (green batteries,
+   kill matrix, benchmark report, security checklist, SBOM and docs are
+   all in place -- the rc label + owner handoff remain). Gated lanes
+   pivot when primitives land: D5/D6 (stdlib fsync chain), P5 (stdlib
+   mmap), the socket adapter (C-PULSE-02).
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -831,7 +851,7 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `9f7bf78` (feat: M-S4 security pass) + the handoff
+Orientation: HEAD `814b7a5` (feat: M-O observability core) + the handoff
 commit; clean tree; `git log --oneline -12` shows the recent slice
 commits. Lane pins: stdlib `d2b18dc` (re-checked at M-S4: fsync chain
 still stubs), packages `26f7d0ae`, compiler lane `d481c490` (installed
@@ -840,7 +860,8 @@ compiler v0.64.2, tag c51170a6).
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: M-O metrics/health/logs/runbook.
+slice backlog: M-R release-criteria audit + v1.0.0-rc prep (all M-D/M-Q/
+M-G/M-S slices and the M-O core are done).
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
 and pivot immediately when primitives land. Per slice: implement, extend
@@ -867,7 +888,7 @@ stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
 runs probes. Green baseline: suite 171/171 x2 (Windows + WSL) + sbom gate,
-31 probes x2 (Windows) + WSL spot + bench smoke (quick) in both batteries.
+32 probes x2 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
 in-memory) and Phase 3 (payload filtering + durable metadata); FOUR module
@@ -941,8 +962,10 @@ RateLimiter with 429; ServiceState + http_service_handle_state; gate
 probe_service_auth, 24 checks); M-S4 security pass (SECURITY.md; fuzz
 gate 2500 inputs + targeted abuse with the JSON depth guard fixing a
 found stack-overflow DoS; SBOM + unsafe gate scripts wired into both
-batteries; gate probe_http_fuzz, 14 checks) -- 31 probes + sbom,
-suite 171).
+batteries; gate probe_http_fuzz, 14 checks); M-O observability core (histograms +
+counters + bounded JSON log ring; public /metrics with gauges + health
+readiness; per-request instrumentation; OPERATIONS.md runbook; gate
+probe_metrics, 23 checks) -- 32 probes + sbom, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -954,17 +977,17 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
-M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G1 + M-G2/G3
-+ M-S1 + M-S2 + M-S3 + M-S4 done -- the M-S wave is complete; next: M-O
-observability (O1 metrics -> O2 surfaces/logs -> O3 runbook)). Non-gated
-work proceeds while the stdlib
+NEXT TASK: the slice backlogs are complete; run the M-R release-criteria
+audit and prepare v1.0.0-rc (VERSION + release checklist walkthrough),
+recording the owner handoff summary when the criteria all hold. Gated
+pivots: D5/D6 (stdlib fsync chain), P5 (mmap), socket adapter
+(C-PULSE-02). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ sbom + 31 probes x2 + bench smoke), signed commits, docs updated.
++ sbom + 32 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; `Str`
 params by value (XVC-C-13); numeric gates per build; watchdogs + exit
