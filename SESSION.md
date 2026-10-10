@@ -74,8 +74,8 @@ unchanged; release-check verdicts filed; both batteries green isolated) ->
 xiom.http helper evaluation + adoption (status phrases on the package
 behind a lane adapter; router/parser evaluated, not adopted;
 probe_package_http; 36 probes) -> xiom.vectors 0.1.0 wiring + fidelity
-gate (byte-exact carve verified, 6/6 pins; probe_package_vectors; facade
-swap planned; 37 probes).
+gate (byte-exact carve verified, 6/6 pins; probe_package_vectors;
+atomic all-surfaces swap planned -- XVC-C-14 constraint; 37 probes).
 
 ---
 
@@ -652,8 +652,10 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   top-K ordering/eviction, codec round-trip, torn-skip replay); the
   package's own codec probe runs green from the lane home (bit-exact
   incl. -0.0 / denormal / max). Batteries now **37 probes**. Internals
-  swap (lane facades) planned in `docs/XIOM-VECTORS-EVAL.md`; gated on
-  owner greenlight `-12` and sequenced with the `xiom.ann` porter flow.
+  swap planned as **one atomic step** (all six surfaces at once --
+  partial swaps are an XVC-C-14 short-name hazard; ~45 import sites) in
+  `docs/XIOM-VECTORS-EVAL.md`; gated on owner greenlight `-12` + a quiet
+  window, sequenced with the `xiom.ann` porter flow.
 - **Bus round (2026-10-10, 55th pass):** `REL-20261010-1550-xvector-7`
   (json depth cap) **verified + closed** -- boundary re-run against the
   stdlib checkout (`a16daff`): 128-deep Ok; 129 and 60000-deep Err
@@ -1067,8 +1069,8 @@ signed commits, docs updated).
   `docs/XIOM-RATE-ADOPTION.md`); **router/http evaluated 2026-10-10: the
   `xiom.http.status` helper subset ADOPTED, router/parser not adopted
   (`docs/XIOM-HTTP-EVAL.md`); `xiom.vectors` 0.1.0 WIRED + GATED (59th
-  pass; byte-exact carve, facade swap planned in
-  `docs/XIOM-VECTORS-EVAL.md`)**;
+  pass; byte-exact carve; atomic swap planned -- XVC-C-14 constraint --
+  in `docs/XIOM-VECTORS-EVAL.md`)**;
   `xiom.kv` gated on C-PULSE-10 + fsync. Bindings relay (2026-10-09):
   blas-class accelerators stay **GATED** (incubating placeholders, no
   timeline; pilot complete through batch 22) -- sole unscheduled sector;
@@ -1284,12 +1286,12 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: the **`xiom.vectors` internals swap** (lane facades importing
-the package; behavior-identical -- extraction pins match the tree;
-greenlight `-12` pending, so schedule it with the next maintenance
-pass or owner go-ahead), then the **`xiom.ann` porter flow** and the
-owner's public release + benchmark (the v1.0.0-rc.1 candidate and owner
-handoff stand). Each pass: re-check
+NEXT TASK: the **`xiom.vectors` internals swap as ONE ATOMIC step**
+(~45 import sites; partial swaps are an XVC-C-14 short-name hazard;
+behavior-identical -- extraction pins match the tree; greenlight `-12` +
+quiet window, next dedicated slice), then the **`xiom.ann` porter flow**
+and the owner's public release + benchmark (the v1.0.0-rc.1 candidate
+and owner handoff stand). Each pass: re-check
 the external lanes and pivot when a gate clears (D5/D6 on the stdlib
 fsync chain, socket adapter on xiom.net, P5 on stdlib mmap, xiom.kv on
 C-PULSE-10). Non-gated work proceeds while the stdlib
