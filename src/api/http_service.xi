@@ -32,6 +32,7 @@ use xiom.serialize.json;
 use xiom.os.env;
 use xiom.time;
 use xiom.crypto.mac;
+use xiom.vector.observability.metrics;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.core.shim;
@@ -545,11 +546,15 @@ pub fn rate_limiter_allow(lim: &mut RateLimiter, now_ms: Int) -> Bool {
   return true;
 }
 
-// The full service state: limits/config (S2), auth (S3), rate limiting.
+// The full service state: limits/config (S2), auth (S3), rate limiting,
+// plus the observability bundle (M-O): counters/histograms + the bounded
+// structured-log ring.
 pub type ServiceState = {
   cfg: ServiceConfig;
   auth: ServiceAuth;
   rate: RateLimiter;
+  metrics: ServiceMetrics;
+  log: LogRing;
 }
 
 pub fn service_state_new() -> ServiceState {
@@ -557,6 +562,8 @@ pub fn service_state_new() -> ServiceState {
     cfg: service_config_default(),
     auth: service_auth_new(),
     rate: rate_limiter_disabled(),
+    metrics: service_metrics_new(),
+    log: log_ring_new(256, 250),
   };
 }
 
@@ -572,10 +579,132 @@ fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
   return Some(ApiScope.Read);
 }
 
-// State-aware entry point: rate limit -> parse -> auth/scope -> route.
-// Auth is skipped entirely while `auth.enabled` is false (embedded mode);
-// /health is always public. Scope order: read < write < admin.
-pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec[UInt8], st: &mut ServiceState) -> Vec[UInt8] {
+// Parse the 3-digit status from an assembled response (0 when unparseable).
+fn response_status(resp: &Vec[UInt8]) -> Int {
+  if resp.len() < 12 { return 0; }
+  var d1 = (resp[9] as Int) - 48;
+  var d2 = (resp[10] as Int) - 48;
+  var d3 = (resp[11] as Int) - 48;
+  if d1 < 0 || d1 > 9 || d2 < 0 || d2 > 9 || d3 < 0 || d3 > 9 { return 0; }
+  return d1 * 100 + d2 * 10 + d3;
+}
+
+// Text response (prometheus exposition uses text/plain).
+pub fn http_text_response(status: Int, body: Str) -> Vec[UInt8] {
+  var bb = slice.str_bytes(body);
+  var out = Vec[UInt8].new();
+  append_bytes(&mut out, "HTTP/1.1 ");
+  append_bytes(&mut out, convert.int_to_string(status));
+  append_bytes(&mut out, " ");
+  append_bytes(&mut out, status_text(status));
+  append_bytes(&mut out, "\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: ");
+  append_bytes(&mut out, convert.int_to_string(bb.len()));
+  append_bytes(&mut out, "\r\nConnection: close\r\n\r\n");
+  var i: Int = 0;
+  while i < bb.len() {
+    out.push(bb[i]);
+    i = i + 1;
+  }
+  return out;
+}
+
+fn render_hist_lines(name: Str, h: &Histogram) -> Str {
+  var out = "# TYPE " + name + " histogram\n";
+  var cum: Int = 0;
+  var b: Int = 0;
+  while b < h.counts.len() {
+    cum = cum + h.counts[b];
+    if b < h.bounds.len() {
+      out = out + name + "_bucket{le=\"" + convert.int_to_string(h.bounds[b]) + "\"} " + convert.int_to_string(cum) + "\n";
+    } else {
+      out = out + name + "_bucket{le=\"+Inf\"} " + convert.int_to_string(cum) + "\n";
+    }
+    b = b + 1;
+  }
+  out = out + name + "_sum " + convert.int_to_string(h.total_ms) + "\n";
+  out = out + name + "_count " + convert.int_to_string(h.observations) + "\n";
+  out = out + name + "_p50 " + convert.int_to_string(histogram_percentile(h, 50)) + "\n";
+  out = out + name + "_p95 " + convert.int_to_string(histogram_percentile(h, 95)) + "\n";
+  out = out + name + "_p99 " + convert.int_to_string(histogram_percentile(h, 99)) + "\n";
+  return out;
+}
+
+// Prometheus-style exposition (O2): counters, latency histograms and live
+// gauges from the engine (collections / active points / lsn).
+fn render_metrics(eng: &VectorEngine, st: &ServiceState) -> Str {
+  var out = "# TYPE xvector_requests_total counter\n";
+  out = out + "xvector_requests_total " + convert.int_to_string(st.metrics.requests_total.value) + "\n";
+  out = out + "# TYPE xvector_errors_total counter\n";
+  out = out + "xvector_errors_total " + convert.int_to_string(st.metrics.errors_total.value) + "\n";
+  out = out + "# TYPE xvector_search_ops counter\n";
+  out = out + "xvector_search_ops " + convert.int_to_string(st.metrics.search_ops.value) + "\n";
+  out = out + "# TYPE xvector_upsert_ops counter\n";
+  out = out + "xvector_upsert_ops " + convert.int_to_string(st.metrics.upsert_ops.value) + "\n";
+  out = out + "# TYPE xvector_auth_failures counter\n";
+  out = out + "xvector_auth_failures " + convert.int_to_string(st.metrics.auth_failures.value) + "\n";
+  out = out + "# TYPE xvector_rate_limited counter\n";
+  out = out + "xvector_rate_limited " + convert.int_to_string(st.metrics.rate_limited.value) + "\n";
+  out = out + render_hist_lines("xvector_latency_ms", &st.metrics.latency_ms);
+  out = out + render_hist_lines("xvector_search_latency_ms", &st.metrics.search_latency_ms);
+  out = out + "# TYPE xvector_collections gauge\n";
+  out = out + "xvector_collections " + convert.int_to_string(engine_collection_count(eng)) + "\n";
+  out = out + "# TYPE xvector_points_active gauge\n";
+  out = out + "xvector_points_active " + convert.int_to_string(engine_size(eng)) + "\n";
+  out = out + "# TYPE xvector_lsn gauge\n";
+  out = out + "xvector_lsn " + convert.int_to_string(engine_durable_lsn(eng)) + "\n";
+  return out;
+}
+
+// State-aware entry point (M-O): serves `GET /metrics` (public, like
+// /health) straight from the state, then runs the inner pipeline
+// (rate limit -> parse -> auth/scope -> route) and instruments it:
+// request/error/auth/rate counters, latency histograms, and one bounded
+// JSON log line per request (method/path/status/ms/slow).
+pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec<UInt8], st: &mut ServiceState) -> Vec[UInt8] {
+  var t0 = time.monotonic_ms();
+  var req = http_parse_request(raw);
+  var is_metrics: Bool = false;
+  if req.ok && req.method == "GET" && req.path == "/metrics" { is_metrics = true; }
+  var resp: Vec[UInt8] = Vec[UInt8].new();
+  if is_metrics {
+    resp = http_text_response(200, render_metrics(eng, st));
+  } else {
+    resp = handle_state_inner(eng, raw, st);
+  }
+  var t1 = time.monotonic_ms();
+  var ms: Int = t1 - t0;
+  if ms < 0 { ms = 0; }
+  // Nested-field mutation through a &mut param does not persist (XVC-C-09
+  // family): copy the metrics struct out, mutate, write back once.
+  var mt = st.metrics;
+  counter_inc(&mut mt.requests_total);
+  histogram_observe(&mut mt.latency_ms, ms);
+  var status = response_status(&resp);
+  if status >= 400 { counter_inc(&mut mt.errors_total); }
+  if status == 401 || status == 403 { counter_inc(&mut mt.auth_failures); }
+  if status == 429 { counter_inc(&mut mt.rate_limited); }
+  var m: Str = "";
+  var p: Str = "";
+  if req.ok {
+    m = req.method;
+    p = req.path;
+  }
+  if m == "POST" && p == "/search" {
+    counter_inc(&mut mt.search_ops);
+    histogram_observe(&mut mt.search_latency_ms, ms);
+  }
+  var segs = path_segments(p);
+  if m == "POST" && segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
+    counter_inc(&mut mt.upsert_ops);
+  }
+  st.metrics = mt;
+  log_ring_push(&mut st.log, m, p, status, ms);
+  return resp;
+}
+
+// The pre-M-O state pipeline (unchanged semantics): rate limit -> parse
+// -> auth/scope -> handle_cfg.
+fn handle_state_inner(eng: &mut VectorEngine, raw: &Vec<UInt8>, st: &mut ServiceState) -> Vec[UInt8] {
   var now = time.monotonic_ms();
   if !rate_limiter_allow(&mut st.rate, now) {
     return jerror(429, "rate limit exceeded");
@@ -1196,6 +1325,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
     var out = json.json_object_new();
     out = json.json_set(out, "status", json.json_string("ok"));
     out = json.json_set(out, "service", json.json_string("xvector"));
+    out = json.json_set(out, "ready", json.json_bool(true));
     return http_response(200, out);
   }
   if segs.len() == 1 && segs[0] == "collections" {

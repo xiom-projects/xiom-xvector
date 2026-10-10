@@ -45,6 +45,7 @@ $probes = @(
   "probe_service_limits",
   "probe_service_auth",
   "probe_http_fuzz",
+  "probe_metrics",
   "probe_batch_ops"
 )
 
