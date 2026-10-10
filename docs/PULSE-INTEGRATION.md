@@ -28,8 +28,8 @@ WAL-durable); per-collection stats + index admin (`collection_stats` /
 byte-level pipeline -- the socket adapter is gated on the stdlib
 `xiom.net` proof; S2 limits/config via `XVECTOR_MAX_*` + key=value file
 and the `{error,kind,status}` model; S3 API-key auth (scopes
-read/write/admin, `XVECTOR_API_KEYS`, constant-time) + rate limiting);
-typed
+read/write/admin, `XVECTOR_API_KEYS`, constant-time) + rate limiting;
+S4 fuzz/SBOM/unsafe gates + threat model in `docs/SECURITY.md`); typed
 payload filters with a selectivity planner; payload
 hydration; whole-file WAL checkpoint + recover. Multi-collection registry:
 `create_named_collection`/`select_collection`/`drop_collection`/

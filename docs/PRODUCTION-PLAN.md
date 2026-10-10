@@ -234,10 +234,14 @@ Goal: the service surface the ecosystem and benchmarks consume.
   `XVECTOR_API_KEYS`, 401/403 kinds; minimal token-bucket `RateLimiter`
   (429) wired through `ServiceState` + `http_service_handle_state`
   (embedded default off). Gate `probe_service_auth` (24 checks).
-- **S4 security pass** -- threat model doc (asset/trust boundaries),
-  HTTP input fuzzing + codec fuzz gates, resource-exhaustion tests,
-  dependency pinning + SBOM, `unsafe` audit statement, secure defaults,
-  docs/SECURITY.md.
+- **S4 security pass -- DONE 2026-10-09** -- `docs/SECURITY.md` (threat
+  model + secure defaults + threat/control matrix), HTTP fuzz +
+  resource-exhaustion gate (`probe_http_fuzz`: 2500 deterministic inputs
+  all well-formed; targeted abuse incl. the JSON deep-nesting case that
+  found and fixed a stack-overflow DoS via the `json_depth_ok` edge
+  guard), SBOM + unsafe gate (`scripts/sbom.ps1`/`sbom.sh` ->
+  `out/sbom.json`, 0 unsafe in 43 modules), no-unsafe audit statement,
+  dependency-pinning statement (zero registry deps).
 
 Exit: service probe (start -> CRUD -> search -> shutdown) + abuse suite;
 auth on by default; SECURITY.md committed.
@@ -309,6 +313,7 @@ deep quantization + tiered storage, client SDKs.
 | 10 | HTTP skeleton + health -- **DONE 2026-10-09** | S1 | `probe_http_service` (40 checks) |
 | 11 | Config/limits/errors -- **DONE 2026-10-09** | S2 | `probe_service_limits` (27 checks) |
 | 12 | Auth -- **DONE 2026-10-09** | S3 | `probe_service_auth` (24 checks: reject/accept, scopes, rate) |
+| 13 | Security pass -- **DONE 2026-10-09** | S4 | `probe_http_fuzz` (14 checks) + sbom/unsafe gate + `docs/SECURITY.md` |
 
 Gated items (D5 fsync chain, P5 mmap, truncate-based retention) are picked
 up the moment the stdlib lane lands the primitives; re-check every pass.
