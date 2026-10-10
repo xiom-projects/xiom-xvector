@@ -50,6 +50,7 @@ $probes = @(
   "probe_package_metrics",
   "probe_package_rate",
   "probe_package_http",
+  "probe_package_vectors",
   "probe_batch_ops"
 )
 
