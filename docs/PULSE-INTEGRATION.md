@@ -23,7 +23,10 @@ delete-by-filter (`delete_filter` -- typed filter, planner-driven,
 WAL-durable); per-collection stats + index admin (`collection_stats` /
 `rebuild_index`); request modes + request-level pagination + batches
 (`SearchRequest.mode` knn/range with radius, `offset`/`after_id`,
-`search_batch_with_request`); typed
+`search_batch_with_request`); HTTP service skeleton (`api.http_service`:
+`/health`, `/collections`, points get/upsert/delete, `/search`, `/stats`;
+byte-level pipeline -- the socket adapter is gated on the stdlib
+`xiom.net` proof); typed
 payload filters with a selectivity planner; payload
 hydration; whole-file WAL checkpoint + recover. Multi-collection registry:
 `create_named_collection`/`select_collection`/`drop_collection`/

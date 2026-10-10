@@ -219,6 +219,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   the three kernels (pairwise deviations at Float32-ulp scale), metric
   axioms, and the ranked/paged/cursor/range/Hnsw search paths on seeded
   vectors; gate `probe_reference_oracle` (22 checks).
+- [OK] HTTP service skeleton (M-S1): `api.http_service` -- transport-
+  agnostic HTTP/1.1 byte pipeline (strict parse, router, stdlib-JSON wire,
+  honest statuses); `/health`, `/collections`, points CRUD, `/search`
+  (knn/range/page/batch), `/stats`. Socket adapter gated on the stdlib
+  `xiom.net` proof (C-PULSE-02). Gate `probe_http_service` (40 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

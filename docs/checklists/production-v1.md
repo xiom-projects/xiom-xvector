@@ -78,9 +78,11 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-S -- Server & security
 
-- [ ] S1 HTTP service skeleton (adopt `xiom.http` or facade-compatible
-  fallback): `/health`, collections/points CRUD+batch, search (knn/
-  filtered/range/page), `/stats`; `probe_http_service`
+- [x] S1 HTTP service skeleton **(done 2026-10-09)**: in-repo
+  `api.http_service` byte-level HTTP/1.1 pipeline (parse/route/JSON/reply,
+  no sockets yet -- the `xiom.net` adapter is C-PULSE-02-gated);
+  `/health`, collections create/list, points get/upsert/delete, search
+  (knn/range/page/batch), `/stats`; `probe_http_service` (40 checks)
 - [ ] S2 config (file/env), limits (size/k/batch/dim), JSON error model,
   graceful shutdown (drain+checkpoint); abuse probe
 - [ ] S3 auth: API keys, constant-time compare, scopes; rate limiting;

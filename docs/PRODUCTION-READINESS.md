@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-D4 segment files)
-- **Overall:** **75 %** (weighted; see method)
+- **As of:** 2026-10-09 (post M-S1 HTTP service skeleton)
+- **Overall:** **77 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 84 | buildable | version endpoint |
+| F | API & query surface | 8 | 86 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
-| H | Observability & operability | 5 | 20 | scaffold | metrics surface, health, latency/recall histograms |
+| H | Observability & operability | 5 | 28 | scaffold | metrics surface, /metrics + readiness, latency/recall histograms, structured logs |
 | I | Testing & verification | 9 | 92 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x84 + 0.10x25 + 0.05x20 + 0.09x92 + 0.08x48 = **75.96 -> 76 %**.
+0.08x86 + 0.10x25 + 0.05x28 + 0.09x92 + 0.08x48 = **76.52 -> 77 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -175,13 +175,15 @@ active collection.
 Remaining: concurrent readers, write serialization model, segment growth /
 compaction policy, memory budget, scale tuning beyond the baseline.
 
-### H. Observability & operability -- 20 %
-Done: inline counters (upserts/deletes), LSN metrics.
-Remaining: `xiom.metrics` adoption (Phase 10), /health + /metrics surface per
-the OPS pattern, latency/recall histograms, structured logs.
+### H. Observability & operability -- 28 %
+Done: inline counters (upserts/deletes), LSN metrics, and the service
+skeleton's `GET /health` endpoint (`api.http_service`; gate
+`probe_http_service`).
+Remaining: `xiom.metrics` adoption (Phase 10), `/metrics` + readiness
+wiring per the OPS pattern, latency/recall histograms, structured logs.
 
 ### I. Testing & verification -- 92 %
-Done: 171-check conformance suite (x2 Windows + WSL), 27 probes, build-time
+Done: 171-check conformance suite (x2 Windows + WSL), 28 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
@@ -193,7 +195,8 @@ deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
 **reference-oracle cross-check** (`probe_reference_oracle`: independent
 Float64 oracle vs the kernels + axioms + all ranked/paged/cursor/range/
 Hnsw search paths; deviations at Float32-ulp scale, bit-identical
-Windows/WSL), and
+Windows/WSL), the **HTTP service gate** (`probe_http_service`: framing,
+routing, wire shapes, honest statuses), and
 the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 (C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
 workarounds reverted; the suite asserts trailing-field flags again.
@@ -589,6 +592,20 @@ extraction with the packages lane.
   probes. I 86 -> 92; overall 75.42 -> 75.96 -> 76 %. Evidence: full
   batteries (suite 171/171 x2 + 27 probes x2 + bench smoke, Windows +
   WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-seventh pass):** M-S1 HTTP service skeleton -- new
+  `api.http_service` (transport-agnostic HTTP/1.1 byte pipeline:
+  strict parse -> router -> stdlib-JSON wire -> byte-exact responses; no
+  sockets until the `xiom.net` proof). Endpoints: `/health`,
+  `/collections`, points get/upsert/delete, `/search` (knn/range/page/
+  batch), `/stats`. Uses QUALIFIED stdlib JSON calls (`json.json_*`): the
+  parent `xiom.serialize` helpers misresolve in this unit (BUG 25 #1,
+  documented in the json module header) and unqualified calls silently
+  built empty strings -- pinned as lane discipline. Two real parser bugs
+  found by the probe and fixed (method never stored; last header line
+  dropped). Gate `probe_http_service` (40 checks; batteries now 28
+  probes). F 84 -> 86, H 20 -> 28; overall 75.96 -> 76.52 -> 77 %.
+  Evidence: full batteries (suite 171/171 x2 + 28 probes x2 + bench
+  smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

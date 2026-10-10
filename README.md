@@ -68,7 +68,7 @@ src/
 |-- distance/                 cosine - dot - l2
 |-- query/                    search_request - filter_plan - topk_heap - search_service - pagination
 |-- durability/               wal - recovery - write_ahead_events - wal_file - manifest_file
-`-- api/                      vector_api (merged stub; facade lives in engine.xi)
+`-- api/                      vector_api (merged stub) - http_service (HTTP/1.1 byte pipeline)
 ```
 
 ## Public API (`xiom.vector.engine` facade; `engine_*` internals in `xiom.vector.engine.core`)
@@ -121,6 +121,7 @@ is zero-cost and stable as public API).
 | Segments + lifecycle state machine | [YELLOW] In progress (sealed-segment codec `segment.segment_file`: vectors + payloads + Hnsw graph, atomic whole-file persist, torn-tail-safe load, lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/`restore_segment` with WAL re-checkpoint; multi-segment read path + retention pending) |
 | Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
 | Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; sealed segment files via `segment_file` with engine seal/restore; fsync/delta + multi-segment read path pending) |
+| Service surface (HTTP) | [YELLOW] In progress (`api.http_service` -- HTTP/1.1 byte-level pipeline: parse/route/JSON/reply; `/health`, `/collections`, points get/upsert/delete, `/search` (knn/range/page/batch), `/stats`; no sockets yet -- the stdlib `xiom.net` adapter is gated on C-PULSE-02; gate `probe_http_service`) |
 | IVF / PQ / disk-backed / SIMD | [STOP] Not started |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme

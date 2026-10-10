@@ -214,11 +214,14 @@ matrix rows green.
 
 Goal: the service surface the ecosystem and benchmarks consume.
 
-- **S1 HTTP service skeleton** -- adopt `xiom.http` (+`xiom.router`?) once
-  source-roots wiring is proven (C-PULSE-02); endpoints: `/health`,
-  `/collections`, `/collections/{id}/points` (upsert/get/delete, batch),
-  `/search` (knn/filtered/range/batch/page), `/stats`. In-repo fallback
-  module behind the same facade if the package proves too young.
+- **S1 HTTP service skeleton -- DONE 2026-10-09** -- in-repo
+  `api.http_service` (transport-agnostic HTTP/1.1 byte pipeline: strict
+  parse, router, stdlib-JSON wire with QUALIFIED `json.json_*` calls,
+  byte-exact responses, honest statuses; no sockets until the `xiom.net`
+  proof). Endpoints: `/health`, `/collections`, points get/upsert/delete,
+  `/search` (knn/range/page/batch), `/stats`. Gate `probe_http_service`
+  (40 checks). Config/limits/errors (S2), auth (S3) and the security pass
+  (S4) layer on top of this handle.
 - **S2 config + limits + errors** -- config file/env, request size/`k`/
   batch/dim limits, JSON error model mapped from `CoreError`, graceful
   shutdown (drain + checkpoint).
@@ -297,7 +300,7 @@ deep quantization + tiered storage, client SDKs.
 | 8b | Index admin + per-collection stats -- **DONE 2026-10-09** | Q5 | `probe_index_admin` (20 checks) |
 | 8c | Request extensions (mode/page/batch) -- **DONE 2026-10-09** | Q6 | `probe_search_request` (24 checks) |
 | 9 | Reference oracle -- **DONE 2026-10-09** | G1 | `probe_reference_oracle` (22 checks) |
-| 10 | HTTP skeleton + health | S1 | `probe_http_service` |
+| 10 | HTTP skeleton + health -- **DONE 2026-10-09** | S1 | `probe_http_service` (40 checks) |
 | 11 | Config/limits/errors | S2 | service abuse probe |
 | 12 | Auth | S3 | auth probe (reject/accept, scopes) |
 
