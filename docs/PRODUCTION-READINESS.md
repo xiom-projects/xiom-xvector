@@ -10,7 +10,7 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-O observability core)
+- **As of:** 2026-10-09 (v1.0.0-rc.1 candidate)
 - **Overall:** **80 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -34,10 +34,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 70 | buildable | xiom.metrics adoption (Phase 10), dashboards/alert wiring |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 54 | buildable | runners activation, rulesets, staging E2E, porter extraction |
+| J | Ecosystem & release engineering | 8 | 56 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x54 = **79.52 -> 80 %**.
+0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x56 = **79.68 -> 80 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -210,7 +210,7 @@ the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 workarounds reverted; the suite asserts trailing-field flags again.
 Remaining: CI runner activation.
 
-### J. Ecosystem & release engineering -- 54 %
+### J. Ecosystem & release engineering -- 56 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
 version/hash recording, the acyclic porter-ready tree, **release-prep
 drafts**: `scripts/ci.ps1` + `scripts/ci.sh` (full pre-release battery with
@@ -219,9 +219,12 @@ SHA-pinned `.github/workflows/ci.yml` draft,
 `docs/RELEASE-CHECKLIST.md` (owner-gated flow), and the **security release
 artifacts**: `docs/SECURITY.md` (threat model + secure defaults) and the
 **SBOM + unsafe gate** (`scripts/sbom.ps1`/`sbom.sh` -> `out/sbom.json`;
-wired into both batteries), and the **operations runbook**
+wired into both batteries), the **operations runbook**
 (`docs/OPERATIONS.md`: start/stop, config, monitoring/alerts,
-backup/restore drill, failure domains, migration, diagnostics).
+backup/restore drill, failure domains, migration, diagnostics), and the
+**release candidate package** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md`,
+`docs/sbom-v1.0.0-rc.1.json`, `docs/OWNER-HANDOFF.md`, an audited
+`docs/RELEASE-CHECKLIST.md`, annotated tag `v1.0.0-rc.1`).
 Remaining: self-hosted runners activation, branch rulesets on greenlight,
 staging E2E (parked until the owner greenlights public release), porter
 extraction with the packages lane.
@@ -680,6 +683,19 @@ extraction with the packages lane.
   checks; batteries now 32 probes). H 28 -> 70, J 52 -> 54; overall
   77.26 -> 79.52 -> 80 %. Evidence: full batteries (suite 171/171 x2 +
   sbom + 32 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (fifty-second pass):** M-R release candidate v1.0.0-rc.1 --
+  `VERSION` bump, release notes, SBOM snapshot
+  (`docs/sbom-v1.0.0-rc.1.json`; 44 modules, unsafe=0), the PULSE-style
+  owner handoff (`docs/OWNER-HANDOFF.md`: repo public, runners, rulesets,
+  publish flow, benchmark protocol, gated-pivot table, evidence index),
+  and the audited `docs/RELEASE-CHECKLIST.md` (all primary repro bundles
+  re-run at v0.64.2: 9 green, `contract-trap-exit0` exit 1 = the fixed
+  symptom, XVC-C-13 red by design). Final batteries at the candidate
+  commit `5226226` on **Windows and WSL**: suite 171/171 x2 + sbom + 32
+  probes x2 + bench smoke, ALL GATES GREEN; annotated tag `v1.0.0-rc.1`
+  (no GPG key available; DCO sign-off on every commit). J 54 -> 56;
+  overall 79.52 -> 79.68 -> 80 %. The owner has been told; the public
+  release + benchmark remain the owner's actions.
 
 ## Update rule
 
