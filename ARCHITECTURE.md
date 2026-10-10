@@ -337,7 +337,16 @@ http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
            (BUG 25 #1) -- unqualified calls silently built empty strings
   reply    HTTP/1.1 <status> + Content-Type: application/json +
            Content-Length (byte-exact) + Connection: close
-           errors: {"error": ...} with 400/404/405/409/500
+           errors: {"error","kind","status"} with 400/404/405/409/
+           413/500/501/507
+
+  limits   ServiceConfig (M-S2): max_request_bytes / max_top_k /
+           max_batch / max_dim; defaults + env (XVECTOR_MAX_*) +
+           key=value file; enforced in handle_cfg (413 size/batch,
+           400 named top_k/dim); handle() = default config
+
+  shutdown http_service_shutdown(eng, wal_path) = drain (no-op embedded)
+           + whole-file WAL checkpoint
 ```
 
 The module is deliberately transport-agnostic (bytes in, bytes out): the

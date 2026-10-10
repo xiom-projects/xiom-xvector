@@ -83,8 +83,12 @@ needed) -> signed commit. Red build = rejection.
   no sockets yet -- the `xiom.net` adapter is C-PULSE-02-gated);
   `/health`, collections create/list, points get/upsert/delete, search
   (knn/range/page/batch), `/stats`; `probe_http_service` (40 checks)
-- [ ] S2 config (file/env), limits (size/k/batch/dim), JSON error model,
-  graceful shutdown (drain+checkpoint); abuse probe
+- [x] S2 config (file/env), limits (size/k/batch/dim), JSON error model,
+  graceful shutdown (drain+checkpoint) **(done 2026-10-09)**: ServiceConfig
+  + `service_config_from_env`/`service_config_load` (key=value); enforced
+  limits (413 size/batch, 400 named k/dim); `{error,kind,status}` over the
+  full CoreError enum; `http_service_shutdown` WAL checkpoint;
+  `probe_service_limits` (27 checks)
 - [ ] S3 auth: API keys, constant-time compare, scopes; rate limiting;
   auth-on-by-default in service mode; auth probe
 - [ ] S4 security pass: threat model, HTTP fuzz gate, resource-exhaustion

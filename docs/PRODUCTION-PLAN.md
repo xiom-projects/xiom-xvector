@@ -222,9 +222,12 @@ Goal: the service surface the ecosystem and benchmarks consume.
   `/search` (knn/range/page/batch), `/stats`. Gate `probe_http_service`
   (40 checks). Config/limits/errors (S2), auth (S3) and the security pass
   (S4) layer on top of this handle.
-- **S2 config + limits + errors** -- config file/env, request size/`k`/
-  batch/dim limits, JSON error model mapped from `CoreError`, graceful
-  shutdown (drain + checkpoint).
+- **S2 config + limits + errors -- DONE 2026-10-09** -- `ServiceConfig`
+  (defaults + `XVECTOR_MAX_*` env + key=value file), enforced limits
+  (request size/batch -> 413; named top_k/dim -> 400; boundaries
+  accepted), the `{error,kind,status}` JSON model mapped from the full
+  `CoreError` enum, and `http_service_shutdown` (drain + whole-file WAL
+  checkpoint). Gate `probe_service_limits` (27 checks).
 - **S3 auth** -- API keys (header, constant-time compare, scopes:
   read/write/admin), disabled-by-default only in embedded mode; rate
   limiting via `xiom.rate` if suitable, else minimal token bucket.
@@ -301,7 +304,7 @@ deep quantization + tiered storage, client SDKs.
 | 8c | Request extensions (mode/page/batch) -- **DONE 2026-10-09** | Q6 | `probe_search_request` (24 checks) |
 | 9 | Reference oracle -- **DONE 2026-10-09** | G1 | `probe_reference_oracle` (22 checks) |
 | 10 | HTTP skeleton + health -- **DONE 2026-10-09** | S1 | `probe_http_service` (40 checks) |
-| 11 | Config/limits/errors | S2 | service abuse probe |
+| 11 | Config/limits/errors -- **DONE 2026-10-09** | S2 | `probe_service_limits` (27 checks) |
 | 12 | Auth | S3 | auth probe (reject/accept, scopes) |
 
 Gated items (D5 fsync chain, P5 mmap, truncate-based retention) are picked

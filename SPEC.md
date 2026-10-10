@@ -421,6 +421,29 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   (wrong-typed `top_k`/`offset`/`radius`/`after_id`/`mode` -> 400).
 - Limits, config, auth and structured logs are S2/S3/M-O. Gate:
   `tests/probes/probe_http_service.xi` (40 checks).
+- S2 (limits/config/errors): `ServiceConfig { max_request_bytes 65536;
+  max_top_k 1000; max_batch 256; max_dim 1024 }` +
+  `service_config_default/apply`; `service_config_from_env` reads
+  `XVECTOR_MAX_REQUEST_BYTES`/`XVECTOR_MAX_TOP_K`/`XVECTOR_MAX_BATCH`/
+  `XVECTOR_MAX_DIM` (malformed values ignored, returns the count applied);
+  `service_config_load(path) -> LoadedServiceConfig { valid; loaded; cfg }`
+  parses `key=value` files (`#` comments, blank lines, CRLF tolerated;
+  unknown keys ignored; a malformed line sets `valid=false` while the good
+  lines still apply; missing/empty -> `loaded=false`, defaults stay).
+  `http_service_handle_cfg(eng, raw, cfg)` enforces limits: request size
+  -> 413 `too_large` (checked before parsing); `top_k` > `max_top_k` and
+  `dim` > `max_dim` -> 400 with named limit messages; search/points batch
+  counts > `max_batch` -> 413; requests exactly at a limit are accepted.
+  Every error body is `{"error","kind","status"}` with stable kinds
+  (`invalid_input`/`not_found`/`method_not_allowed`/`conflict`/`too_large`/
+  `unsupported`/`capacity_exceeded`/`internal`), and `core_err_response`
+  maps the full `CoreError` enum onto honest statuses (NotFound 404;
+  InvalidInput/OutOfBounds 400; InvalidState/VersionMismatch 409;
+  Unsupported 501; CapacityExceeded 507; Corruption/IOFailure/
+  ChecksumMismatch 500). `http_service_shutdown(eng, wal_path)` is the
+  embedded-mode drain + checkpoint (whole-file WAL persist; false on an
+  unwritable path). Gate: `tests/probes/probe_service_limits.xi`
+  (27 checks).
 
 ---
 
