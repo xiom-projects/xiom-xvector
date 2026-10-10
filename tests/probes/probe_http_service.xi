@@ -423,6 +423,22 @@ fn main() -> Int {
   var bcl = http_service_handle(&mut eng, &mk_req_cl("POST", "/search", "{\"collection\":\"docs\",\"vector\":[1,0,0,0],\"top_k\":1}", 0));
   fails = check(status_of(&bcl) == 400, "body: missing content-length with body -> 400", fails);
 
+  // ---- status reason phrases (xiom.http adoption, 2026-10-10) ----
+  // The reason text is wire contract; http_response(507) must keep the
+  // lane's "Insufficient Storage" (xiom.http.status has no 507 entry and
+  // its fallback is "Unknown" -- the lane adapter covers both).
+  var doc0 = json.json_parse("{}");
+  match doc0 {
+    Ok(dv) => {
+      var r507 = http_response(507, dv);
+      fails = check(resp_head_contains(&r507, "HTTP/1.1 507 Insufficient Storage"),
+        "status line: 507 -> 'Insufficient Storage' (lane text kept via xiom.http adapter)", fails);
+    }
+    Err(_) => {
+      fails = check(false, "status line: 507 fixture parse", fails);
+    }
+  }
+
   io.println("");
   io.println("probe_http_service: " + convert.int_to_string(fails) + " failed checks");
   return fails;

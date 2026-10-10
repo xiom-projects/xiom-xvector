@@ -22,8 +22,9 @@ v0.64.2** -- the dependency-root resolver reads `xiom.toml [dependencies]`
 and adds installed package roots from `$XIOM_HOME/packages` to the catalog
 (the legacy `package.xi deps:` block is not consumed for source roots).
 XVECTOR completed its first adoptions on 2026-10-10 (`xiom.wal` 0.1.0,
-`xiom.metrics` 0.2.0, `xiom.rate` 0.2.0; see below) and verified file-mode
-builds against the installed packages.
+`xiom.metrics` 0.2.0, `xiom.rate` 0.2.0, plus the `xiom.http.status`
+helper subset; see below) and verified file-mode builds against the
+installed packages.
 
 ## Packages lane status (2026-10-10) -- wishlist deltas
 
@@ -85,7 +86,7 @@ builds against the installed packages.
 |---|---|---|---|
 | `xiom.metrics` 0.2.0 | **ADOPTED 2026-10-10** (second adoption after `xiom.wal`): `observability.metrics` internals on the package behind the same surface; engine stat counters unified; shim `Counter` retired (XVC-C-14). | Gates `probe_package_metrics` (12 checks) + `probe_metrics` (24 checks, incl. package min/max/mean alignment); full batteries green (suite 171/171 x2 + sbom + 34 probes x2 + bench smoke, Windows + WSL); record: `docs/XIOM-METRICS-ADOPTION.md`. | -- (done) |
 | `xiom.rate` 0.2.0 | **ADOPTED 2026-10-10** (third adoption): S3 `RateLimiter` internals on the package behind the same API; remainder carry makes fractional refill exact (all gate-visible boundaries unchanged). | Gates `probe_package_rate` (14 checks, direct package) + `probe_service_auth` (24) / `probe_metrics` (24) re-run green; batteries 35 probes; record: `docs/XIOM-RATE-ADOPTION.md`. | -- (done) |
-| `xiom.router` 0.1.0 / `xiom.http` 0.1.4 | **NEXT: Evaluate** (installed, 2026-10-10): routing/HTTP helpers for `api.http_service` -- keep the byte-level pipeline; adopt helpers only where they preserve the strict framing + error model. | The service deliberately owns parsing/limits/errors; helpers may simplify dispatch but must not change the gate-visible wire behavior. | none; adoption slice must keep `probe_http_service`/`probe_service_limits`/`probe_http_fuzz` green byte-for-byte |
+| `xiom.router` 0.1.0 / `xiom.http` 0.1.4 | **EVALUATED 2026-10-10** (58th pass): `xiom.http.status.http_status_text` **ADOPTED** behind the lane adapter (wire-identical; 507 gap lane-owned + `probe_package_http` tripwire); `xiom.router` and the xiom.http parser/types/client **not adopted** (static 7-route dispatch + strict byte pipeline are gate-pinned -- reasons in `docs/XIOM-HTTP-EVAL.md`). | Gates: `probe_package_http` (5 checks) + `probe_http_service` 507 line pin (41 checks); batteries 36 probes, Windows + WSL green. | upstream: 507 missing (`REL-20261010-2002-xvector`); router SPEC status drift noted |
 | `xiom.kv` 0.1.0 | **Candidate** segment metadata / manifest store; **not adopted now**. | PULSE: `kv_get` returned address-like Str on WSL Linux v0.64.0 (C-PULSE-10; Windows green); packages lane repinned v0.64.2 (io rows re-tested); XVECTOR additionally needs fsync before any KV store can back a durable manifest. | C-PULSE-10 (Linux `kv_get`) + the stdlib fsync gap (`STDLIB-WISHLIST-XVECTOR.md`) |
 | `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | publication+adoption path open (same as xiom.wal) |
 | `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **GATED** -- bindings relay 2026-10-09: verified incubating placeholders (tests unknown, no timeline); when built they mirror the `xiom.vectors` contract, never define it; no SIMD kernel package from that lane; pilot complete through batch 22, so **accelerators are the sole unscheduled sector**. The portable `xiom.vectors` API stays the contract. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | gated on the bindings lane scheduling (no date) |
