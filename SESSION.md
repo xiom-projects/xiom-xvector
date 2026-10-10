@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (51 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (52 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -58,18 +58,20 @@ security pass [fuzz gate (2500 inputs) + JSON depth guard (found+fixed a
 stdlib stack-overflow); SBOM + unsafe gate scripts; SECURITY.md;
 probe_http_fuzz]) -> M-O observability [metrics module (histograms +
 counters + JSON log ring), /metrics + health readiness, runbook;
-probe_metrics]).
+probe_metrics]) -> M-R release candidate [checklist audit + repro re-runs +
+release notes + SBOM snapshot + owner handoff; v1.0.0-rc.1; final
+batteries green at the tagged commit]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `814b7a5` (feat: M-O
-observability core) + this handoff commit. Recent slices: `814b7a5` M-O
-(metrics//metrics/logs/runbook), `ba35fed` M-S4 wrap, `9f7bf78` M-S4
-(fuzz/SBOM/security), `6511922` M-S3 wrap, `4574220` M-S3 (auth/rate),
-`70301bc` M-S2 wrap. Identity `Lefteris Notas <lefterisnotas@gmail.com>`;
-conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `5226226` (chore(release):
+v1.0.0-rc.1) + this handoff commit; tag `v1.0.0-rc.1` (annotated) on this
+commit. Recent slices: `5226226` M-R (rc + handoff), `7d9b8d7` M-O wrap,
+`814b7a5` M-O (observability), `ba35fed` M-S4 wrap, `9f7bf78` M-S4
+(fuzz/SBOM/security), `6511922` M-S3 wrap. Identity `Lefteris Notas
+<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -78,7 +80,7 @@ conventional commits, DCO `git commit -s`.
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `d2b18dc` (waves 100-101: math clauses + docs; release **0.64.3 registry-LIVE**); durability primitives still stubs (re-checked at the M-S4 wrap) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `814b7a5` + this handoff commit | this repo |
+| xvector | `v1.0.0-rc.1` = `5226226` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -527,7 +529,18 @@ conventional commits, DCO `git commit -s`.
   persist -- the wrapper copies the metrics struct out and writes back
   once. `docs/OPERATIONS.md` runbook (start/stop, config, monitoring +
   alerts, backup/restore drill, failure domains, migration, diagnostics).
-  Gate `probe_metrics` (23 checks).- **FloatVal workaround unwound** after the v0.64.1 fix: float payload
+  Gate `probe_metrics` (23 checks).
+- **M-R release candidate v1.0.0-rc.1 (2026-10-09):** `VERSION` =
+  `1.0.0-rc.1`; `docs/RELEASE-NOTES-v1.0.0-rc.1.md`;
+  `docs/sbom-v1.0.0-rc.1.json` (44 modules, unsafe=0);
+  `docs/OWNER-HANDOFF.md` (repo public / runners / rulesets / publish
+  flow / benchmark protocol + gated-pivot table + evidence index);
+  `docs/RELEASE-CHECKLIST.md` audited step-by-step with the repro re-runs
+  (9 green, `contract-trap-exit0` exit 1 = fixed symptom, XVC-C-13 open
+  by design). Final batteries at the rc commit `5226226`: Windows + WSL,
+  ALL GATES GREEN. Tag `v1.0.0-rc.1` annotated (no GPG key on this
+  machine; commits carry DCO sign-off). **The owner has been told; the
+  public release + benchmark are the owner's actions.**- **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **72 % today**; recompute at every wrap.
@@ -598,6 +611,11 @@ the current tree):**
   **32 probes x2** + bench smoke (Windows + WSL), ALL GATES GREEN; new
   `probe_metrics` (23 checks) wired into both batteries; WSL spot x2
   bit-identical.
+- **M-R release-candidate pass:** final batteries at commit `5226226`
+  (v1.0.0-rc.1): suite **171/171 x2** + **SBOM/unsafe gate** + **32 probes
+  x2** + bench smoke on **Windows AND WSL**, ALL GATES GREEN; all primary
+  repro bundles re-run at v0.64.2 (expected statuses); checklist + owner
+  handoff + release notes committed; annotated tag `v1.0.0-rc.1`.
 - All **32 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -670,12 +688,12 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-1. **Every planned M-D + M-Q + M-G + M-S slice and the M-O core are DONE.**
-   Next: **M-R release-criteria audit + v1.0.0-rc prep** (green batteries,
-   kill matrix, benchmark report, security checklist, SBOM and docs are
-   all in place -- the rc label + owner handoff remain). Gated lanes
-   pivot when primitives land: D5/D6 (stdlib fsync chain), P5 (stdlib
-   mmap), the socket adapter (C-PULSE-02).
+1. **ALL SLICES DONE + v1.0.0-rc.1 PREPARED -- the M-R criteria are met
+   and the owner has been told (`docs/OWNER-HANDOFF.md`).** Remaining:
+   the owner's public release + benchmark; gated pivots when primitives
+   land (D5/D6 on the stdlib fsync chain, the socket adapter on
+   C-PULSE-02, P5 on stdlib mmap, `xiom.wal` adoption triage); otherwise
+   maintenance passes (lane re-checks, docs drift, dependency pins).
 2. **M-Q query surface:** Q1 range search + Q2 batch ops **DONE**; next:
    pagination (Q3), delete-by-filter (Q4), per-collection stats + index
    admin (Q5), SearchRequest extensions incl. range mode (Q6).
@@ -851,17 +869,21 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `814b7a5` (feat: M-O observability core) + the handoff
-commit; clean tree; `git log --oneline -12` shows the recent slice
-commits. Lane pins: stdlib `d2b18dc` (re-checked at M-S4: fsync chain
-still stubs), packages `26f7d0ae`, compiler lane `d481c490` (installed
-compiler v0.64.2, tag c51170a6).
+Orientation: HEAD `5226226` (chore(release): v1.0.0-rc.1) + the handoff
+commit; tag `v1.0.0-rc.1` (annotated) on this commit; clean tree;
+`git log --oneline -12` shows the recent slice commits. Lane pins: stdlib
+`d2b18dc` (re-checked at M-S4: fsync chain still stubs), packages
+`26f7d0ae`, compiler lane `d481c490` (installed compiler v0.64.2, tag
+c51170a6).
 
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: M-R release-criteria audit + v1.0.0-rc prep (all M-D/M-Q/
-M-G/M-S slices and the M-O core are done).
+slice backlog: ALL slice backlogs are complete and v1.0.0-rc.1 is
+prepared; on each pass re-check the external lanes and pivot when a gate
+clears (fsync -> D5/D6, net -> socket adapter, mmap -> P5, xiom.wal
+adoption triage), otherwise do maintenance (docs drift, dependency pins,
+repro re-runs).
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
 and pivot immediately when primitives land. Per slice: implement, extend
@@ -965,7 +987,10 @@ found stack-overflow DoS; SBOM + unsafe gate scripts wired into both
 batteries; gate probe_http_fuzz, 14 checks); M-O observability core (histograms +
 counters + bounded JSON log ring; public /metrics with gauges + health
 readiness; per-request instrumentation; OPERATIONS.md runbook; gate
-probe_metrics, 23 checks) -- 32 probes + sbom, suite 171).
+probe_metrics, 23 checks); M-R release candidate v1.0.0-rc.1 (checklist
+audit + repro re-runs + release notes + SBOM snapshot + owner handoff;
+final batteries green at the tagged commit) -- 32 probes + sbom,
+suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -977,11 +1002,12 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: the slice backlogs are complete; run the M-R release-criteria
-audit and prepare v1.0.0-rc (VERSION + release checklist walkthrough),
-recording the owner handoff summary when the criteria all hold. Gated
-pivots: D5/D6 (stdlib fsync chain), P5 (mmap), socket adapter
-(C-PULSE-02). Non-gated work proceeds while the stdlib
+NEXT TASK: v1.0.0-rc.1 is prepared and announced in
+docs/OWNER-HANDOFF.md; the public release + benchmark are the owner's
+actions. Each pass: re-check the external lanes and pivot when a gate
+clears (D5/D6 on the stdlib fsync chain, socket adapter on C-PULSE-02,
+P5 on stdlib mmap, xiom.wal adoption triage); otherwise maintenance
+(docs drift, dependency pins, repro re-runs). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
