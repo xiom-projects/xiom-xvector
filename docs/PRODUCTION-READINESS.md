@@ -10,7 +10,7 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-S2 service config/limits/errors)
+- **As of:** 2026-10-09 (post M-S3 auth + rate limiting)
 - **Overall:** **77 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -30,14 +30,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 73 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 88 | buildable | version endpoint |
+| F | API & query surface | 8 | 89 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 28 | scaffold | metrics surface, /metrics + readiness, latency/recall histograms, structured logs |
 | I | Testing & verification | 9 | 92 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 48 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x88 + 0.10x25 + 0.05x28 + 0.09x92 + 0.08x48 = **76.68 -> 77 %**.
+0.08x89 + 0.10x25 + 0.05x28 + 0.09x92 + 0.08x48 = **76.76 -> 77 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -620,6 +620,19 @@ extraction with the packages lane.
   29 probes). F 86 -> 88; overall 76.52 -> 76.68 -> 77 %. Evidence: full
   batteries (suite 171/171 x2 + 29 probes x2 + bench smoke, Windows +
   WSL), ALL GATES GREEN.
+- **2026-10-09 (forty-ninth pass):** M-S3 service auth + rate limiting --
+  `ApiScope` (read < write < admin) + `ServiceAuth` (keys 8..128 of
+  `[A-Za-z0-9_.-]`, duplicates rejected, first key enables; embedded
+  default off), constant-time lookups via
+  `xiom.crypto.mac.constant_time_eq`, `XVECTOR_API_KEYS` env loader, route
+  scope map (`/health` public; POST /collections Admin; points
+  POST/DELETE Write; else Read), 401 unauthorized / 403 forbidden kinds;
+  token-bucket `RateLimiter` (capacity + refill/sec, explicit clock) with
+  429 rate_limited; `ServiceState` + `http_service_handle_state`
+  (auth-off == handle_cfg). Gate `probe_service_auth` (24 checks;
+  batteries now 30 probes). F 88 -> 89; overall 76.68 -> 76.76 -> 77 %.
+  Evidence: full batteries (suite 171/171 x2 + 30 probes x2 + bench
+  smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 

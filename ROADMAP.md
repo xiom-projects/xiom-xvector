@@ -229,6 +229,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   400 named top_k/dim), the `{error,kind,status}` model over the full
   `CoreError` enum, and `http_service_shutdown` (drain + WAL checkpoint).
   Gate `probe_service_limits` (27 checks).
+- [OK] Service auth + rate limiting (M-S3): API keys via `x-api-key`
+  (constant-time compare, scopes read/write/admin, env
+  `XVECTOR_API_KEYS`), 401/403 kinds, `/health` public, token-bucket
+  `RateLimiter` with 429; `ServiceState` + `http_service_handle_state`.
+  Gate `probe_service_auth` (24 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

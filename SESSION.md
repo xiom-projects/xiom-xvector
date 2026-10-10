@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-09 (48 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-09 (49 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -51,18 +51,20 @@ ranked/paged/cursor/range/Hnsw paths; probe_reference_oracle]) -> M-S1
 HTTP service skeleton [api.http_service byte-level HTTP/1.1 pipeline +
 router; probe_http_service]) -> M-S2 service config/limits/errors
 [ServiceConfig + env/file loaders; enforced limits; {error,kind,status};
-shutdown checkpoint; probe_service_limits]).
+shutdown checkpoint; probe_service_limits]) -> M-S3 auth + rate limiting
+[API keys (constant-time, scopes read/write/admin, XVECTOR_API_KEYS);
+token-bucket RateLimiter; ServiceState; probe_service_auth]).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `fdd4a35` (feat: M-S2
-service config/limits/errors) + this handoff commit. Recent slices:
-`fdd4a35` M-S2 (config/limits/errors), `53296bf` M-S1 wrap, `8693cff`
-M-S1 (HTTP service), `6000882` M-G1 wrap, `3b01fb0` M-G1 (reference
-oracle), `d01eba1` M-Q6 wrap. Identity `Lefteris Notas
-<lefterisnotas@gmail.com>`; conventional commits, DCO `git commit -s`.
+**Repo:** private, no pushes; clean tree. HEAD `4574220` (feat: M-S3 auth
++ rate limiting) + this handoff commit. Recent slices: `4574220` M-S3
+(auth/rate), `70301bc` M-S2 wrap, `fdd4a35` M-S2 (config/limits/errors),
+`53296bf` M-S1 wrap, `8693cff` M-S1 (HTTP service), `6000882` M-G1 wrap.
+Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
+commits, DCO `git commit -s`.
 
 **Toolchain (latest-tracking; record hashes at every wrap):**
 
@@ -71,7 +73,7 @@ oracle), `d01eba1` M-Q6 wrap. Identity `Lefteris Notas
 | compiler | **v0.64.2** installed 2026-10-09 (tag `c51170a6`; Win 19:00 / WSL 18:37); compiler lane HEAD `d481c490` (post-tag fixes) | Win `%LOCALAPPDATA%\xiom.new\bin\xiom.exe`; WSL `~/.local/share/xiom` |
 | stdlib | lane HEAD `ed6d46c` (waves 98-99; release **0.64.3 registry-LIVE**); durability primitives still stubs | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `26f7d0ae` (bindings batch 23 published, `eco-v0.1.123`); `xiom.wal` + `xiom.btree` 0.1.0 in-tree, ops-allowlist gate; `xiom.vectors` extraction gate MET awaiting owner greenlight | `E:\xiom-packages\packages` |
-| xvector | `fdd4a35` + this handoff commit | this repo |
+| xvector | `4574220` + this handoff commit | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -476,6 +478,18 @@ oracle), `d01eba1` M-Q6 wrap. Identity `Lefteris Notas
   maps the full CoreError enum. `http_service_shutdown(eng, wal_path)` =
   drain + whole-file WAL checkpoint (false when unwritable). Gate
   `probe_service_limits` (27 checks).
+- **M-S3 auth + rate limiting (2026-10-09):** `ApiScope { Read; Write;
+  Admin }` (ordered) + `ServiceAuth` (keys 8..128 of `[A-Za-z0-9_.-]`,
+  duplicates rejected; first key enables; disabled default in embedded
+  mode); lookups via the stdlib constant-time comparator
+  (`xiom.crypto.mac.constant_time_eq`); `service_auth_parse_list` /
+  `service_auth_from_env` (`XVECTOR_API_KEYS`). Route scope map (/health
+  public; POST /collections Admin; points POST/DELETE Write; else Read);
+  401 unauthorized / 403 forbidden / 429 rate_limited kinds. Token-bucket
+  `RateLimiter` (capacity + refill/sec, explicit clock, `last_ms = -1`
+  sentinel); `ServiceState { cfg; auth; rate }` +
+  `http_service_handle_state` (rate -> parse -> auth/scope -> route;
+  auth-off == handle_cfg). Gate `probe_service_auth` (24 checks).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
@@ -535,7 +549,10 @@ the current tree):**
 - **M-S2 limits pass:** suite **171/171 x2** + **29 probes x2** + bench
   smoke (Windows + WSL), ALL GATES GREEN; new `probe_service_limits`
   (27 checks) wired into both batteries; WSL spot x2 bit-identical.
-- All **29 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **M-S3 auth pass:** suite **171/171 x2** + **30 probes x2** + bench
+  smoke (Windows + WSL), ALL GATES GREEN; new `probe_service_auth`
+  (24 checks) wired into both batteries; WSL spot x2 bit-identical.
+- All **30 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -544,8 +561,8 @@ the current tree):**
   `probe_wal_file`, `probe_manifest_file`, `probe_collections`,
   `probe_segment_file`, `probe_range_search`, `probe_pagination`,
   `probe_delete_filter`, `probe_index_admin`, `probe_reference_oracle`,
-  `probe_http_service`, `probe_service_limits`, `probe_batch_ops` (run via
-  `scripts\run-probe.ps1`).
+  `probe_http_service`, `probe_service_limits`, `probe_service_auth`,
+  `probe_batch_ops` (run via `scripts\run-probe.ps1`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
   quick` green (Windows + WSL), wired into both CI batteries; baseline
   numbers in `docs/BENCHMARKS.md` (M-G).
@@ -606,9 +623,10 @@ verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
 1. **M-D1 + M-D2 + M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6
-   + M-G1 + M-G2/G3 + M-S1 + M-S2 DONE.** Next: S3 auth (API keys +
-  constant-time compare + scopes; rate limiting) -> S4 security pass +
-  SBOM; then M-O observability (metrics/health/logs/runbook). D5/D6
+   + M-G1 + M-G2/G3 + M-S1 + M-S2 + M-S3 DONE.** Next: S4 security pass
+   (threat model doc, HTTP input fuzzing, resource-exhaustion tests,
+   dependency pins + SBOM, `docs/SECURITY.md`, unsafe audit statement);
+   then M-O observability (metrics/health/logs/runbook). D5/D6
    (delta+fsync, retention) stay gated on the stdlib
    fsync chain; the socket adapter for the service is gated on the
    stdlib `xiom.net` proof (C-PULSE-02).
@@ -785,15 +803,15 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `fdd4a35` (feat: M-S2 service config/limits/errors) +
-the handoff commit; clean tree; `git log --oneline -12` shows the recent
+Orientation: HEAD `4574220` (feat: M-S3 auth + rate limiting) + the
+handoff commit; clean tree; `git log --oneline -12` shows the recent
 slice commits. Lane pins: stdlib `ed6d46c`, packages `26f7d0ae`, compiler
 lane `d481c490` (installed compiler v0.64.2, tag c51170a6).
 
 Autonomous mode: arm a session goal with this objective (verbatim):
 "Execute docs/PRODUCTION-PLAN.md for xiom-xvector autonomously, one
 verified slice at a time, without further user prompting. Work the ordered
-slice backlog: S3 auth -> S4 security pass;
+slice backlog: S4 security pass;
 M-O metrics/health/logs/runbook.
 Re-check external lanes every pass (stdlib fsync/fd/append chain gates
 D5/D6/P5; packages xiom.wal adoption + ops allowlist; compiler archives)
@@ -820,7 +838,7 @@ release 0.64.3 registry-LIVE, waves 98-99; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 29 probes x2
+runs probes. Green baseline: suite 171/171 x2 (Windows + WSL), 30 probes x2
 (Windows) + WSL spot + bench smoke (quick) in both batteries.
 
 DONE: bootstrap; Phase 2 (WAL vector+payload codec, recovery/checkpoint,
@@ -888,8 +906,11 @@ pipeline + router; strict parsing, qualified stdlib-JSON wire, honest
 statuses; gate probe_http_service, 40 checks); M-S2 service
 config/limits/errors (ServiceConfig + env/file loaders; enforced limits
 413/400; {error,kind,status} over the full CoreError enum;
-http_service_shutdown checkpoint; gate probe_service_limits, 27 checks)
--- 29 probes, suite 171).
+http_service_shutdown checkpoint; gate probe_service_limits, 27 checks);
+M-S3 auth + rate limiting (API keys via x-api-key with constant-time
+compare + scopes read/write/admin + XVECTOR_API_KEYS; token-bucket
+RateLimiter with 429; ServiceState + http_service_handle_state; gate
+probe_service_auth, 24 checks) -- 30 probes, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -903,14 +924,14 @@ value (C-13).
 
 NEXT TASK: execute docs/PRODUCTION-PLAN.md slice-by-slice (M-D1 + M-D2 +
 M-D3 + M-D4 + M-Q1 + M-Q2 + M-Q3 + M-Q4 + M-Q5 + M-Q6 + M-G1 + M-G2/G3
-+ M-S1 + M-S2 done; next: S3 auth -> S4 security pass; then M-O
++ M-S1 + M-S2 + M-S3 done; next: S4 security pass; then M-O
 observability). Non-gated work proceeds while the stdlib
 fsync chain stays pending (0.64.3: still stubs). When the M-R release
 criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ 29 probes x2 + bench smoke), signed commits, docs updated.
++ 30 probes x2 + bench smoke), signed commits, docs updated.
 
 Discipline: struct literals list every field; locals initialized; `Str`
 params by value (XVC-C-13); numeric gates per build; watchdogs + exit
