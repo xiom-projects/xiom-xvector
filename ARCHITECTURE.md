@@ -156,6 +156,8 @@ segment/* -> storage.vector_store, segment_state, core.shim ids;
 api.http_service -> engine facade + engine.core + serialize.json +
              durability.wal_file (parse_int_at) -- transport-agnostic:
              bytes in, bytes out; no sockets in the module
+durability -> xiom.wal (registry package 0.1.0; record-vocabulary
+             alignment + D5 migration target; docs/XIOM-WAL-ADOPTION.md)
 payload.filter_eval -> payload.filter_ast -> payload.payload
 durability.manifest_file -> durability.wal_file (shared byte parsers) +
                             types.metric + index.ann_index (stable codes)

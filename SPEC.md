@@ -275,6 +275,13 @@ removes the point's payload.
   bit-exact search, WAL durability after restore, refusals, Flat/empty).
 
 ## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file,manifest_file}` (extracted modules)
+**Registry alignment (2026-10-10):** the lane consumes **`xiom.wal` 0.1.0**
+from the registry (`xiom.toml [dependencies]`; C-PULSE-02 resolved in
+v0.64.2; sha256 + ed25519 verified, key pinned via `xiom pkg trust`). The
+wire vocabulary is byte-identical for op codes 1..7 (`Insert..SnapshotMarker`)
+and the payload carrier; `xiom.wal` adds `timestamp` and txn ops 8..10. The
+lane's disk segment swap is the D5 migration; details + migration plan in
+`docs/XIOM-WAL-ADOPTION.md`, gate `tests/probes/probe_package_wal.xi`.
 Real modules since 2026-10-08 (wave 3). `wal.xi` holds
 `WalOpKind/WalRecord/WalWriter` + `wal_writer_new/append/append_payload/
 current_lsn/flush/resume`; `recovery.xi` holds replay + compaction;

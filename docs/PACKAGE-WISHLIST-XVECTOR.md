@@ -4,42 +4,45 @@
 # Package wishlist from the XVECTOR lane
 
 Proposals and adoption notes from the xiom-xvector lane (vector database).
-Checked against the packages-lane tree (`E:\xiom-packages\packages\packages`,
-528 package dirs) on 2026-10-09, packages lane HEAD `b52028b9`. Format:
+Checked against the packages-lane tree (`E:\xiom-packages\packages\packages`)
+on 2026-10-10, packages lane HEAD `47202b72` (xiom.durable port + WAL
+reconciliation wrap). Format:
 `| Proposed name | Purpose | Why not stdlib | Deps | Evidence |`.
 
-Registry consumption note (C-PULSE-02, filed on v0.64.0): installing a
-package is not enough -- the compiler needs each package's `src/` in
-`xiom.toml` `[project].source-roots`. XVECTOR has none yet; the first
-adoption below will wire the first source-root (re-check C-PULSE-02 status
-before that).
+Registry consumption note (C-PULSE-02): the v0.64.0 concern (registry
+`[dependencies]` parsed but not mapped to source roots) is **RESOLVED in
+v0.64.2** -- the dependency-root resolver reads `xiom.toml [dependencies]`
+and adds installed package roots from `$XIOM_HOME/packages` to the catalog
+(the legacy `package.xi deps:` block is not consumed for source roots).
+XVECTOR completed its first adoption on 2026-10-10 (`xiom.wal`; see below)
+and verified file-mode builds against the installed package.
 
-## Packages lane status (2026-10-09) -- wishlist deltas
+## Packages lane status (2026-10-10) -- wishlist deltas
 
-- HEAD `b52028b9`; **36 eco releases**; `xiom.http` 0.1.4 published
-  (`eco-v0.1.120`); the lane repinned to compiler **v0.64.2** (its matrix:
-  m228/m229/m231/m239 resolved, B-01/B-08 fixed, B-10/B-05 open, io rows
-  re-tested).
-- **`xiom.wal` 0.1.0 is REGISTRY-LIVE** (`packages/xiom-wal`, tests 21/21,
-  revision `137a8200`; **verified 2026-10-09 via the registry metadata API:
-  version 0.1.0 published, sha256 + ed25519 signature, not yanked** -- the
-  "pending ops scope + native-lane allowlist append" gate has cleared).
-  Scope: `xiom.durable`'s record vocabulary + ORBITDB's crash-proven disk
-  segment -- one line per record
-  (`lsn|op|key|value|timestamp[|payload]`), torn-tail healing before append,
-  replay with malformed-line skip, temp+rename truncate; `wal_flush` is an
-  honest no-op until the stdlib fsync row lands (the same gate as our M2).
+- HEAD `47202b72`: **xiom.durable port + WAL reconciliation wrapped**
+  (152/152 x2; modules 597->591) -- the reconciliation confirms `xiom.wal`
+  is the shared WAL vocabulary (`xiom.durable` consumes it via
+  `xiom.toml [dependencies]`), which is what our first adoption verified
+  end-to-end.
+- **`xiom.wal` 0.1.0 is REGISTRY-LIVE and now ADOPTED by XVECTOR**
+  (2026-10-10): installed on Windows + WSL from
+  `https://registry.xiom-lang.org` (sha256 `c727fb43...a9ab4` + ed25519
+  verified; registry key pinned with `xiom pkg trust`, fingerprint
+  `4f:3b:47:f3:ae:17:b1:3c`); `xiom.toml` declares
+  `[dependencies] xiom.wal = "0.1.0"`; gate `probe_package_wal` (9 checks:
+  op codes 1..7 byte-identical to our codec, tagged roundtrip, LSN resume,
+  torn-tail skip + heal-on-open, missing-path open). Full design record:
+  `docs/XIOM-WAL-ADOPTION.md` (alignment table + D5 migration plan).
 - **`xiom.btree` 0.1.0 is in the tree** (`packages/xiom-btree`, tests 22/22,
-  revision `c78fe78a`; same publication path). In-memory `Int -> Int`
-  B-tree extracted from ORBITDB -- watch for future xvector metadata/index
-  use (our id -> slot map and payload key index are bespoke today).
-- XVECTOR consequence: `xiom.wal` is the **single home** and the publish
-  gate is now MET -- XVECTOR aligns its codec (our value payload
-  `[dim, f32-bits...]` fits the record payload field) and adopts the
-  package. Next-slice triage: first-adoption design (codec alignment, what
-  `durability.wal`/`wal_file` keep vs delegate, `xiom.toml` source-roots
-  wiring with a C-PULSE-02 status re-check); our local codec stays until
-  that slice lands. No competing WAL.
+  revision `c78fe78a`). In-memory `Int -> Int` B-tree extracted from
+  ORBITDB -- watch for future xvector metadata/index use (our id -> slot
+  map and payload key index are bespoke today).
+- **Discovery (2026-10-10):** `XIOM_HOME/packages` on this machine already
+  carries several lane-relevant primitives the wishlist had marked "later
+  phase": **`xiom.metrics` 0.2.0**, **`xiom.rate` 0.2.0**,
+  `xiom.router` 0.1.0, `xiom.http` 0.1.4 (+ `xiom.kv` 0.1.0, still
+  fsync-gated). Scheduled as gated adoption slices in the same style as
+  `xiom.wal` (install + trust + dependency + probe + migration note).
 
 ## Proposed packages (still to extract)
 
@@ -52,7 +55,9 @@ before that).
 
 | Package | Status for XVECTOR | Evidence | Blocked by |
 |---|---|---|---|
-| `xiom.metrics` 0.2.0 | **Planned** for Phase 10 observability (latency/recall histograms). | PULSE adopted it 2026-10-07 (labeled counters + latency preset + exposition); XVECTOR currently has an inline `Counter` only. | nothing intrinsic; adopt when the first metric surface lands (Phase 10), wire `source-roots` per C-PULSE-02 |
+| `xiom.metrics` 0.2.0 | **NEXT SLICE** (installed + verified present on this machine, 2026-10-10): replace the internals of `observability.metrics` behind the same surface (counters/histograms/gauges + `/metrics` stay stable). | PULSE adopted it 2026-10-07 (labeled counters + latency preset + exposition); XVECTOR's M-O core shipped in-repo primitives as the interim, so adoption is a mechanical swap + probe re-run. | nothing intrinsic; C-PULSE-02 resolved (see note above) |
+| `xiom.rate` 0.2.0 | **NEXT SLICE after metrics** (installed, 2026-10-10): replace the internals of the S3 token-bucket `RateLimiter` behind the same API (429 path + counters unchanged). | The S3 plan preferred `xiom.rate` "if suitable, else minimal token bucket"; the registry package was not known to this lane at S3 time. | none; verify its window semantics against our capacity/refill probe before swapping |
+| `xiom.router` 0.1.0 / `xiom.http` 0.1.4 | **Evaluate** (installed, 2026-10-10): routing/HTTP helpers for `api.http_service` -- keep the byte-level pipeline; adopt helpers only where they preserve the strict framing + error model. | The service deliberately owns parsing/limits/errors; helpers may simplify dispatch but must not change the gate-visible wire behavior. | none; adoption slice must keep `probe_http_service`/`probe_service_limits`/`probe_http_fuzz` green byte-for-byte |
 | `xiom.kv` 0.1.0 | **Candidate** segment metadata / manifest store; **not adopted now**. | PULSE: `kv_get` returned address-like Str on WSL Linux v0.64.0 (C-PULSE-10; Windows green); packages lane repinned v0.64.2 (io rows re-tested); XVECTOR additionally needs fsync before any KV store can back a durable manifest. | C-PULSE-10 (Linux `kv_get`) + the stdlib fsync gap (`STDLIB-WISHLIST-XVECTOR.md`) |
 | `xiom.btree` 0.1.0 | **Watch** (in-tree; see status above). | Ordered Int->Int map with range scans; could back future multi-segment metadata; our current maps are specialised. | publication+adoption path open (same as xiom.wal) |
 | `xiom-blas` / `xiom-eigen` / `xiom-openblas` | **GATED** -- bindings relay 2026-10-09: verified incubating placeholders (tests unknown, no timeline); when built they mirror the `xiom.vectors` contract, never define it; no SIMD kernel package from that lane; pilot complete through batch 22, so **accelerators are the sole unscheduled sector**. The portable `xiom.vectors` API stays the contract. | Packages lane FFI/bindings status (bindings worktree); xvector `distance/` is the future call-site seam. | gated on the bindings lane scheduling (no date) |
@@ -111,3 +116,14 @@ side).
 - **Adoption:** `xiom.metrics` 0.2.0 fine at Phase 10; `xiom.kv` still gated
   on C-PULSE-10 + fsync. New package names get ops scope + allowlist at
   build-green (as `sqlite` did).
+
+## Inbound relay (2026-10-10, via the packages lane) -- accelerator gate
+
+The packages side confirms this wishlist is accurate: the accelerator row
+(`xiom-blas` / `xiom-eigen` / `xiom-openblas`) **stays GATED on the owner
+greenlight for the `xiom.vectors` extraction** (verified incubating
+placeholders, no timeline); the bindings lane picks accelerators up once
+that extraction lands. **XVECTOR's v1.0.0-rc.1 release does not change
+that gate** -- the extraction still waits on the owner's greenlight, and
+the portable `xiom.vectors` API remains the only kernel contract we
+depend on (M-P3 stays seam-first).

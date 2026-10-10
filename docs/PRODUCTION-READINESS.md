@@ -34,10 +34,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 70 | buildable | xiom.metrics adoption (Phase 10), dashboards/alert wiring |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 56 | buildable | runners activation, rulesets, staging E2E, porter extraction |
+| J | Ecosystem & release engineering | 8 | 58 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x56 = **79.68 -> 80 %**.
+0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x58 = **79.84 -> 80 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -210,7 +210,7 @@ the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 workarounds reverted; the suite asserts trailing-field flags again.
 Remaining: CI runner activation.
 
-### J. Ecosystem & release engineering -- 56 %
+### J. Ecosystem & release engineering -- 58 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
 version/hash recording, the acyclic porter-ready tree, **release-prep
 drafts**: `scripts/ci.ps1` + `scripts/ci.sh` (full pre-release battery with
@@ -224,7 +224,11 @@ wired into both batteries), the **operations runbook**
 backup/restore drill, failure domains, migration, diagnostics), and the
 **release candidate package** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md`,
 `docs/sbom-v1.0.0-rc.1.json`, `docs/OWNER-HANDOFF.md`, an audited
-`docs/RELEASE-CHECKLIST.md`, annotated tag `v1.0.0-rc.1`).
+`docs/RELEASE-CHECKLIST.md`, annotated tag `v1.0.0-rc.1`), and the
+**first registry-package adoption** (`xiom.wal` 0.1.0: install + ed25519
+verification + `xiom pkg trust` pin + `xiom.toml [dependencies]` with
+C-PULSE-02 resolved; alignment + migration in
+`docs/XIOM-WAL-ADOPTION.md`; gate `probe_package_wal`).
 Remaining: self-hosted runners activation, branch rulesets on greenlight,
 staging E2E (parked until the owner greenlights public release), porter
 extraction with the packages lane.
@@ -696,6 +700,21 @@ extraction with the packages lane.
   (no GPG key available; DCO sign-off on every commit). J 54 -> 56;
   overall 79.52 -> 79.68 -> 80 %. The owner has been told; the public
   release + benchmark remain the owner's actions.
+- **2026-10-10 (fifty-third pass):** `xiom.wal` first adoption --
+  C-PULSE-02 RESOLVED in v0.64.2 (registry `[dependencies]` map installed
+  package roots); `xiom.wal` 0.1.0 installed from the registry on Windows
+  + WSL (sha256 + ed25519 verified, registry key pinned via
+  `xiom pkg trust` fp `4f:3b:47:f3:ae:17:b1:3c`), `xiom.toml
+  [dependencies]` wired, and the alignment gate `probe_package_wal`
+  (9 checks: op codes 1..7 byte-identical, tagged roundtrip, LSN resume,
+  torn-tail skip + heal-on-open, missing-path open) added to both
+  batteries (now 33 probes). Discovery: `xiom.metrics` 0.2.0,
+  `xiom.rate` 0.2.0, `xiom.router` 0.1.0, `xiom.http` 0.1.4 are installed
+  and registry-live -- scheduled as the next adoption slices (metrics
+  first, then rate, then router/http evaluation). J 56 -> 58; overall
+  79.68 -> 79.84 -> 80 %. Evidence: full batteries (suite 171/171 x2 +
+  sbom + 33 probes x2 + bench smoke, Windows + WSL) with the dependency
+  active in every build, ALL GATES GREEN.
 
 ## Update rule
 

@@ -244,6 +244,12 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   `GET /metrics` (prometheus text + live gauges), `/health` readiness,
   per-request instrumentation; `docs/OPERATIONS.md` runbook; gate
   `probe_metrics` (23 checks).
+- [OK] First registry-package adoption (2026-10-10): `xiom.wal` 0.1.0
+  consumed from the registry (`xiom.toml [dependencies]`; C-PULSE-02
+  resolved in v0.64.2; sha256/ed25519 verified + `xiom pkg trust` pin);
+  op codes 1..7 byte-identical; gate `probe_package_wal` (9 checks);
+  migration plan `docs/XIOM-WAL-ADOPTION.md`. Next adoptions queued:
+  `xiom.metrics` 0.2.0 -> `xiom.rate` 0.2.0 -> `xiom.router`/`xiom.http`.
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;
