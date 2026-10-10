@@ -793,6 +793,16 @@ extraction with the packages lane.
   `probe_http_service` (41 checks); batteries now 36 probes. No score
   change. Evidence: suite 171/171 x2 + sbom + 36 probes x2 + bench
   smoke, Windows + WSL, ALL GATES GREEN.
+- **2026-10-10 (fifty-ninth pass):** xiom.vectors 0.1.0 wiring +
+  extraction-fidelity gate -- all six SPEC extraction pins match the
+  current tree byte-for-byte (the package is a carve of this lane's own
+  primitives; behavior-identical by construction); dependency wired,
+  `probe_package_vectors` (13 checks) added, the package's own codec
+  probe green from the lane home; internals swap (lane facades) planned
+  in `docs/XIOM-VECTORS-EVAL.md` behind owner greenlight `-12`.
+  Batteries now 37 probes. No score change (porter-flow depth tracked
+  in J). Evidence: suite 171/171 x2 + sbom + 37 probes x2 + bench
+  smoke, Windows + WSL, ALL GATES GREEN.
 
 ## Update rule
 
