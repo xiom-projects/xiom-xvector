@@ -44,6 +44,7 @@ $probes = @(
   "probe_http_service",
   "probe_service_limits",
   "probe_service_auth",
+  "probe_http_fuzz",
   "probe_batch_ops"
 )
 
@@ -52,6 +53,10 @@ $failures = 0
 Write-Host "ci: suite x$SuiteRuns"
 & "$PSScriptRoot/run-suite.ps1" -Runs $SuiteRuns
 if ($LASTEXITCODE -ne 0) { $failures = $failures + 1; Write-Host "ci: SUITE FAILED" }
+
+Write-Host "ci: sbom + unsafe gate"
+& "$PSScriptRoot/sbom.ps1"
+if ($LASTEXITCODE -ne 0) { $failures = $failures + 1; Write-Host "ci: SBOM FAILED" }
 
 foreach ($p in $probes) {
   Write-Host "ci: $p x$ProbeRuns"
@@ -73,5 +78,5 @@ if ($failures -ne 0) {
   Write-Host "ci: FAILED ($failures gate(s) red)"
   exit 1
 }
-Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + $($probes.Count) probes x$ProbeRuns + bench smoke)"
+Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + sbom + $($probes.Count) probes x$ProbeRuns + bench smoke)"
 exit 0

@@ -676,6 +676,42 @@ fn jerror(status: Int, msg: Str) -> Vec[UInt8] {
 
 // ---- JSON field helpers (copy out of Option before matching) ----
 
+// Pre-parse depth guard (M-S4): the stdlib JSON parser recurses per
+// nesting level, so a ~64 KB run of '[' (within the body limit) overflows
+// the stack (access violation; found by probe_http_fuzz). This linear scan
+// caps nesting depth BEFORE the parser sees the body; string state is
+// tracked so brackets inside strings do not count.
+pub fn json_depth_ok(body: Str, max_depth: Int) -> Bool {
+  var b = slice.str_bytes(body);
+  var depth: Int = 0;
+  var in_str: Bool = false;
+  var esc: Bool = false;
+  var i: Int = 0;
+  while i < b.len() {
+    var c = b[i];
+    if in_str {
+      if esc {
+        esc = false;
+      } elif c == 92 {
+        esc = true;
+      } elif c == 34 {
+        in_str = false;
+      }
+    } else {
+      if c == 34 {
+        in_str = true;
+      } elif c == 91 || c == 123 {
+        depth = depth + 1;
+        if depth > max_depth { return false; }
+      } elif c == 93 || c == 125 {
+        depth = depth - 1;
+      }
+    }
+    i = i + 1;
+  }
+  return true;
+}
+
 fn jget_str(v: JsonValue, key: Str) -> Option[Str] {
   match json.json_get(v, key) {
     Some(f) => {
@@ -1176,6 +1212,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
       return http_response(200, out);
     }
     if req.method == "POST" {
+      if !json_depth_ok(req.body, 64) { return jerror(400, "json nesting exceeds service limit"); }
       var parsed = json.json_parse(req.body);
       match parsed {
         Ok(body) => { return handle_create_collection(eng, body, cfg); }
@@ -1187,6 +1224,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
   if segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
     var name = segs[1];
     if req.method == "POST" {
+      if !json_depth_ok(req.body, 64) { return jerror(400, "json nesting exceeds service limit"); }
       var parsed = json.json_parse(req.body);
       match parsed {
         Ok(body) => { return handle_upsert(eng, name, body, cfg); }
@@ -1264,6 +1302,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
   }
   if segs.len() == 1 && segs[0] == "search" {
     if !(req.method == "POST") { return jerror(405, "method not allowed"); }
+    if !json_depth_ok(req.body, 64) { return jerror(400, "json nesting exceeds service limit"); }
     var parsed2 = json.json_parse(req.body);
     match parsed2 {
       Ok(body) => {
