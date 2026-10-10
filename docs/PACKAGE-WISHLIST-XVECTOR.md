@@ -3,6 +3,13 @@
 
 # Package wishlist from the XVECTOR lane
 
+> **Coordination bus (2026-10-10):** open cross-lane items are migrated to
+> the private `xiom-lang/xiom-relays` repo: `xiom.vectors` extraction =
+> **REL-20261010-1550-xvector-9** (packages), `xiom.ann` extraction =
+> **-10** (packages), accelerator gating = **-11** (bindings), owner
+> greenlight = **-12** (owner). This file keeps the closed history and
+> the lane's own adoption ledger; new asks go to the bus.
+
 Proposals and adoption notes from the xiom-xvector lane (vector database).
 Checked against the packages-lane tree (`E:\xiom-packages\packages\packages`)
 on 2026-10-10, packages lane HEAD `47202b72` (xiom.durable port + WAL

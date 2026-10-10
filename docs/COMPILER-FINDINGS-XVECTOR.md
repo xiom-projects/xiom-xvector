@@ -1,6 +1,12 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
+> **Coordination bus (2026-10-10):** open cross-lane items now live in the
+> private `xiom-lang/xiom-relays` repo. The open finding **XVC-C-13** is
+> relay item **REL-20261010-1550-xvector** (`--to compiler --kind bug`);
+> everything else in this file is closed history. File new findings as
+> relay items, not here.
+
 # Compiler findings from the XVECTOR lane
 
 Findings collected while building the xiom-xvector vector database with the

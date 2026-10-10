@@ -739,15 +739,24 @@ signed commits, docs updated).
 
 ## 2. Consumer-lane rules (non-negotiable)
 
+- **Coordination bus (2026-10-10, owner rollout): at session start and
+  before finishing any task, pull `E:\xiom-lang\xiom-relays`
+  (`git pull --ff-only`) and process items addressed to this lane
+  (`python tools/relay.py view --lane xvector`). Recurring doorbell: a
+  3-hour cron session check is armed.**
+- **Never edit another lane's item; open a new item instead** (one item =
+  one file; only the addressed lane moves open->acked->fixed; only the
+  reporter moves fixed->verified->closed; owner items are the owner's).
 - **Never edit** `E:\xiom-lang\stdlib`, `E:\xiom-lang\xiom`,
   `E:\xiom-packages\packages`. Record their HEAD hashes each wrap:
   `git -C <lane> log -1 --format="%h %cI %s"`.
-- Upstream reporting only through the relay docs (`RELAY-COMPILER.md`,
-  `STDLIB-WISHLIST-XVECTOR.md`, `PACKAGE-WISHLIST-XVECTOR.md`,
-  `RELAY-INTRO-XVECTOR.md`); the owner relays.
+- Upstream reporting now goes through `xiom-relays` items (the relay docs
+  keep closed history with a header pointing at the relay ids);
+  `RELAY-INTRO-XVECTOR.md` stays as the lane intro.
 - Consume packages from the registry only; propose reusable primitives as
   packages (`xiom.vectors` / `xiom.wal` / `xiom.ann`).
-- Repo stays private; no pushes; commits signed (`-s`) at every step.
+- Repo stays private; no pushes (the private relay bus is the only shared
+  mailbox); commits signed (`-s`) at every step.
 
 ## 3. Module/consumer rules after the final wave
 
