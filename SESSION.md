@@ -1043,11 +1043,13 @@ signed commits, docs updated).
   `release-checks/compiler-compiler-v0.64.3`; C-13: Win 71 / WSL 127;
   C-14: clang store mismatch at `xiominput.ll:850`). v0.64.2-era
   re-tests: relayed fixes C-03/06/07/08 verified, C-10..C-12 green
-  (Addendum 8). **Findings open: XVC-C-13** (`&Str` parameters unknown
+  (Addendum 8). **Findings acked by the compiler lane** (accepted into
+  their queue 2026-10-10, still unfixed): **XVC-C-13** (`&Str`
+  parameters unknown
   to the checker -> i64 fallback, silent wrong values; Addendum 9)
   **and XVC-C-14** (same-named struct types shadow field layouts;
-  Addendum 10; bus item `REL-20261010-1709-xvector`). Compiler-lane
-  HEAD `6cbcc53e`.
+  Addendum 10; bus items `REL-20261010-1550-xvector` /
+  `-1709-xvector` now `acked`). Compiler-lane HEAD `6cbcc53e`.
 - **packages:** lane HEAD `2b9b1146` (2026-10-10 19:15Z: **`xiom.ann`
   extracted**, assimp 0.7.0 + glfw 0.3.0 published, eco-v0.1.132,
   48 eco releases); xiom.durable port + WAL reconciliation
@@ -1085,7 +1087,7 @@ signed commits, docs updated).
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.3 re-test: C-13/C-14 **UNCHANGED** (open; verdicts filed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.3 re-test: C-13/C-14 **UNCHANGED** (both `acked` by the compiler lane 2026-10-10; verdicts filed; unfixed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-10 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-10 (lane `030f748`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
