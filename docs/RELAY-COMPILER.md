@@ -273,8 +273,9 @@ Push-Location docs\repro\xv-counter-type-shadow
 Pop-Location        # v0.64.2: clang exit 1 (store mismatch, line 850)
 ```
 
-Archive status (checked 2026-10-10, lane HEAD `1f0994eb`): v0.64.3 is in
-the compiler lane's release gate (`docs/RELEASE_GATE_v0.64.3.md`;
-release-notes-fragment blocker tracked), and no v0.64.3 archive is
-installable on this machine yet (`release/` carries v0.61.0 artifacts
-only). C-13/C-14 re-tests run at the next archive install.
+Archive status (updated 2026-10-10 evening): **v0.64.3 RELEASED** (run
+`38071481303`; tag on `a5b87965`) and installed lane-local on Windows +
+WSL by xvector; **C-13 and C-14 re-tested on it: both UNCHANGED** (C-13:
+`first_byte("A")` = 71 Win / 127 WSL; C-14: clang store mismatch at
+`xiominput.ll:850`, Windows + WSL); verdicts filed on
+`release-checks/compiler-compiler-v0.64.3`; items remain open.

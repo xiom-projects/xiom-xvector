@@ -5,10 +5,19 @@
 # LATEST compiler / stdlib / packages to harden the ecosystem by real-world
 # use. Record the exact versions and lane hashes in SESSION.md at every wrap.
 #
-# As of 2026-10-08:
-#   compiler  v0.64.1  %LOCALAPPDATA%\xiom.new\bin\xiom.exe
+# ISOLATION (2026-10-10): concurrent sessions on the build machine had the
+# shared toolchain state deleted mid-battery (the global
+# %LOCALAPPDATA%\xiom\packages home, and parts of %LOCALAPPDATA%\xiom.new
+# down to the process-locked files); see the bus incident
+# REL-20261010-1835-xvector. The lane therefore pins its OWN toolchain and
+# package home, which no other session touches:
+#   compiler  out\toolchain\bin\xiom.exe (lane-local v0.64.3; falls back to
+#             %LOCALAPPDATA%\xiom.new\bin\xiom.exe when the lane copy is
+#             absent)
+#   packages  out\xiom-home (lane-local XIOM_HOME; xiom pkg installs of
+#             xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0, trust
+#             pinned from the registry key)
 #   stdlib    E:\xiom-lang\stdlib (stdlib-lane checkout = latest lane work)
-#   packages  %LOCALAPPDATA%\xiom\packages (none consumed by xvector yet)
 #
 # XIOM_RUNTIME_DIR is retired since v0.64.0: release R65 makes the installed
 # compiler link lib\runtime and lib\xiom without overrides (verified env-free
@@ -19,8 +28,17 @@
 
 $ErrorActionPreference = "Stop"
 
-$env:XIOM_COMPILER = Join-Path $env:LOCALAPPDATA "xiom.new\bin\xiom.exe"
-$env:XIOM_STDLIB   = "E:\xiom-lang\stdlib"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+
+$laneCompiler = Join-Path $repoRoot "out\toolchain\bin\xiom.exe"
+if (Test-Path -LiteralPath $laneCompiler) {
+    $env:XIOM_COMPILER = $laneCompiler
+} else {
+    $env:XIOM_COMPILER = Join-Path $env:LOCALAPPDATA "xiom.new\bin\xiom.exe"
+}
+$env:XIOM_STDLIB = "E:\xiom-lang\stdlib"
+$env:XIOM_HOME   = Join-Path $repoRoot "out\xiom-home"
+New-Item -ItemType Directory -Force -Path $env:XIOM_HOME | Out-Null
 Remove-Item Env:XIOM_RUNTIME_DIR -ErrorAction SilentlyContinue   # retired
 
 $missing = @()
@@ -36,4 +54,5 @@ if ($missing.Count -gt 0) {
 $ver = (& $env:XIOM_COMPILER --version 2>&1 | Select-Object -First 1)
 Write-Host "dev-env: $ver"
 Write-Host "dev-env: XIOM_STDLIB = $env:XIOM_STDLIB"
+Write-Host "dev-env: XIOM_HOME   = $env:XIOM_HOME (lane-local)"
 Write-Host "dev-env: XIOM_RUNTIME_DIR retired (v0.64.1 R65 install-layout fix)"

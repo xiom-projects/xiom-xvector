@@ -12,29 +12,31 @@
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.64.2** (current pin; installed 2026-10-09),
-Windows (`%LOCALAPPDATA%\xiom.new\bin\xiom.exe`) and Linux/WSL
-(`~/.local/share/xiom`, Ubuntu); stdlib `E:\xiom-lang\stdlib`
-(`/mnt/e/xiom-lang/stdlib` in WSL); registry packages consumed since
-2026-10-10: `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 (see
-`docs/XIOM-WAL-ADOPTION.md` / `docs/XIOM-METRICS-ADOPTION.md`).
+Instrument: **XIOM Compiler v0.64.3** (current pin; released 2026-10-10,
+installed lane-local on Windows (`out\toolchain`) and WSL
+(`~/.xvector-toolchain`); see the isolation note in `SESSION.md`),
+Windows + Linux/WSL; stdlib `E:\xiom-lang\stdlib`
+(`/mnt/e/xiom-lang/stdlib` in WSL); registry packages consumed:
+`xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
+lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
+`docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
 All findings below were reported on v0.64.0, re-tested on v0.64.1, and
 re-tested again on v0.64.2 (2026-10-09); **XVC-C-08..C-12** were found later
-on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2; **XVC-C-13** was found
-on v0.64.2 (2026-10-09, M-D2) and is open; **XVC-C-14** was found on v0.64.2
-(2026-10-10, xiom.metrics adoption) and is open.
+on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2; **XVC-C-13** and
+**XVC-C-14** were re-tested on v0.64.3 (2026-10-10) and are still open.
 
-**Current status (compiler v0.64.2, 2026-10-10): two XVECTOR findings are
-open (XVC-C-13, XVC-C-14).** 14 findings total (C-01..C-14), each with
-a repro bundle under `docs/repro/`:
+**Current status (compiler v0.64.3, 2026-10-10): two XVECTOR findings are
+open (XVC-C-13, XVC-C-14, both re-tested unchanged on v0.64.3; verdicts
+filed on `release-checks/compiler-compiler-v0.64.3`).** 14 findings total
+(C-01..C-14), each with a repro bundle under `docs/repro/`:
 
 | Range | Status |
 |---|---|
 | XVC-C-01..C-08, C-10 | **verified fixed** (C-01..C-06 in v0.64.1; C-07/C-08 in v0.64.2 after the repro re-runs; C-10 incidentally fixed in v0.64.2 -- inline pad shape no longer segfaults) |
 | XVC-C-11, C-12 | **fixed in context** (v0.64.2 re-test of the original failing unit: unguarded `read_file` Str content and 5-byte `read_file_bytes` both clean) |
 | XVC-C-09 | **repro green** on WSL + Windows; workaround retained (weaker re-test -- the crash lived in the compiled engine path, not the repro shape) |
-| XVC-C-13 | **OPEN (new)** -- `&Str` parameter types are unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values: `first_byte("A")` = 71 on Windows / 127 on WSL, expect 65) |
-| XVC-C-14 | **OPEN (new)** -- two same-named struct types across modules: struct-field layouts resolve by short name, so one module's field silently takes the other type's layout (clang store reject when the shapes differ); found in the xiom.metrics adoption (shim `Counter` + package `Counter`) |
+| XVC-C-13 | **OPEN (re-tested on v0.64.3 2026-10-10: unchanged -- Win 71 / WSL 127)** -- `&Str` parameter types are unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values: `first_byte("A")` = 71 on Windows / 127 on WSL, expect 65) |
+| XVC-C-14 | **OPEN (re-tested on v0.64.3 2026-10-10: unchanged -- clang store mismatch at `xiominput.ll:850`, Windows + WSL)** -- two same-named struct types across modules: struct-field layouts resolve by short name, so one module's field silently takes the other type's layout (clang store reject when the shapes differ); found in the xiom.metrics adoption (shim `Counter` + package `Counter`) |
 | retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard, C-14 single type name program-wide (shim `Counter` retired) |
 
 Format: `| Date | Finding | Evidence | Workaround | Impact |`.
@@ -140,5 +142,10 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 - Relay state: `docs/RELAY-COMPILER.md` Addenda 1-10 (9 = XVC-C-13,
   10 = XVC-C-14). No open asks from this lane; C-01/C-02/C-04 stay as
   deliberate lane choices.
+- Archive status (2026-10-10): **v0.64.3 released** (run `38071481303`;
+  tag `v0.64.3` on `a5b87965`) and installed lane-local on Windows + WSL;
+  full re-test done (all 12 repro bundles + isolated batteries); XVC-C-13
+  and XVC-C-14 remain open; release-check verdicts filed on
+  `release-checks/compiler-compiler-v0.64.3`.
 - Soak / mixed-workload gate: `tests/probes/probe_soak_mixed.xi`
   (600 deterministic ops with bookkeeping invariants + recovery).
