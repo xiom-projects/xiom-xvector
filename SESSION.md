@@ -70,15 +70,18 @@ probe_package_metrics added; bus item -7 verified + closed) -> xiom.rate
 API; carry-exact refill; probe_package_rate added; 35 probes) ->
 compiler v0.64.3 re-pin + lane-local isolation (shared-home wipe incident
 diagnosed + filed; out/toolchain + out/xiom-home; XVC-C-13/C-14 re-tested
-unchanged; release-check verdicts filed; both batteries green isolated).
+unchanged; release-check verdicts filed; both batteries green isolated) ->
+xiom.http helper evaluation + adoption (status phrases on the package
+behind a lane adapter; router/parser evaluated, not adopted;
+probe_package_http; 36 probes).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `845ddbc` (chore: compiler
-v0.64.3 re-pin + lane-local isolation) + this handoff commit; tag
-`v1.0.0-rc.1` still on `530b041`. Recent slices: `845ddbc` v0.64.3
+**Repo:** private, no pushes; clean tree. HEAD `a7e8421` (feat: xiom.http
+status helpers) + this handoff commit; tag `v1.0.0-rc.1` still on
+`530b041`. Recent slices: `a7e8421` http helper slice, `845ddbc` v0.64.3
 re-pin/isolation, `a0d631f` rate adoption, `843d3ca` metrics wrap,
 `31b95d9` metrics adoption, `37e9d57` XV-ORBITDB-01 wrap, `3c36f34`
 XV-ORBITDB-01 fix, `1db0550` relay bus adoption, `4c02577` xiom.wal
@@ -93,7 +96,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965` | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `5468469` (website-10 portable crypto fix); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-10) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `2b9b1146` (SESSION 19:15Z: **`xiom.ann` extracted**; assimp 0.7.0 + glfw 0.3.0; eco-v0.1.132, 48 releases); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
-| xvector | `845ddbc` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `a7e8421` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -626,6 +629,18 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   platforms. Also recorded: **`xiom.vectors` LIVE (eco 508)** + `xiom.ann`
   extracted by the packages lane (our wishlist items `-9` fixed /
   `-10` acked).
+- **xiom.http helper evaluation + adoption (2026-10-10, 58th pass):**
+  `xiom.router` 0.1.0 + `xiom.http` 0.1.4 evaluated for the service:
+  **`xiom.http.status.http_status_text` ADOPTED** behind a 3-line lane
+  adapter (every emitted code keeps its pre-adoption wire text;
+  the package has no 507 -> the lane keeps "Insufficient Storage" and
+  its "Error" fallback; upstream gap filed `REL-20261010-2002-xvector`);
+  **router + parser/types/client NOT adopted** (static 7-route dispatch
+  + strict byte pipeline are gate-pinned; full reasons in
+  `docs/XIOM-HTTP-EVAL.md`). New `probe_package_http` (5 checks) + the
+  `probe_http_service` raw `HTTP/1.1 507 Insufficient Storage` pin
+  (41 checks); batteries now **36 probes**. Next adoption candidate:
+  **`xiom.vectors` (LIVE)**.
 - **Bus round (2026-10-10, 55th pass):** `REL-20261010-1550-xvector-7`
   (json depth cap) **verified + closed** -- boundary re-run against the
   stdlib checkout (`a16daff`): 128-deep Ok; 129 and 60000-deep Err
@@ -751,7 +766,12 @@ the current tree):**
   `release-checks/compiler-compiler-v0.64.3`; the first two WSL battery
   reds were the shared-home wipe (environmental), root-caused and fixed
   with lane-local isolation.
-- All **35 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
+- **xiom.http helper pass (58th):** Windows AND WSL batteries ALL GATES
+  GREEN (suite **171/171 x2** + sbom + **36 probes x2** + bench smoke
+  each); new `probe_package_http` (5 checks) green both platforms;
+  `probe_http_service` 41/41 incl. the raw 507 status-line pin;
+  `probe_service_limits` 27/27 with the package-backed phrases.
+- All **36 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
   `probe_payload_index`, `probe_filter_plan`, `probe_hnsw_recall`,
@@ -762,7 +782,8 @@ the current tree):**
   `probe_delete_filter`, `probe_index_admin`, `probe_reference_oracle`,
   `probe_http_service`, `probe_service_limits`, `probe_service_auth`,
   `probe_http_fuzz`, `probe_metrics`, `probe_package_wal`,
-  `probe_package_metrics`, `probe_package_rate`, `probe_batch_ops`
+  `probe_package_metrics`, `probe_package_rate`, `probe_package_http`,
+  `probe_batch_ops`
   (run via `scripts\run-probe.ps1`); plus the SBOM + unsafe gate
   (`scripts/sbom.ps1`, `scripts\sbom.sh`).
 - Bench smoke: `scripts\bench.ps1 -Mode quick` / `bash scripts/bench.sh
@@ -1026,8 +1047,10 @@ signed commits, docs updated).
   during lane-home setup (`REL-20261010-1937-xvector`). **`xiom.metrics`
   0.2.0 + `xiom.rate` 0.2.0 ADOPTED by XVECTOR (2026-10-10, 55th/56th
   passes; see `docs/XIOM-METRICS-ADOPTION.md` /
-  `docs/XIOM-RATE-ADOPTION.md`); next adoption: `xiom.router` 0.1.0 /
-  `xiom.http` 0.1.4 helper evaluation**;
+  `docs/XIOM-RATE-ADOPTION.md`); **router/http evaluated 2026-10-10: the
+  `xiom.http.status` helper subset ADOPTED, router/parser not adopted
+  (`docs/XIOM-HTTP-EVAL.md`); next adoption candidate: `xiom.vectors`
+  (LIVE, eco 508)**;
   `xiom.kv` gated on C-PULSE-10 + fsync. Bindings relay (2026-10-09):
   blas-class accelerators stay **GATED** (incubating placeholders, no
   timeline; pilot complete through batch 22) -- sole unscheduled sector;
@@ -1046,14 +1069,15 @@ signed commits, docs updated).
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-10 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-10 (lane `030f748`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED** (registry installs + trust pin + `[dependencies]` + gates); **`xiom.vectors` LIVE (eco 508)** + `xiom.ann` extracted (items `-9` fixed / `-10` acked; porter flow next); next: `xiom.router`/`xiom.http` helper evaluation |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED** (registry installs + trust pin + `[dependencies]` + gates); **`xiom.vectors` LIVE (eco 508)** + `xiom.ann` extracted (items `-9` fixed / `-10` acked); **router/http evaluated + `xiom.http.status` subset ADOPTED** (58th); next: `xiom.vectors` adoption evaluation |
+| `docs/XIOM-HTTP-EVAL.md` | packages (record) | written 2026-10-10: router/http evaluation; status-helper adoption + 507 upstream gap |
 | `docs/XIOM-METRICS-ADOPTION.md` | packages/compiler (record) | written 2026-10-10: observability internals on `xiom.metrics` 0.2.0; XVC-C-14 record + gates |
 | `docs/XIOM-RATE-ADOPTION.md` | packages/compiler (record) | written 2026-10-10: S3 token-bucket internals on `xiom.rate` 0.2.0 (carry-exact refill); gates + follow-ups |
 | `docs/PULSE-INTEGRATION.md` | PULSE (consumer) | written 2026-10-09; PULSE builds `probe_pkg_xvector` from it |
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 81 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); 3-hour doorbell cron |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); 3-hour doorbell cron |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
@@ -1070,8 +1094,8 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `845ddbc` (chore: compiler v0.64.3 re-pin + lane-local
-isolation) + the handoff commit; tag `v1.0.0-rc.1` on `530b041`; clean
+Orientation: HEAD `a7e8421` (feat: xiom.http status helpers) + the
+handoff commit; tag `v1.0.0-rc.1` on `530b041`; clean
 tree; `git log --oneline -12` shows the recent slice commits. Lane pins:
 stdlib `5468469` (fsync chain still stubs), packages `2b9b1146`
 (xiom.ann extracted; xiom.vectors LIVE eco 508), compiler **v0.64.3
@@ -1128,7 +1152,7 @@ release 0.64.3 registry-LIVE, waves 100-101; durability primitives still
 stubs; /mnt/e/... in WSL); XIOM_RUNTIME_DIR
 retired. Dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1/.sh
 build; scripts\run-suite.* runs the conformance suite; scripts\run-probe.*
-runs probes. Green baseline: suite 171/171 x2 + sbom gate, 35 probes x2
+runs probes. Green baseline: suite 171/171 x2 + sbom gate, 36 probes x2
 + bench smoke (quick) on BOTH platforms, all under the lane-local
 toolchain + package home (compiler v0.64.3).
 
@@ -1224,7 +1248,9 @@ xiom.rate 0.2.0 adoption (token-bucket internals on the package behind
 the same API; carry-exact refill; new probe_package_rate); compiler
 v0.64.3 re-pin lane-local (re-tests done; C-13/C-14 unchanged,
 release-check verdicts filed; shared-home wipe incident diagnosed + lane
-isolated) -- 35 probes + sbom, suite 171).
+isolated); xiom.http helper evaluation + adoption (status phrases on the
+package behind a lane adapter; router/parser not adopted; new
+probe_package_http + the 507 wire pin) -- 36 probes + sbom, suite 171).
 FloatVal gates restored after the v0.64.1 fix. Compiler v0.64.2 re-test
 (2026-10-09): C-03 (W004=0) and C-06 stay green; C-07 FIXED (&Vec spelling
 works; workaround reverted in payload codec + suite); C-08 FIXED (repro +
@@ -1236,11 +1262,12 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: the `xiom.router`/`xiom.http` helper evaluation (byte-level
-pipeline and wire contract stay; adopt helpers only if the gate-visible
-behavior is preserved), with the registry `xiom.vectors` (LIVE, eco
-508) as the following adoption candidate for distance/vector code; the
-v1.0.0-rc.1 candidate and owner handoff stand. Each pass: re-check
+NEXT TASK: the registry **`xiom.vectors` adoption evaluation** (LIVE,
+eco 508; distance/vector code -- read its SPEC, compare against the
+lane's vector math, adopt behind the same surface with probes if the
+semantics fit, else record the evaluation); then re-check the
+`xiom.ann` porter flow and the owner's public release + benchmark (the
+v1.0.0-rc.1 candidate and owner handoff stand). Each pass: re-check
 the external lanes and pivot when a gate clears (D5/D6 on the stdlib
 fsync chain, socket adapter on xiom.net, P5 on stdlib mmap, xiom.kv on
 C-PULSE-10). Non-gated work proceeds while the stdlib
@@ -1249,7 +1276,7 @@ criteria are met, TELL THE OWNER (public release + benchmark setup is the
 owner's action, PULSE-style). C-01/C-02/C-04 unwinds are optional
 deliberate API decisions, no longer compiler-blocked.
 Keep the wrap discipline: full batteries (scripts/ci.ps1 + ci.sh, suite x2
-+ sbom + 35 probes x2 + bench smoke), signed commits, docs updated.
++ sbom + 36 probes x2 + bench smoke), signed commits, docs updated.
 Never build against the shared toolchain homes (lane-local pins only).
 
 Discipline: struct literals list every field; locals initialized; `Str`

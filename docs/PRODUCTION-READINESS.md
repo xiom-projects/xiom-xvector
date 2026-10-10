@@ -784,6 +784,15 @@ extraction with the packages lane.
   capability; environment hardening). Evidence: Windows + WSL isolated
   batteries ALL GATES GREEN (suite 171/171 x2 + sbom + 35 probes x2 +
   bench smoke each).
+- **2026-10-10 (fifty-eighth pass):** xiom.router/xiom.http helper
+  evaluation -- `xiom.http.status.http_status_text` adopted behind a
+  lane adapter (wire-identical; the upstream 507 gap lane-owned and
+  filed as `REL-20261010-2002-xvector`); router + parser/types/client
+  evaluated, not adopted (reasons in `docs/XIOM-HTTP-EVAL.md`). New
+  `probe_package_http` (5 checks) + the raw 507 status-line pin in
+  `probe_http_service` (41 checks); batteries now 36 probes. No score
+  change. Evidence: suite 171/171 x2 + sbom + 36 probes x2 + bench
+  smoke, Windows + WSL, ALL GATES GREEN.
 
 ## Update rule
 
