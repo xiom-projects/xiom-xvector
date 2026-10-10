@@ -15,7 +15,7 @@ module probe_http_fuzz
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.api.http_service;
-use xiom.vector.types.dense_vector;
+use xiom.vectors;
 use xiom.string.slice;
 use xiom.io;
 use xiom.convert;

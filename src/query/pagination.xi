@@ -18,8 +18,7 @@ module xiom.vector.query.pagination
 //   the CURRENT position of `after_id` (None when that id does not exist,
 //   e.g. deleted between pages; restarting is the caller's policy).
 
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
 

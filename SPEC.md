@@ -33,16 +33,19 @@ packages/xiom-vector/
 
 ---
 
-## `xiom.vector.types.dense_vector` (extracted module)
-Implemented today: `Vector`, `new/set/get`, `vector_dot`, `vector_magnitude` (normalize/add/sub/scale pending).
+## Vector + distance surface -- the `xiom.vectors` package (2026-10-10 atomic swap)
+The local `types/dense_vector` module was retired in the swap; these
+names now come from the registry package (extraction pins verified
+byte-identical; `docs/XIOM-VECTORS-EVAL.md`).
+Implemented: `Vector`, `new/set/get`, `vector_dot`, `vector_magnitude` (normalize/add/sub/scale pending).
 `Vector { data: Vec[Float32]; dimension: UInt }` -- the fundamental value type.
 - `Vector.new(dimension)` `requires: dimension > 0` `ensures: result.data.len() == dimension`
 - `Vector.set(index, value)` / `Vector.get(index)` `requires: index < dimension`
 - `vector_dot`, `vector_magnitude`, `vector_normalize`, `vector_add`, `vector_sub`, `vector_scale`, `vector_dimension`
 - Binary ops `requires: a.dimension == b.dimension`.
 
-## `xiom.vector.types.metric` (extracted module)
-Implemented today: `DistanceMetric` + the three distances + `vector_distance` (metric_name pending).
+## Distance metrics -- the `xiom.vectors` package
+Implemented: `DistanceMetric` + the three distances + `vector_distance` (metric_name pending).
 `enum DistanceMetric { Cosine, DotProduct, Euclidean }`.
 - `dot_product_distance` -> `-Sigma(aibi)`; `cosine_distance` -> `1 - costheta` (zero vectors -> 1.0); `euclidean_distance` -> `sqrtSigma(ai-bi)2`.
 - `vector_distance(a, b, metric)` dispatches (`requires: a.dimension == b.dimension`).
@@ -66,11 +69,11 @@ Implemented today: `DistanceMetric` + the three distances + `vector_distance` (m
   radius, engine-distance boundary inclusion, Hnsw recall@5 == 5/5 +
   oracle distance fidelity).
 
-## `xiom.vector.types.neighbor` (extracted module)
-Implemented today: `Neighbor` + `neighbor_new` (neighbor_closer pending).
+## Neighbor -- the `xiom.vectors` package
+Implemented: `Neighbor` + `neighbor_new` (neighbor_closer pending).
 `Neighbor { id: UInt64; distance: Float32 }` -- low-level result edge used inside indexes/graph adjacency. `neighbor_new`, `neighbor_closer`.
 
-## `xiom.vector.types.dimension`
+## Dimension -- the `xiom.vectors` package
 `Dimension { value: Int }` wrapper. `dimension(v)`, `dimension_value`, `dimension_eq`, `dimension_is_valid` (delegates to `core.contracts.is_valid_dimension`), `dimension_within_limit` (uses `core.limits.max_dimensions`).
 
 ## `xiom.vector.error`
@@ -120,7 +123,7 @@ fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
 - Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 296/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 299/800); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty; beam construction honours ef_construction (setter semantics checked).
 
 ## `xiom.vector.distance.{cosine,dot,l2}`
-Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to `types.metric` today.
+Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to the `xiom.vectors` metric functions today.
 
 ## `xiom.vector.query.search_request` (rewritten against real types)
 `SearchRequest { query: Vector; top_k: Int; metric: DistanceMetric; filter: Vec[FilterExpr]; with_payload: Bool; mode: SearchMode; radius: Float32; offset: Int; after_id: Int }` -- the wire shape for request-driven search (the pre-extraction file carried inline mirrors; now it imports the extracted types). `SearchMode { Knn, Range }` (M-Q6).
@@ -130,8 +133,8 @@ Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`,
 - M-Q6 setters: `search_request_set_mode(req, mode)`; `search_request_set_range(req, radius)` (sugar: mode=Range + radius; `top_k` acts as the inclusive-radius limit); `search_request_set_page(req, offset)` (knn offset ranks); `search_request_set_after(req, after_id)` (knn cursor; -1 = none).
 - `SearchBatchRequest { requests: Vec[SearchRequest] }` + `search_batch_request_new/add/len` -- an ordered batch of requests.
 
-## `xiom.vector.query.topk_heap`
-`TopKHeap { capacity; items: Vec[Neighbor] }`. `topk_new(capacity)` `requires: capacity > 0` `ensures: items.len() == 0`; `topk_push` `ensures: items.len() <= capacity`; `topk_len`, `topk_is_full`, `topk_worst`.
+## Bounded top-K -- the `xiom.vectors` package
+`TopKHeap { capacity; items: Vec[Neighbor] }`. `topk_new(capacity)` (capacity >= 1); `topk_push` keeps `items.len() <= capacity`; `topk_len`, `topk_is_full`, `topk_worst` (Option). No lane clauses since the 2026-10-10 swap (the package ships no contracts).
 
 ## `xiom.vector.query.filter_plan` (planner)
 Selectivity-based plan choice for filtered search.

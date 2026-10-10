@@ -5,7 +5,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 # Vector Types and Metrics
 
-Covers the value types in `types/` and the distance math in `types/metric.xi`
+Covers the value types in the `xiom.vectors` package (the local
+`types/` modules were retired in the 2026-10-10 atomic swap) and the
+distance math now hosted there (`docs/XIOM-VECTORS-EVAL.md`).
 and `distance/`.
 
 ## The dense vector
@@ -20,7 +22,7 @@ Vector { data: Vec[Float32]; dimension: UInt }
 - `dimension` is fixed for the vector's life; every binary operation requires
   matching dimensions (`requires: a.dimension == b.dimension`).
 
-### Vector math (`dense_vector.xi`)
+### Vector math (`xiom.vectors`, formerly `dense_vector.xi`)
 
 | Function | Result |
 |----------|--------|

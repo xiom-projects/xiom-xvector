@@ -54,8 +54,10 @@ contract violation.
 The reranking primitive that makes invariant #3 compose across sources.
 
 **Enforced in code:**
-- `query.topk_heap.topk_new` -- `requires: capacity > 0`, `ensures: items.len() == 0`.
-- `query.topk_heap.topk_push` -- `ensures: items.len() <= capacity` (overflow drops the worst element).
+- `xiom.vectors` top-K (`topk_new` / `topk_push`) -- package SPEC
+  guarantees (capacity from construction; `items.len() <= capacity` after
+  every push; overflow drops the worst). The lane carried these as
+  clauses until the 2026-10-10 swap; the package ships no contracts.
 
 **Why:** whether one index or many segments feed the heap, the bound holds after
 every push, so the final result is bounded regardless of fan-out.
@@ -101,7 +103,7 @@ segments.
 The engine and core agree on ceilings.
 
 **Enforced in code:**
-- Dimension <= `core.limits.max_dimensions()` via `types.dimension.dimension_within_limit` and `core.contracts.is_valid_dimension`.
+- Dimension <= `core.limits.max_dimensions()` via `xiom.vectors.dimension_within_limit` and `core.contracts.is_valid_dimension`.
 - `top_k` <= `core.limits.max_top_k()` via `core.contracts.is_valid_top_k` (checked in `engine_search`).
 - HNSW `m` <= `core.limits.max_graph_degree()` (see #5).
 

@@ -59,7 +59,7 @@ The correctness oracle. For each stored vector:
 Cost O(n-k); `ensures: result.len() <= k`. `search_range` is the same loop with a
 radius test instead of a top-K cap (`requires: radius > 0.0`).
 
-## Bounded top-K (`query/topk_heap`)
+## Bounded top-K (`xiom.vectors` top-K)
 
 ```
 TopKHeap { capacity; items: Vec[Neighbor] }

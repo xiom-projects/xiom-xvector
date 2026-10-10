@@ -8,8 +8,7 @@ module xiom.vector.storage.vector_store
 // module tree).
 
 use xiom.num.float;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.dimension;
+use xiom.vectors;
 
 pub type VectorIndex = {
   vectors: Vec[Vector];
@@ -149,33 +148,9 @@ pub fn index_size(idx: &VectorIndex) -> Int {
   return idx.ids.len();
 }
 
-// ---- Durable vector codec: WAL payload = [dim, bits0, bits1, ...] ----
-// Float32 -> Float64 -> IEEE-754 bits (exact: every Float32 is exactly
-// representable in Float64; `float_bits` lowers to a true LLVM bitcast
-// since v0.64.0/m194).
-pub fn vector_encode(v: &Vector) -> Vec[Int] {
-  var out = Vec[Int].new();
-  out.push(v.dimension);
-  var i: Int = 0;
-  while i < v.dimension {
-    out.push(float.float_bits(v.data[i] as Float64));
-    i = i + 1;
-  }
-  return out;
-}
-
-// Rebuild a vector from a WAL payload; None on any malformed shape (short
-// buffer, invalid dim, length mismatch) so recovery can skip torn records.
-pub fn vector_decode(payload: &Vec[Int]) -> Option[Vector] {
-  if payload.len() < 1 { return None; }
-  var dim = payload[0];
-  if !dimension.dimension_is_valid(dim) { return None; }
-  if payload.len() != dim + 1 { return None; }
-  var v = Vector.new(dim);
-  var i: Int = 0;
-  while i < dim {
-    v.data[i] = float.bits_to_float(payload[i + 1]) as Float32;
-    i = i + 1;
-  }
-  return Some(v);
-}
+// ---- Durable vector codec ----
+// The WAL payload codec ([dim, bits0, ...] + strict decode) lives in the
+// `xiom.vectors` registry package since the 2026-10-10 adoption; this
+// module imports it and `vector_encode`/`vector_decode` resolve through
+// that import (extraction pins verified byte-identical source; see
+// docs/XIOM-VECTORS-EVAL.md).

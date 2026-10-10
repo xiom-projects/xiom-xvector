@@ -24,8 +24,8 @@ limits) would create drift: recovery would need to parse multiple log shapes, a
 |---------|-------------|------------------|--------------------------------|
 | Errors | `xiom.core.error` | `CoreError`, `core_error_to_str` | `error` (bridges `VectorError -> CoreError`), `engine`, `api`, `validator` |
 | Identity | `xiom.core.ids` | `CollectionId`, `VectorId`, `SegmentId` (+ constructors/eq) | `ids` (adds `PointId`), `collection`, `segment`, `manifest`, `engine` |
-| Limits | `xiom.core.limits` | `max_dimensions`, `max_top_k`, `max_graph_degree` | `types.dimension`, `index.ann_index`, `engine` |
-| Predicates | `xiom.core.contracts` | `is_valid_dimension`, `is_valid_top_k` | `types.dimension`, `collection.schema`, `collection.validator`, `engine` |
+| Limits | `xiom.core.limits` | `max_dimensions`, `max_top_k`, `max_graph_degree` | `xiom.vectors`, `index.ann_index`, `engine` |
+| Predicates | `xiom.core.contracts` | `is_valid_dimension`, `is_valid_top_k` | `xiom.vectors`, `collection.schema`, `collection.validator`, `engine` |
 | Config | `xiom.core.config` | `CoreConfig`, `core_config_default` | engine startup (Phase 2) |
 | Durability | `xiom.core.wal.wal_writer` | `WalWriter`, `wal_writer_new`, `wal_writer_append` | `durability.write_ahead_events`, `engine` |
 | WAL format | `xiom.core.wal.wal_record` | `WalOpKind` (Insert/Delete/SegmentSeal/ManifestUpdate) | `durability.write_ahead_events` |

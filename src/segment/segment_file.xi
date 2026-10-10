@@ -27,7 +27,7 @@ module xiom.vector.segment.segment_file
 use xiom.io;
 use xiom.convert;
 use xiom.string.slice;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
 use xiom.vector.storage.vector_store;

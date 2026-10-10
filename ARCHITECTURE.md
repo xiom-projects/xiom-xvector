@@ -160,7 +160,7 @@ durability -> xiom.wal (registry package 0.1.0; record-vocabulary
              alignment + D5 migration target; docs/XIOM-WAL-ADOPTION.md)
 payload.filter_eval -> payload.filter_ast -> payload.payload
 durability.manifest_file -> durability.wal_file (shared byte parsers) +
-                            types.metric + index.ann_index (stable codes)
+                            xiom.vectors metric codes + index.ann_index (stable codes)
 everything fallible -> core.shim (CoreError; the local stand-in until the
                        xiom.core porter flow maps it onto the package)
 ```
