@@ -10,8 +10,9 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (v1.0.0-rc.1 candidate)
-- **Overall:** **80 %** (weighted; see method)
+- **As of:** 2026-10-10 (v1.0.0-rc.1 candidate; two registry adoptions
+  landed)
+- **Overall:** **81 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -32,12 +33,12 @@ the code merely exists. Blockers are named; blocked work still scores.
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 89 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
-| H | Observability & operability | 5 | 70 | buildable | xiom.metrics adoption (Phase 10), dashboards/alert wiring |
+| H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 58 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x74 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x58 = **80.04 -> 80 %**.
+0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x58 = **80.94 -> 81 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -175,7 +176,7 @@ active collection.
 Remaining: concurrent readers, write serialization model, segment growth /
 compaction policy, memory budget, scale tuning beyond the baseline.
 
-### H. Observability & operability -- 70 %
+### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
 `observability.metrics` (fixed-bucket latency histograms with
 `_sum`/`_count`/p50/p95/p99; the service counter bundle; a bounded,
@@ -184,12 +185,20 @@ sanitized JSON log ring with slow-query flag), the public prometheus-style
 collections/points_active/lsn), `/health` readiness, per-request
 instrumentation through `http_service_handle_state`, and
 `docs/OPERATIONS.md` (runbook + failure domains + backup drill). Gate
-`probe_metrics` (23 checks).
-Remaining: `xiom.metrics` adoption (Phase 10), dashboards/alert wiring in
-the deployment, recall-proxy metrics on demand.
+`probe_metrics` (now 24 checks). **`xiom.metrics` 0.2.0 adoption landed
+2026-10-10**: the module internals run on the registry package behind the
+same surface (`/metrics` byte-identical; package Histogram/Counter value
+types, lane accessors + percentile helper, package-first-fit buckets),
+the engine stat counters moved onto the package and the core shim
+`Counter` was retired (single-type rule after **XVC-C-14**); new direct
+package gate `probe_package_metrics` (12 checks). Record:
+`docs/XIOM-METRICS-ADOPTION.md`.
+Remaining: dashboards/alert wiring in the deployment (owner-side), the
+presentation evaluation (package labels/exposition, optional), and
+recall-proxy metrics on demand.
 
 ### I. Testing & verification -- 94 %
-Done: 171-check conformance suite (x2 Windows + WSL), 31 probes, build-time
+Done: 171-check conformance suite (x2 Windows + WSL), 34 probes, build-time
 watchdog, rebuild-on-red discipline, per-build numeric gates, per-build
 compiler-workaround pins (XVC-C-04 shape matrix, C-01 bind semantics), a
 deterministic fuzz gate (`probe_fuzz_codecs`), a mixed-workload soak
@@ -207,7 +216,10 @@ routing, wire shapes, honest statuses), the **HTTP fuzz + abuse gate**
 resource-exhaustion cases), and
 the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 (C-03/06/07/08 + C-10; C-11/C-12 in-context; C-09 repro) with the C-07/C-08
-workarounds reverted; the suite asserts trailing-field flags again.
+workarounds reverted; the suite asserts trailing-field flags again; two
+registry-adoption gates with direct package-consumption checks
+(`probe_package_wal` 9 checks, `probe_package_metrics` 12 checks); the
+XVC-C-14 layout-shadow repro bundle (`docs/repro/xv-counter-type-shadow/`).
 Remaining: CI runner activation.
 
 ### J. Ecosystem & release engineering -- 58 %
@@ -225,10 +237,12 @@ backup/restore drill, failure domains, migration, diagnostics), and the
 **release candidate package** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md`,
 `docs/sbom-v1.0.0-rc.1.json`, `docs/OWNER-HANDOFF.md`, an audited
 `docs/RELEASE-CHECKLIST.md`, annotated tag `v1.0.0-rc.1`), and the
-**first registry-package adoption** (`xiom.wal` 0.1.0: install + ed25519
+**registry-package adoptions** (`xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0:
+installs + ed25519
 verification + `xiom pkg trust` pin + `xiom.toml [dependencies]` with
-C-PULSE-02 resolved; alignment + migration in
-`docs/XIOM-WAL-ADOPTION.md`; gate `probe_package_wal`).
+C-PULSE-02 resolved; alignment/migration notes in
+`docs/XIOM-WAL-ADOPTION.md` / `docs/XIOM-METRICS-ADOPTION.md`; gates
+`probe_package_wal` / `probe_package_metrics`).
 Remaining: self-hosted runners activation, branch rulesets on greenlight,
 staging E2E (parked until the owner greenlights public release), porter
 extraction with the packages lane.
@@ -240,7 +254,7 @@ extraction with the packages lane.
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
 | M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint + atomic swap (M-D1); durable registry file (M-D2); multi-collection routed recovery + whole-registry manifest (M-D3); sealed segment files with engine seal/restore (M-D4); fsync/append delta, multi-segment reads, file-level kill test, retention blocked on stdlib fsync/append |
 | M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | In progress: HNSW hardening (recall harness, tombstones, compaction, codec) + payload index + planner + multi-collection registry + benchmark harness landed; concurrency/serialization and scale tuning pending |
-| M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | Not started (release gate is owner's) |
+| M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | In progress: observability + the metrics adoption landed, soak/fuzz green, release candidate + stamp (rc.1) prepared; staging E2E + public release owner-gated |
 
 ## Change log
 
@@ -726,6 +740,24 @@ extraction with the packages lane.
   open -> acked -> fixed with the commit ref. D 73 -> 74; overall 79.84
   -> 80.04 -> 80 %. Evidence: full batteries (suite 171/171 x2 + sbom +
   33 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
+- **2026-10-10 (fifty-fifth pass):** xiom.metrics 0.2.0 adoption --
+  `observability.metrics` internals swapped onto the registry package
+  behind the same exported surface (`/metrics` byte-identical: package
+  Histogram/Counter value types, lane accessors + percentile helper, the
+  Prometheus histogram block moved into the module); engine stat counters
+  (`upserts`/`deletes`) moved onto the package and the core shim Counter
+  retired. Found **XVC-C-14** (two same-named struct types across
+  modules shadow each other's field layout: clang store reject when the
+  shapes differ, silent wrong fields when they match); repro
+  `docs/repro/xv-counter-type-shadow/` (Windows + WSL identical), relay
+  Addendum 10, bus `REL-20261010-1709-xvector`; workaround = one type
+  name, one type. Bus: `REL-20261010-1550-xvector-7` (stdlib json depth
+  cap) verified + closed (128-deep Ok; 129/60000 Err; Windows + WSL
+  identical). Gates: `probe_package_metrics` (12 checks) + re-gated
+  `probe_metrics` (24 checks); batteries now 34 probes. H 70 -> 88;
+  overall 80.04 -> 80.94 -> 81 %. Evidence: full batteries (suite
+  171/171 x2 + sbom + 34 probes x2 + bench smoke, Windows + WSL), ALL
+  GATES GREEN.
 
 ## Update rule
 
