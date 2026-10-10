@@ -111,21 +111,25 @@ ann_params)`; `compact_index` reclaims tombstones.
 - **Project key:** `xiom.xvector` `0.2.0` (`xiom.toml`); registry manifest
   `xiom-vector` `0.2.0` (`package.xi`) -- **not published yet**; consume at
   source until the owner's release.
-- **Dependencies:** stdlib only today; the core substrate is an inline shim
-  (`src/core/shim.xi`) planned for porter-mapping onto `xiom.core`. No
-  registry dependency yet (C-PULSE-02 `source-roots` applies at first
-  adoption).
+- **Dependencies:** stdlib **plus five registry packages** (the 2026-10-10
+  adoptions: `xiom.wal` 0.1.0, `xiom.metrics` 0.2.0, `xiom.rate` 0.2.0,
+  `xiom.http` 0.1.4, `xiom.vectors` 0.1.0 -- `xiom.toml [dependencies]`).
+  Consumers building the facade source need these in their package home
+  (`xiom pkg install ...`; C-PULSE-02 resolved in v0.64.2). The core
+  shim (`src/core/shim.xi`) is error/ids/contracts only now (its metrics
+  part moved onto `xiom.metrics`).
 - **C ABI:** none. Pure XIOM source composition (PULSE's driver wraps the
   module API directly; a bindings/C layer would be new work, prefer source).
 - **Platform matrix:** windows-x64 **GREEN**; linux-x64 (WSL Ubuntu)
-  **GREEN** -- both: suite 169/169 x2 + 18 probes x2 on compiler v0.64.2.
+  **GREEN** -- both: suite 171/171 x2 + 37 probes x2 + sbom + bench
+  smoke on compiler v0.64.3 (lane-local toolchain + package home).
   macos-x64 / macos-arm64 **UNTESTED** (no toolchain here; upstream Darwin
   items from PULSE's C-PULSE-14 index still gate macOS broadly).
 
 ## 3. Pin + stability
 
-- **Pin:** `de1db14` (2026-10-09) + the commit that adds this file; re-read
-  this file every wrap -- the pin line is updated here.
+- **Pin:** `06f7204` (2026-10-10) + the commit that updates this file;
+  re-read this file every wrap -- the pin line is updated here.
 - **Guaranteed** (suite x2 + probes x2 both platforms): facade
   `create_collection/upsert/search/delete_point/get_point/set_payload/
   get_payload/search_filtered`; `engine_new`; WAL checkpoint/recover;
@@ -141,8 +145,13 @@ ann_params)`; `compact_index` reclaims tombstones.
 
 ## 4. Consumer-affecting findings + lifecycle
 
-- **Open XVECTOR findings: none** on compiler v0.64.2 -- all XVC-C-01..C-12
-  verified fixed or fixed-in-context (`docs/COMPILER-FINDINGS-XVECTOR.md`);
+- **Open XVECTOR findings: two caller-side rules** on compiler
+  v0.64.2/v0.64.3 -- **XVC-C-13**: never declare `&Str` parameters (the
+  checker defaults them to i64; pass `Str` by value); **XVC-C-14**:
+  never let two same-named struct types meet in one program (the
+  short-name layout shadow -- do not define types named like consumed
+  package types, e.g. `Counter`/`Vector`). XVC-C-01..C-12 verified fixed
+  or fixed-in-context (`docs/COMPILER-FINDINGS-XVECTOR.md`); the
   retained workarounds are internal.
 - **C-PULSE-14 (RSS growth) is relevant here too:** Windows is flat on
   v0.64.2; **Linux still grows (~87 KB/req in PULSE's measurement; the

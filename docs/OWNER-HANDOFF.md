@@ -12,7 +12,7 @@ repository stays private; nothing below happens until the owner greenlights.
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
 - **Batteries (at the candidate):** suite 171/171 x2 + SBOM/unsafe gate +
   32 probes x2 + bench smoke on Windows **and** WSL -- ALL GATES GREEN.
-- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **80 %**
+- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **81 %**
   ("hardened core"; remaining gaps are the gated durability primitives,
   concurrency, and release-runner activation, all documented).
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
@@ -48,11 +48,11 @@ repository stays private; nothing below happens until the owner greenlights.
 
 | Gate | Primitive | Unblocks |
 |---|---|---|
-| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | still stubs at stdlib `d2b18dc` | D5 delta append log, D6 retention, fsync-grade durability (M2 exit) |
+| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | still stubs at stdlib `5468469` | D5 delta append log, D6 retention, fsync-grade durability (M2 exit) |
 | stdlib `xiom.net` server proof (C-PULSE-02) | pending | binding the HTTP pipeline to a real socket; TLS/proxy deployment |
 | stdlib `mmap` | pending | P5 memory-mapped reads |
-| packages `xiom.wal` adoption | published 0.1.0 (registry-live) | single-WAL-home alignment; triage recorded in `docs/PACKAGE-WISHLIST-XVECTOR.md` |
-| compiler archive > v0.64.2 | lane `d481c490` post-tag fixes | re-run repro bundles + batteries, then re-pin (XVC-C-13 is the open finding) |
+| packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated (2026-10-10; `xiom.vectors` is the lane's own code, byte-exact carve) | the `xiom.vectors` atomic internals swap awaits owner greenlight (`REL-...-xvector-12`); `xiom.ann` porter flow next |
+| compiler archive > v0.64.3 | **v0.64.3 re-pinned 2026-10-10** (lane-local; full re-test done -- 12 repro bundles; XVC-C-13/C-14 remain open, release-check verdicts filed on the bus) | repeat the re-test procedure at the next archive (repro bundles first, then suite + probes + bench, then re-pin) |
 
 ## 4. Evidence index
 
