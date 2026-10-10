@@ -355,8 +355,9 @@ http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
            (constant-time compare, xiom.crypto.mac), scopes
            read < write < admin; /health public; 401/403 kinds
 
-  rate     RateLimiter: token bucket (capacity + refill/sec, explicit
-           clock); exhaustion -> 429 rate_limited
+  rate     RateLimiter: xiom.rate-backed token bucket (carry-exact
+           fractional refill; explicit clock); exhaustion -> 429
+           rate_limited
 
   state    ServiceState { cfg; auth; rate; metrics; log } +
            http_service_handle_state = rate -> parse -> auth/scope ->

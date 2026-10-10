@@ -49,13 +49,14 @@ Implemented today: `DistanceMetric` + the three distances + `vector_distance` (m
 - `metric_code(m) -> Int` / `metric_from_code(c)` -- stable on-disk codes
   (1 = Cosine, 2 = DotProduct, 3 = Euclidean), shared by the WAL collection
   manifest and the manifest file (D2). `Str` parameters are always by value
-  (`&Str` mislowers on v0.64.2 -- XVC-C-13).
+  (`&Str` mislowers on v0.64.2/v0.64.3 -- XVC-C-13).
 - `metric_name(m) -> Str`.
 - Reference oracle (M-G1, `tests/probes/probe_reference_oracle.xi`): an
   INDEPENDENT Float64 oracle (its own loops over the raw Float32 storage,
   `math.sqrt` in Float64, no `vector_distance` calls) cross-checks all
   three kernels pairwise (780 seeded pairs each; per-build deviation
-  reports -- cosine ~1.7e-7, dot ~9.8e-7, euclidean ~5.1e-7 on v0.64.2,
+  reports -- cosine ~1.7e-7, dot ~9.8e-7, euclidean ~5.1e-7 on v0.64.2
+  (unchanged on v0.64.3),
   bit-identical Windows/WSL), the metric axioms (exact symmetry,
   self-distance `l2==0` / `cosine~0` / `dot==-|v|^2`, euclidean triangle
   inequality, cosine bounds `[0,2]` + exact x2 scale invariance,
@@ -467,8 +468,11 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   `/health` public; `POST /collections` -> Admin; points POST/DELETE ->
   Write; everything else routed (GETs, `POST /search`) -> Read. Missing
   key -> 401 `unauthorized`; unknown key -> 401; insufficient scope -> 403
-  `forbidden`. `RateLimiter` is a minimal token bucket (capacity +
-  refill/sec, explicit `now_ms` so the math is deterministic);
+  `forbidden`. `RateLimiter` is the S3 token bucket, package-backed since
+  the 2026-10-10 adoption (`xiom.rate` 0.2.0 behind the same
+  `rate_limiter_new/_disabled/_allow` API; carry-exact fractional refill;
+  explicit `now_ms` so the math is deterministic; see
+  `docs/XIOM-RATE-ADOPTION.md`);
   `ServiceState { cfg; auth; rate }` + `http_service_handle_state` run
   rate limit -> parse -> auth/scope -> route (auth disabled behaves
   exactly like `handle_cfg`); exhaustion -> 429 `rate_limited`. Gate:
@@ -483,23 +487,29 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   threat model, secure defaults and the no-unsafe audit statement;
   `scripts/sbom.ps1`/`scripts/sbom.sh` emit `out/sbom.json` (project +
   compiler + stdlib pin + per-module sha256 + registry deps) and fail
-  when `unsafe` appears in `src/` (0 across 43 modules); both batteries
+  when `unsafe` appears in `src/` (0 across 44 modules); both batteries
   run the SBOM + unsafe gate. Gate: `tests/probes/probe_http_fuzz.xi`
   (14 checks: 2500 deterministic fuzz inputs all well-formed; targeted
   abuse incl. lying Content-Length, header floods, 60 KB unbalanced
   JSON, 8000-deep nesting, NUL bytes, path/segment bombs, bursts).
 
 ## `xiom.vector.observability.metrics` (M-O)
-In-repo observability primitives (dependency-free; `xiom.metrics` adoption
-stays Phase 10 and registry deps are still unmapped by the compiler).
-- `Histogram { bounds; counts; total_ms; observations }` +
-  `histogram_new/observe/percentile`: fixed upper bounds 1/5/10/50/100/500/
-  1000 ms plus an implicit `+Inf` bucket; percentiles are bucket upper
-  bounds at `rank = ceil(p/100 * observations)` (the `+Inf` bucket reports
-  as `last bound + 1`); empty histograms return 0.
+Package-backed since the 2026-10-10 adoption: the internals run on
+`xiom.metrics` 0.2.0 behind the same exported surface (`/metrics` output
+byte-identical; `docs/XIOM-METRICS-ADOPTION.md`), and the engine stat
+counters ride the same package.
+- `Histogram` (the package value type; lane accessors
+  `histogram_count/_sum/_min/_max/_mean/_bucket_len/_bucket_count/
+  _bounds_len/_bound`) + `histogram_new/observe/percentile`: fixed upper
+  bounds 1/5/10/50/100/500/1000 ms plus an implicit `+Inf` bucket;
+  percentiles are bucket upper bounds at
+  `rank = ceil(p/100 * observations)` (the `+Inf` bucket reports as
+  `last bound + 1`, lane-owned -- the package excludes percentiles); empty
+  histograms return 0.
 - `ServiceMetrics { requests_total; errors_total; search_ops; upsert_ops;
   auth_failures; rate_limited; latency_ms; search_latency_ms }` +
-  `service_metrics_new` (shim `Counter`s; search_ops counts ATTEMPTS,
+  `service_metrics_new` (package `Counter`s via
+  `service_counter_inc/_value`; search_ops counts ATTEMPTS,
   including 400s).
 - `LogRing { lines; capacity; slow_ms; dropped }` + `log_ring_new/push`:
   bounded ring of JSON log lines (`method/path/status/ms/slow`); hostile
@@ -513,7 +523,9 @@ stays Phase 10 and registry deps are still unmapped by the compiler).
   request (status-derived counters, latency observe, op classification,
   one log line) -- the metrics struct is copied out and written back once
   (nested-field mutation through a `&mut` param does not persist,
-  XVC-C-09 family). Gate: `tests/probes/probe_metrics.xi` (23 checks).
+  XVC-C-09 family). Gate: `tests/probes/probe_metrics.xi` (24 checks;
+  the package-stats alignment check pins min/max/mean) +
+  `tests/probes/probe_package_metrics.xi` (12 checks, direct package).
 
 ---
 

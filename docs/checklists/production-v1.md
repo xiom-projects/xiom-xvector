@@ -104,12 +104,13 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-O -- Observability & operability
 
-- [x] O1 metrics surface **(done 2026-10-09)**: `observability.metrics`
-  (dependency-free; `xiom.metrics` adoption stays Phase 10) -- counters
+- [x] O1 metrics surface **(done 2026-10-09; package-backed 2026-10-10)**:
+  `observability.metrics` (internals on `xiom.metrics` 0.2.0 behind the
+  same surface) -- counters
   (requests/errors/search/upsert/auth_failures/rate_limited), latency
   histograms (global + search; 1/5/10/50/100/500/1000 ms + `+Inf`,
   p50/p95/p99), live gauges (collections/points/lsn); `probe_metrics`
-  (23 checks)
+  (24 checks; `probe_package_metrics` 12)
 - [x] O2 `/metrics` + `/health` (live/ready) + structured logs + slow-query
   log **(done 2026-10-09)**: public `GET /metrics` (prometheus text;
   counters + histograms + gauges), `/health` carries `ready:true`, bounded
