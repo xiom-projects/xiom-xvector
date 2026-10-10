@@ -228,9 +228,12 @@ Goal: the service surface the ecosystem and benchmarks consume.
   accepted), the `{error,kind,status}` JSON model mapped from the full
   `CoreError` enum, and `http_service_shutdown` (drain + whole-file WAL
   checkpoint). Gate `probe_service_limits` (27 checks).
-- **S3 auth** -- API keys (header, constant-time compare, scopes:
-  read/write/admin), disabled-by-default only in embedded mode; rate
-  limiting via `xiom.rate` if suitable, else minimal token bucket.
+- **S3 auth -- DONE 2026-10-09** -- API keys via `x-api-key` with the
+  stdlib constant-time comparator (`xiom.crypto.mac.constant_time_eq`),
+  scopes read/write/admin (route map; `/health` public), env loader
+  `XVECTOR_API_KEYS`, 401/403 kinds; minimal token-bucket `RateLimiter`
+  (429) wired through `ServiceState` + `http_service_handle_state`
+  (embedded default off). Gate `probe_service_auth` (24 checks).
 - **S4 security pass** -- threat model doc (asset/trust boundaries),
   HTTP input fuzzing + codec fuzz gates, resource-exhaustion tests,
   dependency pinning + SBOM, `unsafe` audit statement, secure defaults,
@@ -305,7 +308,7 @@ deep quantization + tiered storage, client SDKs.
 | 9 | Reference oracle -- **DONE 2026-10-09** | G1 | `probe_reference_oracle` (22 checks) |
 | 10 | HTTP skeleton + health -- **DONE 2026-10-09** | S1 | `probe_http_service` (40 checks) |
 | 11 | Config/limits/errors -- **DONE 2026-10-09** | S2 | `probe_service_limits` (27 checks) |
-| 12 | Auth | S3 | auth probe (reject/accept, scopes) |
+| 12 | Auth -- **DONE 2026-10-09** | S3 | `probe_service_auth` (24 checks: reject/accept, scopes, rate) |
 
 Gated items (D5 fsync chain, P5 mmap, truncate-based retention) are picked
 up the moment the stdlib lane lands the primitives; re-check every pass.

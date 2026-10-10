@@ -89,8 +89,13 @@ needed) -> signed commit. Red build = rejection.
   limits (413 size/batch, 400 named k/dim); `{error,kind,status}` over the
   full CoreError enum; `http_service_shutdown` WAL checkpoint;
   `probe_service_limits` (27 checks)
-- [ ] S3 auth: API keys, constant-time compare, scopes; rate limiting;
-  auth-on-by-default in service mode; auth probe
+- [x] S3 auth: API keys, constant-time compare, scopes; rate limiting;
+  auth-on-by-default in service mode; auth probe **(done 2026-10-09)**:
+  `ServiceAuth` via `x-api-key` (stdlib constant-time compare; scopes
+  read/write/admin; `XVECTOR_API_KEYS`), 401/403 kinds, token-bucket
+  `RateLimiter` (429), `ServiceState` + `http_service_handle_state`
+  (embedded default off; service adapter enables);
+  `probe_service_auth` (24 checks)
 - [ ] S4 security pass: threat model, HTTP fuzz gate, resource-exhaustion
   tests, dependency pins + SBOM, `docs/SECURITY.md`, unsafe audit statement
 

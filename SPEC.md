@@ -444,6 +444,23 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   embedded-mode drain + checkpoint (whole-file WAL persist; false on an
   unwritable path). Gate: `tests/probes/probe_service_limits.xi`
   (27 checks).
+- S3 (auth + rate limiting): `ApiScope { Read; Write; Admin }` (ordered) +
+  `ServiceAuth { enabled; keys }` -- disabled by default in embedded mode;
+  `service_auth_add_key` validates keys (8..128 chars of `[A-Za-z0-9_.-]`,
+  duplicates rejected) and the first key enables auth; lookups compare
+  through the stdlib constant-time comparator
+  (`xiom.crypto.mac.constant_time_eq`) across all keys.
+  `service_auth_parse_list` parses `key:scope,...` (malformed skipped);
+  `service_auth_from_env` loads `XVECTOR_API_KEYS`. Route scope map:
+  `/health` public; `POST /collections` -> Admin; points POST/DELETE ->
+  Write; everything else routed (GETs, `POST /search`) -> Read. Missing
+  key -> 401 `unauthorized`; unknown key -> 401; insufficient scope -> 403
+  `forbidden`. `RateLimiter` is a minimal token bucket (capacity +
+  refill/sec, explicit `now_ms` so the math is deterministic);
+  `ServiceState { cfg; auth; rate }` + `http_service_handle_state` run
+  rate limit -> parse -> auth/scope -> route (auth disabled behaves
+  exactly like `handle_cfg`); exhaustion -> 429 `rate_limited`. Gate:
+  `tests/probes/probe_service_auth.xi` (24 checks).
 
 ---
 

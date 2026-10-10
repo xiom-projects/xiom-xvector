@@ -345,6 +345,16 @@ http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
            key=value file; enforced in handle_cfg (413 size/batch,
            400 named top_k/dim); handle() = default config
 
+  auth     ServiceAuth (M-S3): API keys via `x-api-key`
+           (constant-time compare, xiom.crypto.mac), scopes
+           read < write < admin; /health public; 401/403 kinds
+
+  rate     RateLimiter: token bucket (capacity + refill/sec, explicit
+           clock); exhaustion -> 429 rate_limited
+
+  state    ServiceState { cfg; auth; rate } + http_service_handle_state
+           = rate -> parse -> auth/scope -> route (auth off == handle_cfg)
+
   shutdown http_service_shutdown(eng, wal_path) = drain (no-op embedded)
            + whole-file WAL checkpoint
 ```
