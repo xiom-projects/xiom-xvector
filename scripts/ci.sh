@@ -40,6 +40,7 @@ probes=(
   probe_reference_oracle
   probe_http_service
   probe_service_limits
+  probe_service_auth
   probe_batch_ops
 )
 

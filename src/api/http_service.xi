@@ -30,6 +30,8 @@ use xiom.io;
 use xiom.string.slice;
 use xiom.serialize.json;
 use xiom.os.env;
+use xiom.time;
+use xiom.crypto.mac;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.core.shim;
@@ -375,16 +377,254 @@ pub fn http_service_shutdown(eng: &VectorEngine, wal_path: Str) -> Bool {
   return wal_persist(&eng.wal, wal_path);
 }
 
+// ---- Auth + rate limiting (M-S3) ----
+
+pub enum ApiScope {
+  Read,
+  Write,
+  Admin,
+}
+
+pub type ApiKey = {
+  key: Str;
+  scope: ApiScope;
+}
+
+// Service auth state: disabled by default (embedded mode); the socket/
+// service adapter enables it. Keys are checked with the stdlib
+// constant-time comparator (xiom.crypto.mac.constant_time_eq).
+pub type ServiceAuth = {
+  enabled: Bool;
+  keys: Vec[ApiKey];
+}
+
+pub fn service_auth_new() -> ServiceAuth {
+  return ServiceAuth{ enabled: false, keys: Vec[ApiKey].new() };
+}
+
+fn scope_code(s: ApiScope) -> Int {
+  if s == ApiScope.Write { return 1; }
+  if s == ApiScope.Admin { return 2; }
+  return 0;
+}
+
+// Key rules: 8..128 chars from [A-Za-z0-9_.-].
+pub fn api_key_valid(key: Str) -> Bool {
+  var b = slice.str_bytes(key);
+  if b.len() < 8 || b.len() > 128 { return false; }
+  var i: Int = 0;
+  while i < b.len() {
+    var c = b[i];
+    var okc: Bool = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 45 || c == 46;
+    if !okc { return false; }
+    i = i + 1;
+  }
+  return true;
+}
+
+// Add a key: rejects invalid keys and duplicates; the first accepted key
+// enables auth.
+pub fn service_auth_add_key(auth: &mut ServiceAuth, key: Str, scope: ApiScope) -> Bool {
+  if !api_key_valid(key) { return false; }
+  var i: Int = 0;
+  while i < auth.keys.len() {
+    if auth.keys[i].key == key { return false; }
+    i = i + 1;
+  }
+  auth.keys.push(ApiKey{ key: key, scope: scope });
+  auth.enabled = true;
+  return true;
+}
+
+fn auth_lookup(auth: &ServiceAuth, presented: Str) -> Option[ApiScope] {
+  var pb = slice.str_bytes(presented);
+  var found: Bool = false;
+  var scope: ApiScope = ApiScope.Read;
+  var i: Int = 0;
+  while i < auth.keys.len() {
+    var kb = slice.str_bytes(auth.keys[i].key);
+    if mac.constant_time_eq(&pb, &kb) {
+      found = true;
+      scope = auth.keys[i].scope;
+    }
+    i = i + 1;
+  }
+  if !found { return None; }
+  return Some(scope);
+}
+
+fn scope_from_name(s: Str) -> Option[ApiScope] {
+  if s == "read" { return Some(ApiScope.Read); }
+  if s == "write" { return Some(ApiScope.Write); }
+  if s == "admin" { return Some(ApiScope.Admin); }
+  return None;
+}
+
+// Parse a comma-separated `key:scope` list (used by the env loader and
+// tests); malformed entries are skipped. Returns the number added.
+pub fn service_auth_parse_list(auth: &mut ServiceAuth, list: Str) -> Int {
+  var added: Int = 0;
+  var b = slice.str_bytes(list);
+  var start: Int = 0;
+  var i: Int = 0;
+  while i <= b.len() {
+    if i == b.len() || b[i] == 44 {
+      var colon: Int = -1;
+      var j: Int = start;
+      while j < i {
+        if b[j] == 58 {
+          colon = j;
+          j = i;
+        } else {
+          j = j + 1;
+        }
+      }
+      if colon > start {
+        var key = bytes_to_str(&b, start, colon);
+        var sc = bytes_to_str(&b, colon + 1, i);
+        match scope_from_name(sc) {
+          Some(sc2) => {
+            if service_auth_add_key(auth, key, sc2) { added = added + 1; }
+          }
+          None => {}
+        }
+      }
+      start = i + 1;
+    }
+    i = i + 1;
+  }
+  return added;
+}
+
+// Env loader: XVECTOR_API_KEYS="key1:admin,key2:read". Returns the number
+// of keys added; a missing variable adds none (auth stays disabled).
+pub fn service_auth_from_env(auth: &mut ServiceAuth) -> Int {
+  var got = env.var_opt("XVECTOR_API_KEYS");
+  match got {
+    Some(v) => { return service_auth_parse_list(auth, v); }
+    None => {}
+  }
+  return 0;
+}
+
+// Minimal token bucket: capacity + refill/second; consumes one token per
+// allowed request. `now_ms` is explicit so the math is deterministic in
+// tests (the service passes monotonic time).
+pub type RateLimiter = {
+  enabled: Bool;
+  capacity: Int;
+  refill_per_sec: Int;
+  tokens: Int;
+  last_ms: Int;
+}
+
+pub fn rate_limiter_disabled() -> RateLimiter {
+  return RateLimiter{ enabled: false, capacity: 0, refill_per_sec: 0, tokens: 0, last_ms: 0 };
+}
+
+pub fn rate_limiter_new(capacity: Int, refill_per_sec: Int) -> RateLimiter {
+  if capacity < 1 { return rate_limiter_disabled(); }
+  return RateLimiter{ enabled: true, capacity: capacity, refill_per_sec: refill_per_sec, tokens: capacity, last_ms: -1 };
+}
+
+pub fn rate_limiter_allow(lim: &mut RateLimiter, now_ms: Int) -> Bool {
+  if !lim.enabled { return true; }
+  if lim.last_ms < 0 { lim.last_ms = now_ms; }
+  var elapsed: Int = now_ms - lim.last_ms;
+  if elapsed < 0 { elapsed = 0; }
+  if elapsed > 0 {
+    var refill: Int = elapsed * lim.refill_per_sec / 1000;
+    if refill > 0 {
+      lim.tokens = lim.tokens + refill;
+      if lim.tokens > lim.capacity { lim.tokens = lim.capacity; }
+    }
+    lim.last_ms = now_ms;
+  }
+  if lim.tokens < 1 { return false; }
+  lim.tokens = lim.tokens - 1;
+  return true;
+}
+
+// The full service state: limits/config (S2), auth (S3), rate limiting.
+pub type ServiceState = {
+  cfg: ServiceConfig;
+  auth: ServiceAuth;
+  rate: RateLimiter;
+}
+
+pub fn service_state_new() -> ServiceState {
+  return ServiceState{
+    cfg: service_config_default(),
+    auth: service_auth_new(),
+    rate: rate_limiter_disabled(),
+  };
+}
+
+// Required scope for a routed request; None = public (/health only).
+fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
+  var segs = path_segments(path);
+  if segs.len() == 1 && segs[0] == "health" { return None; }
+  if segs.len() == 1 && segs[0] == "collections" && method == "POST" { return Some(ApiScope.Admin); }
+  if segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
+    if method == "POST" || method == "DELETE" { return Some(ApiScope.Write); }
+    return Some(ApiScope.Read);
+  }
+  return Some(ApiScope.Read);
+}
+
+// State-aware entry point: rate limit -> parse -> auth/scope -> route.
+// Auth is skipped entirely while `auth.enabled` is false (embedded mode);
+// /health is always public. Scope order: read < write < admin.
+pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec[UInt8], st: &mut ServiceState) -> Vec[UInt8] {
+  var now = time.monotonic_ms();
+  if !rate_limiter_allow(&mut st.rate, now) {
+    return jerror(429, "rate limit exceeded");
+  }
+  if st.auth.enabled {
+    var req = http_parse_request(raw);
+    if req.ok {
+      var need_opt = required_scope(req.method, req.path);
+      match need_opt {
+        Some(need) => {
+          var presented: Str = "";
+          var have: Bool = false;
+          match http_header(&req, "x-api-key") {
+            Some(k) => {
+              presented = k;
+              have = true;
+            }
+            None => {}
+          }
+          if !have { return jerror(401, "missing api key"); }
+          match auth_lookup(&st.auth, presented) {
+            Some(got) => {
+              if scope_code(got) < scope_code(need) {
+                return jerror(403, "insufficient scope");
+              }
+            }
+            None => { return jerror(401, "invalid api key"); }
+          }
+        }
+        None => {}
+      }
+    }
+  }
+  return http_service_handle_cfg(eng, raw, &st.cfg);
+}
+
 // ---- Response writing ----
 
 fn status_text(status: Int) -> Str {
   if status == 200 { return "OK"; }
   if status == 201 { return "Created"; }
   if status == 400 { return "Bad Request"; }
+  if status == 401 { return "Unauthorized"; }
+  if status == 403 { return "Forbidden"; }
   if status == 404 { return "Not Found"; }
   if status == 405 { return "Method Not Allowed"; }
   if status == 409 { return "Conflict"; }
   if status == 413 { return "Payload Too Large"; }
+  if status == 429 { return "Too Many Requests"; }
   if status == 500 { return "Internal Server Error"; }
   if status == 501 { return "Not Implemented"; }
   if status == 507 { return "Insufficient Storage"; }
@@ -395,10 +635,13 @@ fn status_text(status: Int) -> Str {
 // from CoreError; consumers can switch on `kind` without parsing text).
 fn kind_for_status(status: Int) -> Str {
   if status == 400 { return "invalid_input"; }
+  if status == 401 { return "unauthorized"; }
+  if status == 403 { return "forbidden"; }
   if status == 404 { return "not_found"; }
   if status == 405 { return "method_not_allowed"; }
   if status == 409 { return "conflict"; }
   if status == 413 { return "too_large"; }
+  if status == 429 { return "rate_limited"; }
   if status == 501 { return "unsupported"; }
   if status == 507 { return "capacity_exceeded"; }
   return "internal";
