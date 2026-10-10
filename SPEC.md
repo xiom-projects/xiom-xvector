@@ -477,6 +477,32 @@ adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
   abuse incl. lying Content-Length, header floods, 60 KB unbalanced
   JSON, 8000-deep nesting, NUL bytes, path/segment bombs, bursts).
 
+## `xiom.vector.observability.metrics` (M-O)
+In-repo observability primitives (dependency-free; `xiom.metrics` adoption
+stays Phase 10 and registry deps are still unmapped by the compiler).
+- `Histogram { bounds; counts; total_ms; observations }` +
+  `histogram_new/observe/percentile`: fixed upper bounds 1/5/10/50/100/500/
+  1000 ms plus an implicit `+Inf` bucket; percentiles are bucket upper
+  bounds at `rank = ceil(p/100 * observations)` (the `+Inf` bucket reports
+  as `last bound + 1`); empty histograms return 0.
+- `ServiceMetrics { requests_total; errors_total; search_ops; upsert_ops;
+  auth_failures; rate_limited; latency_ms; search_latency_ms }` +
+  `service_metrics_new` (shim `Counter`s; search_ops counts ATTEMPTS,
+  including 400s).
+- `LogRing { lines; capacity; slow_ms; dropped }` + `log_ring_new/push`:
+  bounded ring of JSON log lines (`method/path/status/ms/slow`); hostile
+  strings are sanitized (quote/backslash/control -> `_`) so every line
+  parses as JSON; oldest-first eviction with a `dropped` count.
+- Service surfaces: public `GET /metrics` (prometheus text via
+  `http_text_response`: counters, both histograms with cumulative buckets +
+  `_sum`/`_count`/`_p50`/`_p95`/`_p99`, and live gauges
+  `xvector_collections`/`xvector_points_active`/`xvector_lsn`); `/health`
+  carries `ready:true`; `http_service_handle_state` instruments every
+  request (status-derived counters, latency observe, op classification,
+  one log line) -- the metrics struct is copied out and written back once
+  (nested-field mutation through a `&mut` param does not persist,
+  XVC-C-09 family). Gate: `tests/probes/probe_metrics.xi` (23 checks).
+
 ---
 
 ## Distance formulas

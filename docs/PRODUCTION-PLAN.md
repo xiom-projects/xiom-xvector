@@ -248,14 +248,17 @@ auth on by default; SECURITY.md committed.
 
 ### M-O -- Observability & operability
 
-- **O1 metrics adoption** -- `xiom.metrics` wiring: counters (ops, errors,
-  points, lsn), gauges (collections, segments, memory proxy), histograms
-  (latency per op, recall proxy on demand).
-- **O2 surfaces** -- `/metrics` + `/health` (liveness/readiness), structured
-  logs (JSON lines) + slow-query log; probe asserts signals.
-- **O3 runbook & failure modes** -- docs/OPERATIONS.md: start/stop,
-  backup/restore drill, upgrade/migration, known failure domains
-  (ARCHITECTURE 7 extended).
+- **O1 metrics surface -- DONE 2026-10-09** -- in-repo, dependency-free
+  `observability.metrics` (`xiom.metrics` adoption stays Phase 10):
+  counters (requests/errors/search/upsert/auth_failures/rate_limited),
+  fixed-bucket latency histograms (global + search, p50/p95/p99), live
+  gauges (collections/points/lsn). Gate `probe_metrics` (23 checks).
+- **O2 surfaces -- DONE 2026-10-09** -- public `GET /metrics` (prometheus
+  text), `/health` with `ready:true`, bounded structured JSON log ring +
+  slow-query flag, wired through `http_service_handle_state`.
+- **O3 runbook & failure modes -- DONE 2026-10-09** -- `docs/OPERATIONS.md`:
+  start/stop, config reference, monitoring/alerts, backup/restore drill,
+  known failure domains, upgrade/migration notes, quick diagnostics.
 
 Exit: metrics probe; docs complete; ops drill passes.
 
@@ -314,6 +317,8 @@ deep quantization + tiered storage, client SDKs.
 | 11 | Config/limits/errors -- **DONE 2026-10-09** | S2 | `probe_service_limits` (27 checks) |
 | 12 | Auth -- **DONE 2026-10-09** | S3 | `probe_service_auth` (24 checks: reject/accept, scopes, rate) |
 | 13 | Security pass -- **DONE 2026-10-09** | S4 | `probe_http_fuzz` (14 checks) + sbom/unsafe gate + `docs/SECURITY.md` |
+| 14 | Metrics/health/logs -- **DONE 2026-10-09** | O1/O2 | `probe_metrics` (23 checks) |
+| 15 | Runbook -- **DONE 2026-10-09** | O3 | `docs/OPERATIONS.md` |
 
 Gated items (D5 fsync chain, P5 mmap, truncate-based retention) are picked
 up the moment the stdlib lane lands the primitives; re-check every pass.

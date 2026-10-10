@@ -239,6 +239,11 @@ See [`docs/segment-lifecycle.md`](docs/segment-lifecycle.md).
   (`probe_http_fuzz`, 2500 deterministic inputs) with the JSON depth
   guard fixing a found stack-overflow DoS; SBOM + unsafe gate
   (`scripts/sbom.ps1`/`sbom.sh`) wired into both batteries.
+- [OK] Observability surfaces (M-O): `observability.metrics` (counters +
+  fixed-bucket latency histograms + bounded JSON log ring), public
+  `GET /metrics` (prometheus text + live gauges), `/health` readiness,
+  per-request instrumentation; `docs/OPERATIONS.md` runbook; gate
+  `probe_metrics` (23 checks).
 - [STOP] `get_point` via id_map + manifest once multi-segment lands.
 
 **Exit criteria:** the v1 facade covers the full single-collection lifecycle;

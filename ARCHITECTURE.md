@@ -130,6 +130,8 @@ src/
 `-- api/
     |-- vector_api.xi     merged stub -- the facade lives in engine.xi  [MERGED]
     `-- http_service.xi   HTTP/1.1 byte pipeline + router            [NEW 2026-10-09]
+`-- observability/
+    `-- metrics.xi        histogram + service counters + log ring    [NEW 2026-10-09]
 ```
 
 ### Dependency direction
@@ -354,8 +356,17 @@ http_service_handle(eng, raw_bytes) -> response_bytes    (pure, deterministic)
   rate     RateLimiter: token bucket (capacity + refill/sec, explicit
            clock); exhaustion -> 429 rate_limited
 
-  state    ServiceState { cfg; auth; rate } + http_service_handle_state
-           = rate -> parse -> auth/scope -> route (auth off == handle_cfg)
+  state    ServiceState { cfg; auth; rate; metrics; log } +
+           http_service_handle_state = rate -> parse -> auth/scope ->
+           route, instrumented (counters/histograms/log per request;
+           metrics copied out + written back once -- XVC-C-09)
+
+  metrics  GET /metrics (public): counters + histograms (cumulative
+           buckets, +Inf, p50/p95/p99) + live gauges (collections/
+           points_active/lsn); /health carries ready:true
+
+  logs     bounded JSON log ring (method/path/status/ms/slow; sanitized;
+           dropped count) -- the socket adapter pipes it out
 
   shutdown http_service_shutdown(eng, wal_path) = drain (no-op embedded)
            + whole-file WAL checkpoint

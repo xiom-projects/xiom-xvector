@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-09 (post M-S4 security pass)
-- **Overall:** **77 %** (weighted; see method)
+- **As of:** 2026-10-09 (post M-O observability core)
+- **Overall:** **80 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -32,12 +32,12 @@ the code merely exists. Blockers are named; blocked work still scores.
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 89 | buildable | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
-| H | Observability & operability | 5 | 28 | scaffold | metrics surface, /metrics + readiness, latency/recall histograms, structured logs |
+| H | Observability & operability | 5 | 70 | buildable | xiom.metrics adoption (Phase 10), dashboards/alert wiring |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 52 | buildable | runners activation, rulesets, staging E2E, porter extraction |
+| J | Ecosystem & release engineering | 8 | 54 | buildable | runners activation, rulesets, staging E2E, porter extraction |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x73 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x28 + 0.09x94 + 0.08x52 = **77.26 -> 77 %**.
+0.08x89 + 0.10x25 + 0.05x70 + 0.09x94 + 0.08x54 = **79.52 -> 80 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -175,12 +175,18 @@ active collection.
 Remaining: concurrent readers, write serialization model, segment growth /
 compaction policy, memory budget, scale tuning beyond the baseline.
 
-### H. Observability & operability -- 28 %
-Done: inline counters (upserts/deletes), LSN metrics, and the service
-skeleton's `GET /health` endpoint (`api.http_service`; gate
-`probe_http_service`).
-Remaining: `xiom.metrics` adoption (Phase 10), `/metrics` + readiness
-wiring per the OPS pattern, latency/recall histograms, structured logs.
+### H. Observability & operability -- 70 %
+Done: inline counters + LSN metrics (engine), and the full M-O core:
+`observability.metrics` (fixed-bucket latency histograms with
+`_sum`/`_count`/p50/p95/p99; the service counter bundle; a bounded,
+sanitized JSON log ring with slow-query flag), the public prometheus-style
+`GET /metrics` (counters + histograms + live gauges
+collections/points_active/lsn), `/health` readiness, per-request
+instrumentation through `http_service_handle_state`, and
+`docs/OPERATIONS.md` (runbook + failure domains + backup drill). Gate
+`probe_metrics` (23 checks).
+Remaining: `xiom.metrics` adoption (Phase 10), dashboards/alert wiring in
+the deployment, recall-proxy metrics on demand.
 
 ### I. Testing & verification -- 94 %
 Done: 171-check conformance suite (x2 Windows + WSL), 31 probes, build-time
@@ -204,7 +210,7 @@ the **v0.64.2 re-test**: all XVECTOR compiler findings verified fixed
 workarounds reverted; the suite asserts trailing-field flags again.
 Remaining: CI runner activation.
 
-### J. Ecosystem & release engineering -- 52 %
+### J. Ecosystem & release engineering -- 54 %
 Done: `.ps1`/`.sh` twins, `xiom.toml`, relay docs + wishlists, porter plan,
 version/hash recording, the acyclic porter-ready tree, **release-prep
 drafts**: `scripts/ci.ps1` + `scripts/ci.sh` (full pre-release battery with
@@ -213,7 +219,9 @@ SHA-pinned `.github/workflows/ci.yml` draft,
 `docs/RELEASE-CHECKLIST.md` (owner-gated flow), and the **security release
 artifacts**: `docs/SECURITY.md` (threat model + secure defaults) and the
 **SBOM + unsafe gate** (`scripts/sbom.ps1`/`sbom.sh` -> `out/sbom.json`;
-wired into both batteries).
+wired into both batteries), and the **operations runbook**
+(`docs/OPERATIONS.md`: start/stop, config, monitoring/alerts,
+backup/restore drill, failure domains, migration, diagnostics).
 Remaining: self-hosted runners activation, branch rulesets on greenlight,
 staging E2E (parked until the owner greenlights public release), porter
 extraction with the packages lane.
@@ -658,6 +666,20 @@ extraction with the packages lane.
   I 92 -> 94, J 48 -> 52; overall 76.76 -> 77.26 -> 77 %. Evidence: full
   batteries (suite 171/171 x2 + sbom + 31 probes x2 + bench smoke,
   Windows + WSL), ALL GATES GREEN.
+- **2026-10-09 (fifty-first pass):** M-O observability core -- new
+  `observability.metrics` (fixed-bucket latency histograms with
+  `_sum`/`_count`/p50/p95/p99; the requests/errors/search/upsert/
+  auth_failures/rate_limited counters; a bounded, sanitized JSON log ring
+  with slow-query flag), public `GET /metrics` (prometheus text + live
+  gauges collections/points_active/lsn), `/health` `ready:true`,
+  per-request instrumentation in `http_service_handle_state`, and
+  `docs/OPERATIONS.md` (runbook + failure domains + backup drill). Found
+  + worked around the XVC-C-09 family again: nested-field mutation
+  through a `&mut` param (`st.metrics.counter`) silently does not
+  persist -- copy-out + single write-back. Gate `probe_metrics` (23
+  checks; batteries now 32 probes). H 28 -> 70, J 52 -> 54; overall
+  77.26 -> 79.52 -> 80 %. Evidence: full batteries (suite 171/171 x2 +
+  sbom + 32 probes x2 + bench smoke, Windows + WSL), ALL GATES GREEN.
 
 ## Update rule
 
