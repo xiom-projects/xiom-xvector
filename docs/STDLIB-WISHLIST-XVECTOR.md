@@ -3,6 +3,14 @@
 
 # Stdlib wishlist from the XVECTOR lane
 
+> **Coordination bus (2026-10-10):** the open rows below are migrated to
+> the private `xiom-lang/xiom-relays` repo (one item per row; `--to stdlib
+> --kind wishlist`): fsync/fdatasync = **REL-20261010-1550-xvector-2**, fd
+> write path = **-3**, append_file_bytes = **-4**, truncate/ftruncate =
+> **-5**, f32_bits = **-6**, bounded-depth json_parse = **-7**,
+> flush_stdout = **-8**. This file keeps the closed history; new rows go
+> to the bus.
+
 Needs collected while building the xiom-xvector durable vector store with the
 latest stdlib (`E:\xiom-lang\stdlib`, `/mnt/e/xiom-lang/stdlib` in WSL).
 **Re-checked 2026-10-09 on stdlib lane HEAD `82ac2f3` (release 0.64.3, pinned
