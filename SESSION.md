@@ -114,16 +114,25 @@ registry watch CLOSED -- `xiom.ann` 0.1.0 LIVE (eco-v0.1.139); the
 package is the pre-P-a snapshot (`8a8b0ff`; codec v2, legacy 296/300) ->
 **0.2.0 refresh ask filed** (`REL-20261011-1206-xvector`: carry the P-a
 generous level 0 + codec v3); the consumer swap awaits package 0.2.0 +
-owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md`.
+owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md` -> 73rd pass: re-verification era opened on the
+new pins -- `xiom.http` 0.1.6 re-sync (native 507, adapter special-case
+retired, tripwire re-synced); the stdlib wave-111 `strnlen` fix
+**verified on their uncommitted WIP** (both `docs/repro/xv-json-parse
+-quadratic` probes exit 0; 5k fit 120 s -> 57.4 s) with full batteries
+green on the wave-110/WIP pins (Windows + WSL spot); quick_bench re-run
+recorded; gated pivots re-checked (fsync + mmap still stubs, no new
+compiler release); bus -2002/-1206/-9/-1835 verified+closed + WIP signal
+filed (`-1618`).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `5fce3cf` (feat: byte-level
-fast upsert scanner -- str_bytes root cause + 5k fit 661s -> 120s) + this
-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `5fce3cf` fast scanner (72nd), `ede0e20` json finding
+**Repo:** private, no pushes; clean tree. HEAD `de151d6` (feat: xiom.http
+0.1.6 re-sync -- native 507 Insufficient Storage) + this wrap commit;
+tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
+`5fce3cf` fast scanner (72nd), `ede0e20` json finding
 (71st), `29cfa57` benchmark wrap, `3051160` benchmark starter (70th),
 `590310b` pyc hygiene, `7883ca3` Q-serve wrap, `5f6894b` Q-serve (69th),
 `404d80c` session note (sdl3 0.8.0
@@ -146,10 +155,10 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965`; lane HEAD `ecc587ee` (2026-10-11) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `35e6d87` (2026-10-11, docs block 107); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11 at this HEAD) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
-| packages | lane HEAD `511dd0f5` (2026-10-11 11:10Z: batches 38-41 delivered; vulkan 0.5.0 + sdl3 0.4.0; 55 eco releases); **`xiom.ann` extracted, publication pending OPS LIVE** (`REL-20261010-1908-packages`; registry 404 for the lane); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
-| xvector | `d42171c` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| compiler | **v0.64.3 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); lane HEAD `fde5548e` (2026-10-11, fn-ABI batches m263-m265; **C-15 / phantom-import fixes NOT yet landed**; no release past v0.64.3) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| stdlib | lane HEAD `b8eda7d` (2026-10-11, wave 110) + **wave-111 WIP in the working tree** (`json.xi`/`slice.xi`/`string.xi` modified, uncommitted; sha256 `E69E0275...`/`874A8F67...`/`36D1F4FF...`; both xvector repros exit 0 -- formal closure on commit); **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| packages | lane HEAD `fb73c5c8` (2026-10-11: sdl3 0.15.0, batch 52, eco-v0.1.151); **`xiom.ann` 0.2.0 LIVE + verified** (`0a243ce4...`; swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` LIVE + swapped | `E:\xiom-packages\packages` |
+| xvector | `de151d6` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -860,6 +869,24 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   str_bytes = ~4 s, quadratic) + README ask filed; measured effect:
   **5k x dim-25 fit via `xvectord` 661 s -> 120 s** (HNSW-build bound,
   ~42 pts/s); search 53-78 QPS. Batteries green both platforms.
+- **Re-verification era (73rd pass, 2026-10-11):** `xiom.http` **0.1.6
+  re-sync** -- native `507 Insufficient Storage` (sha256 `bb8a5029...`,
+  key pinned in both lane homes), the lane special-case retired
+  (`status_text` keeps only `Unknown -> "Error"`), `probe_package_http`
+  flipped to the native entry + fallback contract (6 checks); gates green
+  x2 Windows + WSL. **Wave-111 WIP acceptance**: both
+  `docs/repro/xv-json-parse-quadratic` probes exit 0 on stdlib `b8eda7d` +
+  WIP (`json.xi E69E0275...` / `slice.xi 874A8F67...` / `string.xi
+  36D1F4FF...`): 400 KB `str_bytes` 438 ms (was 3981 ms);
+  2.5k/5k/10k/20k-number parses 79/168/343/755 ms (was up to 17.9 s);
+  `xvectord` 5k x dim-25 fit **120 s -> 57.4 s** (87 pts/s, HNSW-build
+  bound; machine-load sensitive); recall/QPS unchanged. Full batteries on
+  the pins: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 40 probes
+  x2 + bench smoke (Windows) + WSL spot (suite x2 + http probes) -- ALL
+  GREEN (hashes stable before/after). Bus: -2002/-1206/-9/-1835
+  verified+closed; WIP signal `REL-20261011-1618-xvector`. Gated pivots:
+  fsync chain + full mmap family still stubs; compiler C-15/phantom not
+  yet landed (no release past v0.64.3).
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -1013,6 +1040,15 @@ the current tree):**
   1.7s, http_server 15/15, http_service 42/42) green; quick_bench 5k
   x dim-25 through `xvectord`: upsert 120s (was 661s), recall 0.779 /
   0.960 / 1.000 at ef 8/32/128, 53-78 QPS.
+- **Re-verification pass (73rd):** Windows batteries ALL GATES GREEN on
+  both the wave-110 pin and the stable wave-111 WIP pin (suite
+  **177/177 x2** + sbom (42 modules, unsafe=0) + **40 probes x2** + bench
+  smoke; WIP hashes unchanged before/after; the first run straddled the
+  WIP edits and was superseded by the clean re-run); WSL spot (suite
+  **177/177 x2** + `probe_package_http` 6/6 x2 + `probe_http_service`
+  42/42 x2) green; both repro probes exit 0 on the WIP; quick_bench 5k
+  x dim-25: upsert **57.4 s** (87 pts/s), recall 0.779/0.960/1.000,
+  58-82 QPS; `probe_package_http` now 6 checks.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -1096,6 +1132,17 @@ the current tree):**
 Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
+
+**73rd-pass state:** re-verification era open. `xiom.http` 0.1.6
+re-synced (native 507); the stdlib wave-111 `strnlen` fix verified green
+on their uncommitted WIP (both repros exit 0; full batteries green on the
+pins); bus -2002/-1206/-9/-1835 closed. **NEXT SLICE: the VectorDBBench
+client adapter** (`bench/adapters/`; `xvector_client.py` carries the
+calls), then G-phase groundwork; close `REL-20261011-1453-xvector` when
+the wave-111 commit lands (re-run both repros + quick_bench; fold the
+battery into that pass); watch the compiler batches (#3 phantom imports,
+#6 Float32 slot stores) for the next lane-local release (C-15 repro +
+controls + `as Float32` unwind).
 
 1. **ALL SLICES DONE + v1.0.0-rc.1 PREPARED + five registry surfaces
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
@@ -1429,8 +1476,8 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | **C-15 found 2026-10-11 (66th pass; `REL-20261011-1134-xvector` filed: literal stores into `Vec[Float32]` slots skip narrowing; repro `docs/repro/xv-f32-slot-literal-write/`; Windows + WSL identical, exit 3)**; v0.64.3 re-test: C-13/C-14 **UNCHANGED** (both `acked` by the compiler lane 2026-10-10; verdicts filed; unfixed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-11 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow; 11 = XVC-C-15 `Vec[Float32]` literal-slot narrowing) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
-| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-11 (lane `35e6d87`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted + verified, **publication pending OPS LIVE** (`REL-20261010-1908-packages`; items `-9` fixed / `-10` acked / `-12` closed) |
+| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-11 (lane `b8eda7d` + wave-111 WIP): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout + the whole mmap family still open; `str_bytes`/`json_parse` quadratic **FIXED in the WIP -- both repros exit 0** (formal on commit; bus `-1453`/`-1543`/`-1618`); bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`; -7 closed) |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-11 (73rd): `xiom.wal`/`metrics`/`rate` adopted; **`xiom.http` 0.1.6 re-synced (native 507; -2002 verified+closed)**; **`xiom.vectors` swapped** (-9 verified+closed); **`xiom.ann` 0.2.0 LIVE + verified (-1206 verified+closed; swap owner-gated `-1308`)**; lane HEAD `fb73c5c8` (sdl3 0.15.0) |
 | `docs/REFERENCE-STUDY-01-FAISS.md` | (record) | **P-a APPLIED 2026-10-11 (63rd)**: generous level 0 (`m0 = 2*m` + `prune_headroom` 0.2), codec v3, hard-corpus control gate 285/300 vs 275/300; fill arm measured, not adopted |
 | `docs/REFERENCE-STUDY-02-QUANTIZATION.md` | (record) | written 2026-10-11 (64th): FAISS SQ/PQ + sqlite-vec int8/binary/rescore/DiskANN recon; ranked Q-a..Q-d (Q-a = SQ8 + exact rescore for sealed segments); error-bound story section; no adoption yet |
 | `docs/REFERENCE-STUDY-03-DISKANN.md` | (record) | written 2026-10-11 (65th): DiskANN Rust + sqlite-vec LM-DiskANN recon -- sector-packed fixed-size records, co-located f32 + adjacency, buffer-then-seal deltas, delete-by-rebuild, alignment/format decision for D5/D6/P5; no format change yet |
@@ -1442,7 +1489,7 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 81 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed)** |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
@@ -1686,7 +1733,11 @@ commit signed at every step.
 ```
 
 
-## 8. PASTE PROMPT for the next XVECTOR session (current -- 72nd pass, supersedes 7)
+## 8. PASTE PROMPT for the next XVECTOR session (72nd pass, superseded by 9)
+
+> **NOTE (73rd pass):** the prompt below is the 72nd-pass version, kept as
+> history. The CURRENT prompt is **section 9** at the end of this file --
+> use that one.
 
 ```
 You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
@@ -1759,5 +1810,90 @@ initialized; Str by value (XVC-C-13); json.json_* qualified; NEVER
 str_bytes/str_slice big Strs (quadratic on this pin -- keep bodies as
 bytes); suite x2 + WSL spot before any wrap; check free memory before
 trusting reds; bench loops hard-capped; the bindings/packages/engine
-workspaces are read-only for this lane.
+  workspaces are read-only for this lane.
+```
+
+---
+
+## 9. PASTE PROMPT for the next XVECTOR session (current -- 73rd pass, supersedes 8)
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first, then
+README/SPEC/ARCHITECTURE/ROADMAP/AUDIT and docs/ (PRODUCTION-PLAN,
+PRODUCTION-READINESS, BENCHMARKS, and the benchmark adapters). Consumer
+lane: never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the private
+xiom-relays bus. Identity "Lefteris Notas <lefterisnotas@gmail.com>";
+conventional commits, DCO -s.
+
+Orientation: HEAD de151d6 (feat: xiom.http 0.1.6 re-sync) + the 73rd wrap
+commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is USER-TESTABLE
+and benchmark-integrated: out\xvectord.exe (HTTP server; /version, index
+config at create, per-request ef_search), bench/adapters (ann-benchmarks
+drop-in + stdlib client + smoke.py + quick_bench.py), and the byte-level
+fast upsert scanner (228-case fast-vs-strict gate). Fit history: 661 s ->
+120 s -> 57.4 s (87 pts/s on the wave-111 WIP; HNSW-build bound). Lane
+pins: stdlib b8eda7d (wave 110) + the wave-111 WIP working tree (json.xi
+E69E0275..., slice.xi 874A8F67..., string.xi 36D1F4FF...; BOTH repros
+exit 0; formal verify/close on REL-20261011-1453-xvector when the wave
+commits -- watch git log in E:\xiom-lang\stdlib + the bus); packages
+fb73c5c8 (sdl3 0.15.0; xiom.ann 0.2.0 LIVE + verified; xiom.http 0.1.6
+CONSUMED -- native 507); compiler fde5548e lane HEAD (v0.64.3 installed
+lane-local; C-15 + phantom-import fixes NOT yet landed; no release past
+v0.64.3).
+
+RE-VERIFICATION ERA -- NEXT STEPS (in order):
+1) Wave-111 closure: when stdlib commits the fix, re-run BOTH probes in
+   docs\repro\xv-json-parse-quadratic (expect exit 0), re-run
+   quick_bench.py against xvectord (expect ~57 s / 87 pts/s or better),
+   and fold the full battery into that pass; then verify + close
+   REL-20261011-1453-xvector with the numbers (the reporter moves
+   fixed->verified->closed) and update the records.
+2) Compiler watch: batches #3 (phantom imports / -2124) and #6 (Float32
+   slot stores / XVC-C-15 / -1134) are staged but NOT landed (no commits;
+   no release past v0.64.3). On the next lane-local release install:
+   re-run the C-15 repro (docs\repro\xv-f32-slot-literal-write; expect
+   exit 0) and the phantom-import controls (expect exactly one clear
+   error), re-test C-13/C-14 from their bundles, and drop the explicit
+   `as Float32` workaround in probe_quantization if green.
+3) Next slice: the VectorDBBench client adapter (bench/adapters/;
+   xvector_client.py carries the calls), then G-phase groundwork and the
+   remaining queue (Q-a2b at D5, ann swap on owner greenlight
+   REL-20261011-1308-xvector).
+
+Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
+main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
+pull hits a multi-branch quirk); python tools/relay.py view --lane xvector;
+process items (ack/fix with refs; never edit another lane's item; push only
+xvector items with `relay.py commit --lane xvector`). Arm your own
+recurring 2-4h doorbell check.
+
+Autonomous mode: arm a goal with this objective (verbatim): "Continue the
+xiom-xvector lane from SESSION.md: close the wave-111 loop first (when
+stdlib commits the fix: re-run both repros + quick_bench + full batteries,
+verify/close REL-20261011-1453-xvector), then build the VectorDBBench
+client adapter over bench/adapters and work the remaining queue (Q-a2b at
+D5, the ann swap on owner greenlight REL-20261011-1308-xvector, G-phase
+groundwork); keep the compiler batch watch (C-15 repro + phantom-import
+controls on the next lane-local release) and the gated pivots re-checked
+every pass (stdlib fsync -> D5/D6, mmap -> P5, xiom.kv). Per slice:
+implement, extend probe/suite gates, run suite x2 + sbom + all probes x2 +
+bench smoke on Windows + WSL spot, update SPEC/ARCHITECTURE/SESSION/
+PRODUCTION-READINESS + checklist, commit signed. When the M-R criteria are
+met, report complete with the owner handoff summary. Report blocked only
+when no scheduled wait or non-gated slice can help."
+
+Toolchain: dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1
+/.sh; run-suite.*; run-probe.*; bench.ps1/.sh; bench\adapters\smoke.py +
+quick_bench.py against a running out\xvectord.exe (start it with raised
+caps: XVECTOR_MAX_REQUEST_BYTES=33554432 XVECTOR_MAX_BATCH=1000). Green
+baseline: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 40 probes x2 +
+bench smoke. Discipline: struct literals list every field; locals
+initialized; Str by value (XVC-C-13); json.json_* qualified; keep bodies
+as BYTES (the byte-level fast scanner is the canonical upsert path; the
+stdlib str_bytes fix is verified in the WIP -- still prefer byte bodies);
+suite x2 + WSL spot before any wrap; check free memory before trusting
+reds; bench loops hard-capped; the bindings/packages/engine workspaces are
+read-only for this lane.
 ```

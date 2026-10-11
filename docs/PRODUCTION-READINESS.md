@@ -10,11 +10,12 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-11 (v1.0.0-rc.1 candidate; reference study 01 applied
-  -- generous HNSW level 0; **runnable HTTP server `xvectord` verified
-  end-to-end with curl**; **`GET /version`, index config at create,
-  per-request `ef_search`, and the starter benchmark adapters (live smoke
-  green)**; lane-local toolchain isolation)
+- **As of:** 2026-10-11, 73rd pass (v1.0.0-rc.1 candidate; runnable HTTP
+  server `xvectord` + benchmark adapters; **re-verification era: the
+  stdlib wave-111 `strnlen` fix is verified on the WIP (both repros exit
+  0; 5k fit 87 pts/s), `xiom.http` 0.1.6 re-synced (native 507), full
+  batteries green on the wave-110/WIP pins Windows + WSL**; lane-local
+  toolchain isolation)
 - **Overall:** **82 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1004,6 +1005,27 @@ extraction with the packages lane.
   (Windows); WSL spot green. Re-verify the repros + batteries when the
   stdlib fix lands; compiler fn-ABI batch `fde5548e` also landed (C-15 /
   phantom-import re-tests are the next session's first step).
+- **2026-10-11 (seventy-third pass):** re-verification era opened on the
+  new pins (stdlib `b8eda7d` wave 110 + wave-111 WIP; packages
+  `fb73c5c8`; compiler `fde5548e` lane HEAD, v0.64.3 still installed).
+  `xiom.http` **0.1.6 re-sync**: native `507 Insufficient Storage`
+  (sha256 `bb8a5029...`, registry key pinned in both lane homes); the
+  lane 507 special-case retired (`status_text` keeps only the
+  `Unknown -> "Error"` fallback delta); `probe_package_http` 5 -> 6
+  checks (native 507 + fallback contract). **The stdlib `strnlen` fix is
+  verified in the wave-111 WIP**: both repro probes exit 0 -- 400 KB
+  `str_bytes` **438 ms** (was 3981 ms); 20k-number parse **755 ms** (was
+  17.9 s); the 5k x dim-25 fit through `xvectord` 120 s -> **57.4 s**
+  (87 pts/s; HNSW-build bound). Batteries on the pins: suite 177/177 x2
+  + sbom (42 modules, unsafe=0) + 40 probes x2 + bench smoke (Windows) +
+  WSL spot (suite x2 + http probes) -- ALL GREEN; WIP hashes unchanged
+  before/after. Gated pivots re-checked: fsync/fdatasync/fsync_dir + the
+  whole mmap family still documented stubs (D5/D6/P5 stay gated); no new
+  compiler release (C-15/phantom fixes not yet landed; batch plan
+  `REL-20261011-1342-compiler`). Bus: -2002 (507), -1206 (ann 0.2.0),
+  -1550-xvector-9 (vectors extraction), -1835 (toolchain hygiene)
+  verified + closed; WIP signal `REL-20261011-1618-xvector` filed. No
+  score change (82 %).
 
 ## Update rule
 

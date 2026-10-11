@@ -141,6 +141,17 @@ re-runs the repros + batteries on it. Repro + numbers:
 `docs/repro/xv-json-parse-quadratic/` (`probe.xi`, `probe_strbytes.xi`;
 filed as `REL-20261011-1453-xvector`).
 
+**Fixed and re-verified on the wave-111 WIP (2026-10-11, 73rd pass):**
+both repro probes now PASS -- 400 KB `str_bytes` **438 ms** (was
+3981 ms); 20k-number parse **755 ms** (was 17.9 s); the 5k x dim-25 fit
+through `xvectord` improved further, **120 s -> 57.4 s (87 points/s;
+HNSW-build bound; machine-load sensitive run)**; recall@10
+0.779/0.960/1.000 at ef 8/32/128 and 58-82 QPS unchanged. Full batteries
+green on that pin (suite 177/177 x2 + sbom + 40 probes x2 + bench smoke,
+Windows; WSL spot). Formal acceptance follows the committed wave-111
+commit; the in-lane fast scanner (`api.json_fast`) stays the canonical
+upsert path.
+
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.
