@@ -161,7 +161,11 @@ needed) -> signed commit. Red build = rejection.
 
 ## M-P -- Performance & scale
 
-- [ ] P1 concurrency design doc (writer/reader model, consistency notes)
+- [x] P1 concurrency design doc (writer/reader model, consistency notes)
+  **(done 2026-10-11: `docs/G-PHASE-PLAN.md`)** -- v1 = single-writer per
+  collection + process-level sharding; in-process threads are post-gate
+  (acceptance `docs/repro/xv-thread-abi`); consistency + G-1..G-5 slice
+  order defined
 - [ ] P2 memory budget + seal/compaction thresholds; measured
 - [ ] P3 SIMD/BLAS seam behind the `xiom.vectors` contract; benchmark delta
   recorded
