@@ -819,6 +819,15 @@ extraction with the packages lane.
   re-verification at the quiet era: suite 171/171 x2 + sbom + 37 probes
   x2 + bench smoke (Windows, compiler v0.64.3, lane-local XIOM_HOME, 39
   modules), ALL GATES GREEN; `xiom.ann` still 404 at the registry.
+- **2026-10-11 (sixty-second pass, docs-only):** reference study 01 --
+  `docs/REFERENCE-STUDY-01-FAISS.md` (MIT; no vendoring, no dependency).
+  Reconnaissance of FAISS HNSW vs ours with source citations: level
+  distribution (`HNSW.cpp:63/67`), visited generation tags (`:428`,
+  `VisitedTable.h`), level-0 degree generosity (`shrink_neighbor_list`
+  `:245`, `keep_max_size_level0`), mmap/zero-copy IO notes (`mapped_io.h`,
+  `zerocopy_io.h`), SQ/PQ pointers. Ranked proposals with gate plans;
+  P-a (level-0 degree `2*M`) is the first candidate slice. No score
+  change (no product evidence yet).
 
 ## Update rule
 

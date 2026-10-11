@@ -952,7 +952,11 @@ signed commits, docs updated).
   slice docs): (1) faiss HNSW level assignment + search sampling vs ours;
   (2) faiss/vec product quantization for compaction; (3) sqlite-vec
   quantized brute-force kernels vs our flat scan; (4) DiskANN layout
-  notes for D5 delta segments + P5 mmap.**
+  notes for D5 delta segments + P5 mmap. Study item 1 (FAISS HNSW)
+  DONE 2026-10-11 -> `docs/REFERENCE-STUDY-01-FAISS.md` (ranked
+  proposals: P-a level-0 degree generosity -- first candidate slice, gate
+  `probe_hnsw_recall` + per-ef table; P-b visited generation tags for
+  M-P; P-e quantization next study).**
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
