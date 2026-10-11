@@ -87,3 +87,9 @@ class XvectorClient(object):
 
     def stats(self, name):
         return self._request("GET", "/stats?collection=%s" % name)[1]
+
+    def drop_collection(self, name):
+        """DELETE /collections/{n}. The route may not exist on the current
+        service build: callers should tolerate 404/405 (the VectorDBBench
+        client does) and restart xvectord for a clean fit instead."""
+        return self._request("DELETE", "/collections/%s" % name)[1]

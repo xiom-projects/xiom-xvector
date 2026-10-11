@@ -8,35 +8,13 @@
 # with recall@10 checked against a brute-force cosine oracle.
 # Exit = failed checks.
 
-import math
 import os
 import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from oracle import brute_force, recall
 from xvector_client import XvectorClient, XvectorError
-
-
-def cos_dist(a, b):
-    dot = 0.0
-    ma = 0.0
-    mb = 0.0
-    for i in range(len(a)):
-        dot += a[i] * b[i]
-        ma += a[i] * a[i]
-        mb += b[i] * b[i]
-    if ma == 0.0 or mb == 0.0:
-        return 1.0
-    return 1.0 - dot / (math.sqrt(ma) * math.sqrt(mb))
-
-
-def brute_force(corpus, q, k):
-    ranked = sorted((cos_dist(v, q), i) for i, v in enumerate(corpus))
-    return [i for _, i in ranked[:k]]
-
-
-def recall(hits, truth, k):
-    return len(set(hits[:k]) & set(truth[:k])) / float(k)
 
 
 def main():
