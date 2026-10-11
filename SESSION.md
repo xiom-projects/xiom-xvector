@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-10 (54 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (62 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -78,20 +78,25 @@ gate (byte-exact carve verified, 6/6 pins; probe_package_vectors;
 atomic all-surfaces swap planned -- XVC-C-14 constraint; 37 probes) ->
 xiom.vectors internals swap EXECUTED (atomic: 11 src + 27 probe imports
 onto the package; five local modules deleted; codec extracted from
-vector_store; batteries green both platforms).
+vector_store; batteries green both platforms) -> reference study area
+opened per owner grant (`E:\repos`; sqlite-vec/faiss/DiskANN cloned,
+MIT-verified; study rules + backlog in 2) -> reference study 01 FAISS
+HNSW recon (`docs/REFERENCE-STUDY-01-FAISS.md`; P-a level-0 degree is
+the first candidate slice; P-e quantization is study item 2).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `c414e2a` (feat: xiom.vectors
-internals swap) + this handoff commit; tag `v1.0.0-rc.1` still on
-`530b041`. Recent slices: `c414e2a` vectors swap, `db8c443` vectors
-wiring, `a7e8421` http helper slice, `845ddbc` v0.64.3 re-pin/isolation,
-`a0d631f` rate adoption, `843d3ca` metrics wrap, `31b95d9` metrics
-adoption, `37e9d57` XV-ORBITDB-01 wrap, `3c36f34` XV-ORBITDB-01 fix,
-`1db0550` relay bus adoption, `4c02577` xiom.wal adoption, `530b041`
-M-R wrap.
+**Repo:** private, no pushes; clean tree. HEAD `5cbe6ee` (docs: reference
+study 01 -- FAISS HNSW) + this handoff commit; tag `v1.0.0-rc.1` still on
+`530b041`. Recent slices: `5cbe6ee` study 01, `dc32d73` reference area
+(owner grant), `2d9b4d6` stdlib pin sync, `51290a1` vectors wrap,
+`c414e2a` vectors swap, `396b239` bus state sync, `e23ee3d` integration
+refresh, `a0d631f` rate adoption, `31b95d9` metrics adoption,
+`37e9d57`/`3c36f34` XV-ORBITDB-01 fix+wrap, `1db0550` relay bus.
+Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
+commits, DCO `git commit -s`.
 Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
 commits, DCO `git commit -s`.
 
@@ -1168,21 +1173,26 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `c414e2a` (feat: xiom.vectors internals swap) + the
-handoff commit; tag `v1.0.0-rc.1` on `530b041`; clean
-tree; `git log --oneline -12` shows the recent slice commits. Lane pins:
+Orientation: HEAD `5cbe6ee` (docs: reference study 01 -- FAISS HNSW) +
+the handoff commit; tag `v1.0.0-rc.1` on `530b041`; clean tree;
+`git log --oneline -12` shows the recent slice commits. Lane pins:
 stdlib `5468469` (fsync chain still stubs), packages `2b9b1146`
-(xiom.ann extracted; xiom.vectors LIVE eco 508), compiler **v0.64.3
-installed lane-local** (Windows `out\toolchain`, WSL
-`~/.xvector-toolchain`; re-tests done; C-13/C-14 unchanged, verdicts
-filed). **Toolchain + package homes are lane-local on purpose** (shared
-homes get wiped by concurrent sessions -- incident
-`REL-20261010-1835-xvector`); do not point builds at
-`%LOCALAPPDATA%\xiom*` or `~/.local/share/xiom`.
+(xiom.ann extracted in-tree, not yet published; xiom.vectors LIVE eco
+508), compiler **v0.64.3 installed lane-local** (Windows `out\toolchain`,
+WSL `~/.xvector-toolchain`; C-13/C-14 unchanged). **Toolchain + package
+homes are lane-local on purpose** (shared homes get wiped by concurrent
+sessions -- incident `REL-20261010-1835-xvector`); never point builds at
+`%LOCALAPPDATA%\xiom*` or `~/.local/share/xiom`. **Reference study area
+(owner-granted): `E:\repos` -- MIT-only clones as study references
+(sqlite-vec, faiss, DiskANN already cloned + MIT-verified; rules + study
+backlog in SESSION 2; study 01 done, findings in
+`docs/REFERENCE-STUDY-01-FAISS.md`).**
 
 Coordination bus (owner rollout 2026-10-10): the private `xiom-lang/
 xiom-relays` repo is the only cross-lane channel. At session start and
-before finishing any task: `git -C E:\xiom-lang\xiom-relays pull --ff-only`
+before finishing any task: `git -C E:\xiom-lang\xiom-relays fetch origin
+main` + `git merge --ff-only origin/main` (the clone's bare `pull` hits a
+"Cannot fast-forward to multiple branches" quirk)
 then `python tools/relay.py view --lane xvector` from that repo; process
 items addressed to xvector; never edit another lane's item (open a new
 one); commits in the bus are pushed (it is the shared mailbox). A 3-hour
@@ -1340,13 +1350,20 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: the **`xiom.ann` porter wiring** once the package is
-published (registry 404 as of 2026-10-10; watch the packages lane's
-scope item `REL-20261010-1908-packages`; the wiring follows the vectors
-pattern: dependency + extraction-fidelity gate + atomic swap), the
-replay-loop delegation at the D-ledger store migration, then the
-owner's public release + benchmark (the v1.0.0-rc.1 candidate and owner
-handoff stand). Each pass: re-check
+NEXT TASK: **reference-study slices first (owner-granted study area):**
+P-a level-0 degree generosity (FAISS `keep_max_size_level0` idea;
+implement behind the existing API; gate `probe_hnsw_recall` + the per-ef
+table in `docs/BENCHMARKS.md`), then **study 02 -- quantization
+reconnaissance** (FAISS `ScalarQuantizer`/`ProductQuantizer` +
+sqlite-vec kernels -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md`; any
+adoption needs a documented error-bound story so the oracle gate stays
+honest). Maintain in parallel: the **`xiom.ann` porter wiring** once the
+package is published (extracted in-tree, registry 404 as of 2026-10-11;
+watch the packages lane's scope item `REL-20261010-1908-packages`; the
+wiring follows the vectors pattern: dependency + extraction-fidelity gate
++ atomic swap), the replay-loop delegation at the D-ledger store
+migration, then the owner's public release + benchmark (the v1.0.0-rc.1
+candidate and owner handoff stand). Each pass: re-check
 the external lanes and pivot when a gate clears (D5/D6 on the stdlib
 fsync chain, socket adapter on xiom.net, P5 on stdlib mmap, xiom.kv on
 C-PULSE-10). Non-gated work proceeds while the stdlib
