@@ -12,32 +12,14 @@
 # Env: XVECTOR_URL, XVECTOR_BENCH_N (default 5000), XVECTOR_BENCH_DIM (25),
 # XVECTOR_BENCH_NQ (100), XVECTOR_BATCH (1000), XVECTOR_BENCH_COLL (bench_q).
 
-import math
 import os
 import random
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from oracle import brute_force
 from xvector_client import XvectorClient, XvectorError
-
-
-def cos_dist(a, b):
-    dot = 0.0
-    ma = 0.0
-    mb = 0.0
-    for i in range(len(a)):
-        dot += a[i] * b[i]
-        ma += a[i] * a[i]
-        mb += b[i] * b[i]
-    if ma == 0.0 or mb == 0.0:
-        return 1.0
-    return 1.0 - dot / (math.sqrt(ma) * math.sqrt(mb))
-
-
-def brute_force(corpus, q, k):
-    ranked = sorted((cos_dist(v, q), i) for i, v in enumerate(corpus))
-    return set(i for _, i in ranked[:k])
 
 
 def main():
@@ -83,7 +65,7 @@ def main():
         for qi in range(nq):
             hits = client.search(coll, queries[qi], k, ef_search=ef)
             got = set(int(h["id"]) for h in hits)
-            hit += len(got & truths[qi])
+            hit += len(got & set(truths[qi]))
         dt = time.time() - t0
         qps = nq / dt
         print("| %d | %.3f | %.0f | %.2f |"

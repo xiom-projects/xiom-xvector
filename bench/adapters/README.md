@@ -18,6 +18,7 @@ $env:XVECTOR_BATCH = "1000"     # adapter-side rows per upsert
 
 # 2) verify the adapter logic against the live server (stdlib Python only)
 python bench\adapters\smoke.py
+python bench\adapters\vectordbbench\smoke_db.py   # VectorDBBench client (direct mode)
 ```
 
 ## ann-benchmarks
@@ -39,10 +40,13 @@ in the shipped config).
 
 ## VectorDBBench
 
-VectorDBBench speaks per-database clients; the starter path is the same
-HTTP surface (create with `"index":"hnsw"`, batched upserts, `/search`
-with `ef_search`). A dedicated client module is the next adapter slice;
-`xvector_client.py` carries all the calls it needs.
+`vectordbbench/` carries the dedicated client adapter (`xvector_db.py`
+with drop-in registration steps + honest limitations in its README) and a
+framework-free live smoke (`vectordbbench/smoke_db.py`) that exercises
+the exact methods the VectorDBBench runner calls: init/ready -> create ->
+batched insert -> search (topk, ordering, recall vs the brute-force
+oracle) -> ef sweep -> unsupported-path checks. Run it against a running
+`xvectord` (raised caps; see the module README).
 
 ## Honest notes for benchmark runs
 
