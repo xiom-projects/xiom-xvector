@@ -151,7 +151,11 @@ needed) -> signed commit. Red build = rejection.
   (v2 decodes); hard-corpus control gate in `probe_hnsw_recall` (285/300
   generous vs 275/300 legacy); fill arm measured (same recall, ~2.5x build
   work) and not adopted
-- [ ] Study 02 -- quantization recon (FAISS SQ/PQ + sqlite-vec) ->
-  `docs/REFERENCE-STUDY-02-QUANTIZATION.md`
-- [ ] Study 03-04 -- sqlite-vec quantized kernels; DiskANN layout (D5/P5
-  design input)
+- [x] Study 02 -- quantization recon **(done 2026-10-11)** ->
+  `docs/REFERENCE-STUDY-02-QUANTIZATION.md` (ranked Q-a..Q-d; Q-a = SQ8
+  quantized scan tier + exact f32 rescore for sealed segments; explicit
+  error-bound story section; no adoption yet)
+- [ ] Q-a adoption slice -- segment codec v-next + `probe_quantization`
+  (first adoption candidate; after study 03)
+- [ ] Study 03 -- DiskANN layout + quantized-graph notes (D5 delta
+  segments / P5 mmap design input)

@@ -849,6 +849,21 @@ extraction with the packages lane.
   overall 81.10 -> 81.24 -> 81 %. Evidence: suite 171/171 x2 + sbom
   (39 modules, unsafe=0) + 37 probes x2 + bench smoke, Windows AND WSL
   (bit-identical), C-10 repro re-run green on codec v3.
+- **2026-10-11 (sixty-fourth pass, docs-only):** reference study 02 --
+  `docs/REFERENCE-STUDY-02-QUANTIZATION.md` (MIT/Apache sources; no
+  vendoring, no dependency). Reconnaissance: FAISS SQ (`QT_8bit` trained
+  per-dim ranges, `sq_fastscan_utils.h:91-95`; fast-scan hi/lo split),
+  FAISS PQ (per-slice k-means + ADC tables), sqlite-vec int8 (fixed
+  `[-1,1]` scale -- unit-range assumption flagged), binary + Hamming
+  kernels, the two-tier rescore pattern (`_rescore_chunks` quantized scan
+  + `_rescore_vectors` exact rerank, oversample default 8/cap 4096), and
+  DiskANN neighbour quantization. Ranked proposals Q-a..Q-d (Q-a = SQ8
+  quantized scan tier + exact f32 rescore for sealed segments, the first
+  adoption candidate; PQ deferred pending deterministic training) plus a
+  required error-bound story section (per-component `vdiff/255` bound and
+  derived dot/L2/cosine bounds; the oracle probe stays the fidelity
+  reference). No score change (no product evidence yet -- reconnaissance
+  only; code tree unchanged, last full battery still valid).
 
 ## Update rule
 
