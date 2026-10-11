@@ -1,14 +1,16 @@
 // Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Probe: xiom.http 0.1.4 helper gate (adoption 2026-10-10; see
-// docs/XIOM-HTTP-EVAL.md). Direct consumption checks for the adopted
-// surface -- the status reason phrases behind http_service.status_text:
+// Probe: xiom.http 0.1.6 helper gate (adoption 2026-10-10; re-synced
+// 2026-10-11 after the upstream 507 gap closed; see docs/XIOM-HTTP-EVAL.md).
+// Direct consumption checks for the adopted surface -- the status reason
+// phrases behind http_service.status_text:
 //   - every reason phrase the service can emit matches the package table;
-//   - the upstream gap is pinned: xiom.http.status has NO 507 entry
-//     (returns "Unknown"), so the lane adapter owns "Insufficient
-//     Storage" (tripwire: if upstream adds/changes 507 this check flags
-//     the drift for a re-sync);
+//   - 507 is now NATIVE ("Insufficient Storage"; the lane special-case
+//     was retired -- the tripwire flipped to pin the native entry, and
+//     the lane adapter keeps its "Unknown" -> "Error" fallback delta);
+//   - the documented Unknown fallback contract holds for codes outside
+//     the table;
 //   - the category predicates behave as documented.
 // The wire side (raw "HTTP/1.1 507 Insufficient Storage") is pinned by
 // probe_http_service.
@@ -37,8 +39,10 @@ fn main() -> Int {
     && http_status_text(413) == "Payload Too Large" && http_status_text(429) == "Too Many Requests"
     && http_status_text(500) == "Internal Server Error" && http_status_text(501) == "Not Implemented",
     "status: lane-emitted reason phrases B (405/409/413/429/500/501)", fails);
-  fails = check(http_status_text(507) == "Unknown",
-    "status: 507 still missing upstream (lane adapter owns 'Insufficient Storage')", fails);
+  fails = check(http_status_text(507) == "Insufficient Storage",
+    "status: 507 native in the package (upstream gap closed; lane special-case retired)", fails);
+  fails = check(http_status_text(599) == "Unknown",
+    "status: documented Unknown fallback contract (lane adapter maps it to 'Error')", fails);
   fails = check(http_is_success(200) && !http_is_success(404) && http_is_redirect(301)
     && http_is_client_error(429) && !http_is_client_error(500) && http_is_server_error(500),
     "status: category predicates (success/redirect/client/server)", fails);

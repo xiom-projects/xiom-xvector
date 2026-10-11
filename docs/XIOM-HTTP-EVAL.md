@@ -67,6 +67,25 @@ the gate-visible wire behavior is preserved.
   `probe_service_limits` 27/27, full batteries (suite 171/171 x2 + sbom
   + **36 probes x2** + bench smoke) green on **Windows AND WSL**.
 
+### Re-sync to 0.1.6 (2026-10-11)
+
+Upstream closed the filed gap: `xiom.http` **0.1.6** adds
+`507 -> "Insufficient Storage"` and documents the `"Unknown"` fallback
+for codes outside the table (wishlist item `REL-20261010-2002-xvector`
+fixed by the packages lane; sha256 `bb8a5029...` verified on install,
+registry key pinned in the lane-local home).
+
+- `xiom.toml`: `xiom.http = "0.1.6"`.
+- `src/api/http_service.xi`: the 507 special-case is **retired**; the
+  adapter only keeps the lane's `"Unknown" -> "Error"` fallback delta
+  (pre-adoption wire text for codes outside the table).
+- `probe_package_http`: the 507 tripwire flipped to pin the **native**
+  entry (`http_status_text(507) == "Insufficient Storage"`) plus a new
+  check for the documented `"Unknown"` fallback contract (6 checks).
+- `probe_http_service` still pins the raw
+  `HTTP/1.1 507 Insufficient Storage` status line; wire behavior is
+  byte-identical (probe_http_service + probe_service_limits re-run).
+
 ### Environment notes
 
 - Builds with the lane-local toolchain emit benign `W001` duplicate-
