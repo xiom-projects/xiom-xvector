@@ -1062,7 +1062,14 @@ signed commits, docs updated).
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
   (`git pull --ff-only`) and process items addressed to this lane
   (`python tools/relay.py view --lane xvector`). Recurring doorbell: a
-  3-hour cron session check is armed.** **Ops hygiene rules
+  3-hour cron session check is armed.** **Owner directive (2026-10-11
+  11:59Z): "prioritize xiom engine request on vulkan sdl etc and whatever
+  packages need to be covered 100%" -- routed read-only by this lane to
+  the right owners: `REL-20261011-1203-xvector` (-> bindings: engine
+  present-path ask `-1153-engine`, their in-flight sdl3 0.8.0 batch
+  matches it) + `REL-20261011-1203-xvector-2` (-> packages: keep the
+  sdl3/vulkan publish chain current). This lane did not write to the
+  bindings/packages/engine workspaces (live writers; coordination-only).** **Ops hygiene rules
   (`REL-20261011-1134-ops`, to: all, 2026-10-11): never delete or
   downgrade the shared homes (`%LOCALAPPDATA%\xiom*`,
   `~/.local/share/xiom`, `~/xiom`); install/uninstall/cleanup tests run
