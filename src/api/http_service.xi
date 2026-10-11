@@ -9,15 +9,20 @@ module xiom.vector.api.http_service
 // it is fully deterministic and testable. Endpoints:
 //
 //   GET    /health                      -> {"status":"ok","service":"xvector"}
+//   GET    /version                     -> {"name","version","api"}
 //   GET    /collections                 -> {"collections":[...]}
 //   POST   /collections                 -> {"name","dim","metric"} -> 201
+//                                          optional index config:
+//                                          {"index":"hnsw","m","ef_construction",
+//                                          "ef_search"} (default flat)
 //   GET    /collections/{n}/points?id=  -> {"id","vector"}
 //   POST   /collections/{n}/points      -> {"ids":[...],"vectors":[[...]]}
 //   DELETE /collections/{n}/points?id=  -> {"removed":true}
 //   GET    /stats?collection={n}        -> per-collection stats JSON
 //   POST   /search                      -> knn/range/pagination; a
 //                                          {"requests":[{...},{...}]} body
-//                                          runs a batch
+//                                          runs a batch; optional
+//                                          `ef_search` = per-request beam
 //
 // Errors are {"error":"..."} with honest statuses (400/404/405/409/500).
 // Requests are strict: CRLF framing, Content-Length must match the body
@@ -567,6 +572,7 @@ pub fn service_state_new() -> ServiceState {
 fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
   var segs = path_segments(path);
   if segs.len() == 1 && segs[0] == "health" { return None; }
+  if segs.len() == 1 && segs[0] == "version" { return None; }
   if segs.len() == 1 && segs[0] == "collections" && method == "POST" { return Some(ApiScope.Admin); }
   if segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
     if method == "POST" || method == "DELETE" { return Some(ApiScope.Write); }
@@ -1061,6 +1067,23 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &Se
     Ok(_) => {}
     Err(_) => { return jerror(404, "unknown collection"); }
   }
+  // Optional per-request HNSW beam (benchmark sweeps): sets the active
+  // collection's ef_search for this call only (no rebuild).
+  var ef_opt = json.json_get(body, "ef_search");
+  match ef_opt {
+    Some(ev) => {
+      match ev {
+        Number(n) => {
+          match engine_set_ef_search(eng, n as Int) {
+            Ok(_) => {}
+            Err(_) => { return jerror(400, "ef_search out of range"); }
+          }
+        }
+        _ => { return jerror(400, "ef_search must be a number"); }
+      }
+    }
+    None => {}
+  }
   // Batch form?
   var batch_opt = json.json_get(body, "requests");
   var is_batch: Bool = false;
@@ -1147,6 +1170,11 @@ fn core_err_response(e: CoreError) -> Vec[UInt8] {
 
 // ---- Route handlers ----
 
+fn index_name_of_bool(hnsw: Bool) -> Str {
+  if hnsw { return "hnsw"; }
+  return "flat";
+}
+
 fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
   var name_opt = jget_str(body, "name");
   var name: Str = "";
@@ -1173,12 +1201,47 @@ fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue, cfg: &Servi
     }
     None => { return jerror(400, "missing metric"); }
   }
+  // Optional index configuration (benchmark/parity): {"index":"hnsw",
+  // "m":16,"ef_construction":200,"ef_search":64}; default stays flat.
+  var want_hnsw: Bool = false;
+  var idx_opt = jget_str(body, "index");
+  match idx_opt {
+    Some(ix) => {
+      if ix == "hnsw" { want_hnsw = true; }
+      else if ix == "flat" { want_hnsw = false; }
+      else { return jerror(400, "unknown index kind"); }
+    }
+    None => {}
+  }
+  var m: Int = 16;
+  var efc: Int = 200;
+  var efs: Int = 64;
+  match jget_num(body, "m") {
+    Some(v) => { m = v as Int; }
+    None => {}
+  }
+  match jget_num(body, "ef_construction") {
+    Some(v) => { efc = v as Int; }
+    None => {}
+  }
+  match jget_num(body, "ef_search") {
+    Some(v) => { efs = v as Int; }
+    None => {}
+  }
   var res = create_named_collection(eng, name, dim, metric);
   match res {
     Ok(_) => {
+      if want_hnsw {
+        var params = AnnParams{ m: m, ef_construction: efc, ef_search: efs };
+        match engine_set_index(eng, AnnIndexKind.Hnsw, params) {
+          Ok(_) => {}
+          Err(_) => { return jerror(400, "invalid ann params"); }
+        }
+      }
       var out = json.json_object_new();
       out = json.json_set(out, "ok", json.json_bool(true));
       out = json.json_set(out, "name", json.json_string(name));
+      out = json.json_set(out, "index", json.json_string(index_name_of_bool(want_hnsw)));
       return http_response(201, out);
     }
     Err(e) => {
@@ -1295,14 +1358,22 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
     return jerror(400, "malformed request");
   }
   var segs = path_segments(req.path);
-  if segs.len() == 1 && segs[0] == "health" {
+    if segs.len() == 1 && segs[0] == "health" {
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
     var out = json.json_object_new();
     out = json.json_set(out, "status", json.json_string("ok"));
     out = json.json_set(out, "service", json.json_string("xvector"));
     out = json.json_set(out, "ready", json.json_bool(true));
     return http_response(200, out);
-  }
+    }
+    if segs.len() == 1 && segs[0] == "version" {
+    if !(req.method == "GET") { return jerror(405, "method not allowed"); }
+    var vo = json.json_object_new();
+    vo = json.json_set(vo, "name", json.json_string("xvector"));
+    vo = json.json_set(vo, "version", json.json_string("1.0.0-rc.1"));
+    vo = json.json_set(vo, "api", json.json_number(1.0));
+    return http_response(200, vo);
+    }
   if segs.len() == 1 && segs[0] == "collections" {
     if req.method == "GET" {
       var cl = list_collections(eng);

@@ -195,6 +195,33 @@ fn main() -> Int {
   fails = check(has(&out, "200 OK") && has(&out, "\"id\":1"),
     "socket: POST /search -> nearest id 1", fails);
 
+  // version endpoint (public)
+  let _rcv = roundtrip(lfd, port, &mut eng, req_get("/version"), &mut out);
+  fails = check(has(&out, "200 OK") && has(&out, "\"version\":\"1.0.0-rc.1\""),
+    "socket: GET /version -> 200 with the lane version", fails);
+
+  // per-request ef_search override: valid beam -> same nearest; out of
+  // range -> 400
+  let b4 = "{\"collection\":\"docs\",\"k\":1,\"vector\":[1,0,0,0],\"ef_search\":4}";
+  let _rc10 = roundtrip(lfd, port, &mut eng, req_with_body("POST", "/search", b4), &mut out);
+  fails = check(has(&out, "200 OK") && has(&out, "\"id\":1"),
+    "socket: POST /search with ef_search 4 -> nearest id 1", fails);
+  let b5 = "{\"collection\":\"docs\",\"k\":1,\"vector\":[1,0,0,0],\"ef_search\":99999}";
+  let _rc11 = roundtrip(lfd, port, &mut eng, req_with_body("POST", "/search", b5), &mut out);
+  fails = check(has(&out, "400"), "socket: ef_search out of range -> 400", fails);
+
+  // index configuration at create: an hnsw collection end to end
+  let b6 = "{\"name\":\"ann\",\"dim\":4,\"metric\":\"euclidean\",\"index\":\"hnsw\",\"m\":8,\"ef_construction\":32,\"ef_search\":16}";
+  let _rc12 = roundtrip(lfd, port, &mut eng, req_with_body("POST", "/collections", b6), &mut out);
+  fails = check(has(&out, "201 Created") && has(&out, "\"index\":\"hnsw\""),
+    "socket: create with index hnsw -> 201", fails);
+  let b7 = "{\"ids\":[7,8],\"vectors\":[[0,0,0,0],[1,1,1,1]]}";
+  let _rc13 = roundtrip(lfd, port, &mut eng, req_with_body("POST", "/collections/ann/points", b7), &mut out);
+  let b8 = "{\"collection\":\"ann\",\"k\":1,\"vector\":[1,1,1,1],\"ef_search\":8}";
+  let _rc14 = roundtrip(lfd, port, &mut eng, req_with_body("POST", "/search", b8), &mut out);
+  fails = check(has(&out, "200 OK") && has(&out, "\"id\":8"),
+    "socket: hnsw collection search -> nearest id 8", fails);
+
   // 404 honesty
   let _rc7 = roundtrip(lfd, port, &mut eng, req_get("/nope"), &mut out);
   fails = check(has(&out, "404"), "socket: unknown route -> 404", fails);

@@ -12,7 +12,9 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 
 - **As of:** 2026-10-11 (v1.0.0-rc.1 candidate; reference study 01 applied
   -- generous HNSW level 0; **runnable HTTP server `xvectord` verified
-  end-to-end with curl**; lane-local toolchain isolation)
+  end-to-end with curl**; **`GET /version`, index config at create,
+  per-request `ef_search`, and the starter benchmark adapters (live smoke
+  green)**; lane-local toolchain isolation)
 - **Overall:** **82 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -32,14 +34,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 74 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 96 | release-grade | version endpoint |
+| F | API & query surface | 8 | 100 | production | -- |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x74 + 0.08x100 +
-0.08x96 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.80 -> 82 %**.
+0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **82.12 -> 82 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -150,8 +152,16 @@ plan, and **multi-key intersections** (And of indexable clauses).
 Remaining: none (composite `In` intersections are a possible future
 stretch).
 
-### F. API & query surface -- 96 %
-Done: **runnable HTTP server (`xvectord.exe`, 69th pass): the socket
+### F. API & query surface -- 100 %
+Done: **`GET /version` (`{"name","version","api"}`, public),
+index configuration at create (`{"index":"hnsw","m","ef_construction",
+"ef_search"}`, default flat; 400 on bad kinds/params), per-request
+`ef_search` on /search (lightweight beam override, no rebuild; 400 out
+of range), and the **starter benchmark adapters** (`bench/adapters/`:
+stdlib HTTP client + ann-benchmarks module/config + a live smoke that
+exercises version -> HNSW create -> batched upsert -> ef sweep ->
+recall@10 vs a brute-force oracle; green: 1.000 at ef>=64, 0.940 at
+ef=8);** **runnable HTTP server (`xvectord.exe`, 69th pass): the socket
 adapter over the stdlib `xiom.net` layer (sequential accept, strict
 Content-Length framing, 30 s peer guard, `X-Xvector-Quit` shutdown),
 whole requests through the transport-agnostic `http_service_handle`;
@@ -176,7 +186,7 @@ per point, tombstones + payload/index cleanup; gate
 and the request surface extensions (M-Q6: `SearchRequest` mode
 knn/range, radius, offset/after-id pagination; `SearchBatchRequest` +
 `search_batch_with_request`; gate `probe_search_request`, 24 checks).
-Remaining: version endpoint.
+Remaining: none.
 
 ### G. Concurrency & scalability -- 25 %
 Done: multi-collection registry (M-D3: named collections with per-
@@ -949,6 +959,24 @@ extraction with the packages lane.
   suite 177/177 x2 + sbom (41 modules, unsafe=0) + 39 probes x2 + bench
   smoke (Windows) ALL GREEN; WSL spot (server probe x2 + service probe)
   green. First user-testable artifact of the lane.
+- **2026-10-11 (seventieth pass):** benchmark integration (starter) +
+  API completion -- `GET /version`; index configuration at collection
+  create (`index`/`m`/`ef_construction`/`ef_search`; `handle_create_collection`
+  calls `engine_set_index`; response carries the kind); per-request
+  `ef_search` on /search via the new `engine_set_ef_search` (validated
+  1..4096, no rebuild, no manifest write); `xvectord` now applies the
+  documented `XVECTOR_MAX_*` service limits per request
+  (`service_config_from_env` in `httpd_once`; socket guard 32 MiB). New
+  `bench/adapters/`: stdlib `xvector_client.py`, ann-benchmarks
+  `module.py` + `config.yml` (metric map angular/euclidean/dot; ef sweep
+  16..256), and `smoke.py` -- **live green against a default-cap server**
+  (version -> HNSW create -> 400-pt batched upsert (0-based ids) -> ef
+  sweep recall@10 1.000 at ef>=64, 0.940 at ef=8 -> duplicate 409).
+  `probe_http_server` grows to 15 checks (version, ef override, hnsw
+  create/search). **F 96 -> 100** (its last remaining item shipped);
+  overall 81.80 -> 82.12 -> 82 %. Evidence: suite 177/177 x2 + sbom (41
+  modules, unsafe=0) + 39 probes x2 + bench smoke (Windows); WSL spot
+  green.
 
 ## Update rule
 

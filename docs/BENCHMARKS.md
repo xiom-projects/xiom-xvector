@@ -113,6 +113,19 @@ The quick mode runs green on WSL2 (same workloads, same recall); quick
 checkpoint 951 ms / 225 KB vs 515 ms Windows. Full WSL parity is enforced
 by `scripts/ci.sh` (bench smoke + suite x2 + all probes x2).
 
+## External benchmark integration (2026-10-11, 70th pass)
+
+`bench/adapters/` integrates the standard suites over the `xvectord` HTTP
+server: a stdlib `xvector_client.py`, an ann-benchmarks drop-in
+(`module.py` + `config.yml`; metric map angular->cosine, euclidean,
+dot->dot; `ef_search` sweep 16..256 per request), and `smoke.py` -- the
+live verifier of the exact adapter calls (version -> HNSW create ->
+batched upsert -> ef sweep -> recall@10 vs a brute-force cosine oracle;
+green on a default-cap server: **1.000 at ef>=64, 0.940 at ef=8**).
+Honest framing for published numbers: single-threaded server (G phase),
+no fsync-backed durability claims on this stdlib pin (D phase). See
+`bench/adapters/README.md`.
+
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.

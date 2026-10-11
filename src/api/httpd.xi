@@ -25,9 +25,10 @@ use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.api.http_service;
 
-// The service enforces its own (configurable) limits; this is only the
-// socket-side guard so a hostile peer cannot grow the buffer forever.
-const MAX_REQUEST_BYTES: Int = 4194304;
+// Socket-side guard so a hostile peer cannot grow the buffer forever
+// (generous for benchmark fits; the service's own max_request_bytes --
+// XVECTOR_MAX_REQUEST_BYTES, applied in httpd_once -- is the real cap).
+const MAX_REQUEST_BYTES: Int = 33554432;
 
 // Byte index of CRLFCRLF (end of headers) or -1.
 fn header_end(b: &Vec[UInt8]) -> Int {
@@ -136,13 +137,15 @@ fn send_all(fd: Int, data: &Vec[UInt8]) -> Bool {
 pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
   // A peer that connects and goes silent must not stall the accept loop.
   let _to = socket.socket_set_timeout(client, 30000);
+  var cfg = service_config_default();
+  let _n = service_config_from_env(&mut cfg);
   let raw = httpd_read_request(client);
   if raw.len() == 0 {
     socket.socket_close(client);
     return -1;
   }
   let quit = has_token(&raw, "x-xvector-quit");
-  let resp = http_service_handle(eng, &raw);
+  let resp = http_service_handle_cfg(eng, &raw, &cfg);
   let ok = send_all(client, &resp);
   socket.socket_close(client);
   if !ok { return -1; }
