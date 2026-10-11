@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (68 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (69 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -120,10 +120,12 @@ owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md`.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `d42171c` (feat: Q-a2a --
-segment codec v2 with the opt-in SQ section) + the 67th wrap `2312fda` +
-this 68th-pass note commit; tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: 68th ann watch eval (this commit), `d42171c` Q-a2a,
+**Repo:** private, no pushes; clean tree. HEAD `5f6894b` (feat: Q-serve --
+runnable `xvectord` HTTP server + curl user test) + this wrap commit;
+tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: `5f6894b` Q-serve, `404d80c` session note (sdl3 0.8.0
+verification + ann greenlight request), `80d8579` ann porter eval,
+`d42171c` Q-a2a,
 `a7a4d0e` session note (owner directive routing), `69379bc` bus note,
 `c25c756` Q-a1 wrap, `ea73829` Q-a1 (feat), `f3aacdf` pin sync,
 `9c340df` study 03, `6a25c1d` pin sync,
@@ -794,10 +796,22 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   35 B/vector text); `probe_segment_file` (38) and the engine probes
   unchanged-green (v1 path byte-identical). Q-a2b (read-path wiring)
   lands with D5.
+- **Q-serve runnable server (69th pass, 2026-10-11):** `src/api/httpd.xi`
+  -- sequential-accept socket adapter over the stdlib `xiom.net` layer
+  (PULSE pattern): `httpd_read_request` (CRLFCRLF + exact Content-Length,
+  4 MiB socket guard), `httpd_once` (30 s dead-peer guard -> service ->
+  `TcpStream.write_all` -> close; rc 0/1/-1, quit on `X-Xvector-Quit`),
+  `httpd_serve` + `main` (`--bind/--port`, `XVECTORD_BIND/PORT`) ->
+  **`xvectord.exe`**. Gates: `probe_http_server` (10 checks over real
+  sockets in one process) green x2 Windows + WSL; **curl user test**:
+  `/health` -> create `docs` -> upsert 3 -> `POST /search` k=2 returns
+  id 1 (0.0061) then id 2 -> `/stats` points 3 lsn 4 -> quit -> clean
+  exit. First user-testable artifact; next candidates: a vector-bench
+  adapter (ann-benchmarks/VectorDBBench-style client) + the version
+  endpoint (S6), the ann swap (greenlight pending), Q-a2b (D5).
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence; Q-a1/Q-a2a
-  add gated capability, no score change -- no product path yet); recompute
-  at every wrap.
+  scorecard, **82 % today** (F 89 -> 96 with the runnable server);
+  recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
 `d2b18dc` = 0.64.3; latest re-verification = XV-ORBITDB-01 fix pass on
@@ -932,6 +946,10 @@ the current tree):**
   smoke); WSL spot (quantization x2 diag bit-identical, segment_file,
   collections, index_admin) green; segment v1 path byte-identical
   (14-point tear sweep diags unchanged).
+- **Q-serve pass (69th):** Windows battery ALL GATES GREEN (suite
+  **177/177 x2** + sbom (41 modules, unsafe=0) + **39 probes x2** + bench
+  smoke); WSL spot (probe_http_server x2 + probe_http_service) green;
+  curl end-to-end user test green incl. clean quit.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -1034,8 +1052,14 @@ signed commits, docs updated).
    `5849f0cf...`); independent registry-artifact verification from this
    lane (hidden-window RGBA blit, engine P3 acceptance shape) GREEN --
    exit 0, SDL3 3.4.8; result relayed to engine
-   (`REL-20261011-1307-xvector`). The engine's windowed-demo blocker is
-   cleared on the published consume path.**
+(`REL-20261011-1307-xvector`). The engine's windowed-demo blocker is
+cleared on the published consume path.** -> Q-serve applied (69th pass):
+the lane's **first user-testable artifact** -- `src/api/httpd.xi` +
+`xvectord.exe` (socket adapter over stdlib `xiom.net`, strict framing,
+quit header), `probe_http_server` (10 checks over real sockets) x2
+Windows + WSL, and a **curl end-to-end user test** (health -> create ->
+upsert -> search returns the correct nearest id -> stats -> clean quit).
+F 89 -> 96, overall -> **82 %**.
    Then: the **`xiom.ann` porter flow -- watch CLOSED; `xiom.ann` 0.2.0
    LIVE + verified in the lane home (m0 / headroom 0.2 / `hnsw_new_full`
    present; sha256 `0a243ce4...`); evaluation `docs/XIOM-ANN-EVAL.md`;
@@ -1044,8 +1068,9 @@ signed commits, docs updated).
    go**; the replay-loop delegation at the D-ledger store migration, then
    the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
-   `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
-   stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
+   `35e6d87`/`2ab2a13`), P5 on
+   stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync. (The socket adapter
+   pivot CLOSED: `xvectord` shipped on the stdlib `xiom.net` layer.)
 2. **M-Q query surface: DONE (Q1-Q6** -- range search, batch ops,
    pagination, delete-by-filter, per-collection stats + index admin,
    SearchRequest extensions). All gated by their probes.
@@ -1518,13 +1543,18 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **Q-a1 + Q-a2a DONE (66th/67th)** -- the SQ8 module and the
-segment v2 artifact are in and gated (`probe_quantization` 23 checks;
-suite 177). Remaining: **Q-a2b** (read-path wiring over sealed segments;
-lands with D5) + the standing watches (xiom.ann porter flow, replay-loop
-delegation, gated pivots re-checked every pass). **Owner directive routed
-2026-10-11 11:59Z** (engine P3 vulkan/sdl priority): read-only routing to
-bindings/packages via `REL-20261011-1203-xvector` and `-2`; this lane
+NEXT TASK: **Q-serve DONE (69th) -- the lane's first user-testable
+artifact: `xvectord.exe` + `probe_http_server` (10 checks over real
+sockets, x2 Windows + WSL) + the curl end-to-end user test.** Next
+user-facing candidates: the **benchmark adapter** (ann-benchmarks /
+VectorDBBench-style client over the HTTP API) and **S6 `GET /version`**
+(the last F item); plus the standing queue: **Q-a1 + Q-a2a DONE** (SQ8
+module + segment v2 artifact); remaining Q-a2b (read-path wiring; D5),
+the ann swap (greenlight requested, `REL-20261011-1308-xvector`), the
+standing watches (xiom.ann porter flow, replay-loop delegation, gated
+pivots re-checked every pass). **Owner directive routed 2026-10-11
+11:59Z** (engine P3 vulkan/sdl priority): read-only routing +
+verification (`REL-20261011-1307-xvector`, engine unblocked); this lane
 makes no writes into those live workspaces. P-a is DONE (63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;
 watch the packages lane's scope item `REL-20261010-1908-packages`; the
