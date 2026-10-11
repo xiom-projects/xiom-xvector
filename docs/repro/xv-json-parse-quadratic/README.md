@@ -29,7 +29,34 @@ The service no longer round-trips bodies through `Str`:
   661 s to 120 s (now HNSW-build-bound, not parser-bound); a 352 KB
   single request handles in ~1.7-2.9 s (strict: ~84 s).
 
-## FIX VERIFIED in the stdlib wave-111 WIP (2026-10-11, 73rd pass)
+## FIX SHIPPED + VERIFIED on stdlib main `9a2b5ab` (wave 111, 2026-10-11)
+
+**Closure on the committed commit** (`9a2b5ab`; the committed content
+equals the pre-verified WIP hashes -- `json.xi` `E69E0275...`, `slice.xi`
+`874A8F67...`, `string.xi` `36D1F4FF...`):
+
+- Windows: `repro_strbytes` exit 0 -- 43/87/174/379 ms at 50/100/200/400
+  KB; `repro_json_quad` exit 0 -- 56/110/220/437 ms at 2.5k/5k/10k/20k
+  numbers; full battery ALL GATES GREEN (suite 177/177 x2 + sbom 42
+  modules unsafe=0 + 40 probes x2 + bench smoke).
+- WSL: suite 177/177 x2; `repro_strbytes` exit 0 -- 87/177/359/691 ms
+  (85/178/363/710 on the re-run); `repro_json_quad` exit 0 --
+  103/206/395/799 ms; `probe_json_fast` 228-case byte-equality x2.
+- Server: the 5k x dim-25 fit through `xvectord` **661 s -> 51.2 s**
+  (**98 pts/s**; HNSW-build bound); quick_bench recall@10
+  0.779/0.960/1.000 at ef 8/32/128.
+- Acceptance re-pin (documented in `probe_strbytes.xi` header): the
+  original 500 ms absolute gate was a pre-fix severity marker; post-fix
+  the platform spread is real (Windows ~380 ms vs WSL ~650-750 ms at
+  400 KB) while the scaling is linear on both (7-8x for 8x size; pre-fix
+  34x), so the gate is a **20x-ratio bound + 3 s net**. Both platforms
+  pass.
+- Bus: `REL-20261011-1453-xvector` + `REL-20261011-1543-xvector`
+  verified + closed; stdlib's bonus fix (the `\u` escape no longer
+  swallows the byte after its hex digits) is covered by the green
+  suite/probes.
+
+### Pre-committed WIP verification (2026-10-11, 73rd pass)
 
 The stdlib lane's wave-111 work (uncommitted at verification time on lane
 HEAD `b8eda7d`; `json.xi` sha256 `E69E0275...`, `slice.xi` `874A8F67...`,
@@ -90,10 +117,13 @@ Post-fix expectation: ms-scale parses, exit **0**.
    (bytes); the stdlib-side readiness matters for other consumers
    (pulse HTTP paths, orbitdb payloads).
 
-## Lane status while this is open
+## Lane status -- RESOLVED (2026-10-11)
 
-- All workarounds stay: small upsert batches; benchmark docs marked
-  "single-writer, parser-blocked" until fixed.
-- The xvector lane is evaluating a lane-local fast numeric-array scanner
-  for the upsert hot path (recognize the common body shape and skip the
-  generic parser) so benchmarks can run before the stdlib fix lands.
+Closed on stdlib main `9a2b5ab` (wave 111): both probes exit 0 on
+Windows AND WSL, the batteries are green on the committed pin, and the
+5k x dim-25 fit is down to 51.2 s (98 pts/s). The lane keeps the
+byte-level fast scanner (`api.json_fast`) as the canonical upsert hot
+path (it is also the mitigation that unblocked benchmarks pre-fix); the
+strict generic path is now linear too. Upstream note for a future wave:
+`str_chars`/`str_code_points` still use the strnlen accessors (same
+family, outside our acceptance).

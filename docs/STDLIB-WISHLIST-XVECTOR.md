@@ -13,12 +13,15 @@
 
 Needs collected while building the xiom-xvector durable vector store with the
 latest stdlib (`E:\xiom-lang\stdlib`, `/mnt/e/xiom-lang/stdlib` in WSL).
-**Re-checked 2026-10-11 (73rd pass) on stdlib lane HEAD `b8eda7d` (wave
-110) + the wave-111 WIP working tree (`json.xi`/`slice.xi`/`string.xi`
-modified, uncommitted): the durability/fd/mmap rows below are STILL OPEN;
-the `str_bytes`/`json_parse` quadratic is FIXED in the WIP (both xvector
-repros exit 0 -- see `docs/repro/xv-json-parse-quadratic/`); the
-bounded-depth `json_parse` row is FIXED (wave 102 `5b7bf8f`).** Format:
+**Re-checked 2026-10-11 (closure pass) on stdlib lane HEAD `9a2b5ab`
+(wave 111, committed): the durability/fd/mmap rows below are STILL OPEN;
+the `str_bytes`/`json_parse` quadratic is **FIXED + verified on the
+committed pin** (both xvector repros exit 0 on Windows + WSL; bus
+`REL-20261011-1453-xvector` / `-1543-xvector` closed; see
+`docs/repro/xv-json-parse-quadratic/`); the bounded-depth `json_parse`
+row is FIXED (wave 102 `5b7bf8f`). Upstream note: `str_chars` /
+`str_code_points` still use the strnlen accessors (same family, outside
+our acceptance).** Format:
 `| Need | Evidence | Workaround | Blocks |`.
 
 **Status detail (2026-10-11):**
@@ -36,12 +39,13 @@ bounded-depth `json_parse` row is FIXED (wave 102 `5b7bf8f`).** Format:
 - `f32_bits` / `bits_to_f32` are absent (`float.xi` has only the Float64 pair
   at `:43` / `:52`).
 - `flush_stdout` (`io.xi:906`) is still an empty body.
-- **`slice.str_bytes` / `json_parse` quadratic: FIXED in the wave-111 WIP**
-  (uncommitted on `b8eda7d` at verification: `json.xi` sha256
-  `E69E0275...`, `slice.xi` `874A8F67...`, `string.xi` `36D1F4FF...`; both
-  repro probes exit 0; full xvector batteries green on the pin). The lane
-  keeps the byte-level fast scanner as the canonical hot path regardless
-  (`src/api/json_fast.xi`, `probe_json_fast`).
+- **`slice.str_bytes` / `json_parse` quadratic: FIXED + verified on
+  stdlib main `9a2b5ab` (wave 111)** (`json.xi` sha256 `E69E0275...`,
+  `slice.xi` `874A8F67...`, `string.xi` `36D1F4FF...`; both repro probes
+  exit 0 on Windows + WSL; full xvector batteries green on the committed
+  pin; bus `-1453`/`-1543` closed). The lane keeps the byte-level fast
+  scanner as the canonical hot path regardless (`src/api/json_fast.xi`,
+  `probe_json_fast`).
 - The byte-file APIs XVECTOR depends on work and are byte-exact/CRLF-clean
   since 0.64.2: `write_file_bytes` (`io.xi:918`), `read_file_bytes`
   (`io.xi:946`), `file_size` (`io.xi:977`).
