@@ -1058,6 +1058,21 @@ extraction with the packages lane.
   worker id, exit 0) + bus witness `REL-20261011-1627-xvector`; re-run
   at the next archive (fn-ABI batch m263-m265 / `fde5548e`). G stays 25
   (blocker sharpened, not moved); no score change (82 %).
+- **2026-10-11 (wave-111 closure):** stdlib committed the `str_bytes`/
+  `json_parse` fix (`9a2b5ab`, wave 111; committed content == the
+  pre-verified WIP hashes). Verified on the committed pin: both repro
+  probes exit 0 on Windows AND WSL (str_bytes 43/87/174/379 ms Windows,
+  87/177/359/691 ms WSL; sweep 56/110/220/437 ms, 103/206/395/799 ms);
+  full batteries green (Windows ALL GATES: suite 177/177 x2 + sbom 42
+  modules unsafe=0 + 40 probes x2 + bench smoke; WSL suite 177/177 x2 +
+  probes + `probe_json_fast` 228/228 x2); the xvectord 5k x dim-25 fit
+  went 120 s -> **51.2 s (98 pts/s)**; quick_bench recall unchanged
+  (0.779/0.960/1.000). Acceptance re-pinned: the 500 ms absolute gate
+  became a linearity bound (20x ratio + 3 s net) -- the platform spread
+  is real post-fix while the scaling is linear on both (pre-fix ratio
+  ~34x, now ~7-8x). Bus `-1453`/`-1543` verified + closed. No score
+  change (82 %) -- the fix removes a scaling ceiling; the numbers land
+  in `docs/BENCHMARKS.md`.
 
 ## Update rule
 

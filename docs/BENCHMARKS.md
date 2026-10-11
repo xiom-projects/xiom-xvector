@@ -157,7 +157,12 @@ HNSW-build bound; machine-load sensitive run)**; recall@10
 green on that pin (suite 177/177 x2 + sbom + 40 probes x2 + bench smoke,
 Windows; WSL spot). Formal acceptance follows the committed wave-111
 commit; the in-lane fast scanner (`api.json_fast`) stays the canonical
-upsert path.
+upsert path. **Closed on the committed fix (`9a2b5ab`):** the 5k x
+dim-25 fit is **51.2 s (98 points/s)** on Windows; WSL: suite 177/177 x2
++ both probes exit 0 (str_bytes 87/177/359/691 ms -- the gate was
+re-pinned to a linearity bound, 20x-ratio + 3 s net; Windows
+43/87/174/379 ms); batteries ALL GREEN on the committed pin; bus
+`-1453`/`-1543` verified + closed.
 
 ## What the owner's benchmark can use
 

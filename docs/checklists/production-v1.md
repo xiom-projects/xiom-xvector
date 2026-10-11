@@ -132,6 +132,12 @@ needed) -> signed commit. Red build = rejection.
   120 s -> 57.4 s; full batteries green on the pins (suite 177/177 x2 +
   sbom + 40 probes x2 + bench smoke, Windows) + WSL spot; bus -2002 /
   -1206 / -1550-xvector-9 / -1835 verified+closed
+- [x] Wave-111 closure **(done 2026-10-11)**: stdlib `9a2b5ab` committed
+  (hashes == the pre-verified WIP); both repros exit 0 Windows + WSL
+  (400 KB `str_bytes` 379 ms Windows / 691 ms WSL; gate re-pinned to a
+  20x-ratio linearity bound + 3 s net); batteries ALL GREEN on the
+  committed pin; 5k fit 51.2 s (98 pts/s); bus `-1453`/`-1543`
+  verified+closed
 
 ## M-O -- Observability & operability
 
