@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (65 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (66 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -94,16 +94,25 @@ adoption) -> reference study 03 DiskANN layout recon
 (`docs/REFERENCE-STUDY-03-DISKANN.md`: sector-packed fixed-size records
 (4096 B, no node split), co-located f32 + adjacency, buffer-then-seal
 delta model, delete-by-rebuild, alignment as a format decision for
-D5/D6/P5; study backlog complete).
+D5/D6/P5; study backlog complete) -> Q-a1 applied (66th pass): SQ8
+quantization module (`src/index/quantize.xi` -- trained per-dim ranges,
+truncation codec, FAISS-pattern query tables, sqlite-vec-pattern
+two-tier rescore) gated by `probe_quantization` (17 checks;
+bit-identical rescore 10 queries x 3 metrics; documented error bounds
+pinned) + suite Section 16; compiler finding **XVC-C-15** found and filed
+during the slice (literal stores into `Vec[Float32]` slots skip
+narrowing; repro `xv-f32-slot-literal-write`; bus item
+`REL-20261011-1134-xvector`).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `9c340df` (docs: reference
-study 03 -- DiskANN layout recon) + this pin-sync commit; tag
-`v1.0.0-rc.1` still on `530b041`. Recent slices: `9c340df` study 03,
-`6a25c1d` pin sync, `1fce9fe` study 02, `a73fc5e` P-a wrap, `9f00836`
+**Repo:** private, no pushes; clean tree. HEAD `ea73829` (feat: reference
+study 02 Q-a1 -- SQ8 quantization + two-tier rescore) + this wrap commit;
+tag `v1.0.0-rc.1` still on `530b041`. Recent slices: `ea73829` Q-a1
+(feat), `f3aacdf` pin sync, `9c340df` study 03, `6a25c1d` pin sync,
+`1fce9fe` study 02, `a73fc5e` P-a wrap, `9f00836`
 P-a (feat: generous level 0 + codec v3), `e04c723` handoff refresh,
 `5cbe6ee` study 01, `dc32d73` reference area
 (owner grant), `2d9b4d6` stdlib pin sync, `51290a1` vectors wrap,
@@ -120,7 +129,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965`; lane HEAD `ecc587ee` (2026-10-11) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `35e6d87` (2026-10-11, docs block 107); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11 at this HEAD) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `511dd0f5` (2026-10-11 11:10Z: batches 38-41 delivered; vulkan 0.5.0 + sdl3 0.4.0; 55 eco releases); **`xiom.ann` extracted, publication pending OPS LIVE** (`REL-20261010-1908-packages`; registry 404 for the lane); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
-| xvector | `9f00836` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `ea73829` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -738,8 +747,28 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   unchanged. `probe_hnsw_codec` 12 checks (v3 roundtrip + v2 strip
   compat); C-10 pad-loop repro re-run green on v3 (m=512, m0=1024).
   Record: `docs/REFERENCE-STUDY-01-FAISS.md` F1.
+- **Q-a1 SQ8 quantization (66th pass, 2026-10-11):** `src/index/quantize.xi`
+  (reference study 02 Q-a; no vendoring): `SQ8` trained per-dimension
+  ranges (`sq8_train` -> Option; constant dims step 0), FAISS-truncation
+  codec (`sq8_encode_one`/`sq8_decode_one`; clamp; strict decode), the
+  FAISS SQ distance-computer pattern (`sq8_table_l2`/`sq8_table_ip`/
+  `sq8_table_norm2`; `sq8_l2_distance`/`sq8_ip_distance`/`sq8_cos_distance`
+  with cosine zero guards), and the sqlite-vec rescore contract:
+  `sq8_scan_coarse` (gated deviation tier) + `sq8_scan_rescore` (phase 1
+  `k*oversample` capped at 4096 -> phase 2 exact `vector_distance` in
+  store-position order -> **bit-identical** to the exact scan). Gate
+  `probe_quantization` (17 checks): training determinism/order
+  independence, empty/mismatch/decode rejection, roundtrip bound
+  (measured `0.99974 * vstep` vs bound `1.0`), clamping, constant dims,
+  tables vs exact on decoded vectors (deviation 0), the documented coarse
+  bound (0.0257 vs 0.6307), bit-identical rescore for 10 queries x 3
+  metrics, determinism, empty store, `k > n`, bytes/vector 32 B f32 vs
+  8 B SQ8 (dim 8). Suite Section 16 mirrors the math (177/177 total).
+  Q-a2 = segment codec v-next + read-path wiring (lands with D5);
+  XVC-C-15 (this slice's compiler finding) filed + fixed around.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence); recompute
+  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence; Q-a1 adds
+  gated capability, no score change -- no product path yet); recompute
   at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
@@ -865,6 +894,11 @@ the current tree):**
   on both platforms (build 60,852 ops; hard corpus 285 vs 275; n=800
   visited 346; per-ef table in `docs/hnsw-design.md`, baseline refreshed
   in `docs/BENCHMARKS.md`); C-10 repro re-run green on codec v3.
+- **Q-a1 pass (66th):** Windows battery ALL GATES GREEN (suite
+  **177/177 x2** + sbom (40 modules, unsafe=0) + **38 probes x2** + bench
+  smoke); WSL spot (suite 177/177; `probe_quantization` x2 with diag
+  bit-identical to Windows; C-15 repro identical on both platforms);
+  C-15 filed on the bus (`REL-20261011-1134-xvector`, pushed).
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -953,12 +987,11 @@ signed commits, docs updated).
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
    subset, **`xiom.vectors` swapped -- the package now backs all vector
    consumers**) + compiler v0.64.3 re-pinned lane-local (isolated).**
-   Remaining order: **study 03 DONE (65th pass) -- study backlog complete
-   (studies 01-03; item 3 folded into study 02).** Next: the **Q-a slice**
-   (SQ8 quantized scan tier + exact f32 rescore for sealed segments;
-   D4/D6; segment v-next consumes study 03's record-layout input), then
-   the `xiom.ann` porter flow (awaits its publication; registry 404 as of
-   2026-10-10), the replay-loop delegation at the D-ledger store
+   Remaining order: **study backlog complete + Q-a1 DONE (66th pass)** --
+   next: **Q-a2** (segment codec v-next + read-path wiring; lands with
+   D5's multi-segment reads and consumes study 03's record-layout input),
+   then the `xiom.ann` porter flow (awaits its publication; registry 404
+   as of 2026-10-10), the replay-loop delegation at the D-ledger store
    migration, then the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
    `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
@@ -1019,7 +1052,11 @@ signed commits, docs updated).
   D5/D6/P5: 4096 B sectors, no node split, co-located f32 + adjacency,
   buffer-then-seal deltas, delete-by-rebuild, alignment as a format
   decision; backlog item 3 folded into study 02; **study backlog
-  complete**).**
+  complete**); **Q-a1 DONE 2026-10-11, 66th pass** -- `src/index/quantize.xi`
+  (trained ranges, truncation codec, query tables, two-tier rescore) +
+  `probe_quantization` (17 checks) + suite Section 16 (6 checks);
+  Q-a2 (segment/read-path wiring) queued behind D5; XVC-C-15 filed
+  during the slice).**
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
@@ -1203,8 +1240,8 @@ signed commits, docs updated).
 
 | Doc | For | State |
 |---|---|---|
-| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.3 re-test: C-13/C-14 **UNCHANGED** (both `acked` by the compiler lane 2026-10-10; verdicts filed; unfixed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
-| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-10 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow) |
+| `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | **C-15 found 2026-10-11 (66th pass; `REL-20261011-1134-xvector` filed: literal stores into `Vec[Float32]` slots skip narrowing; repro `docs/repro/xv-f32-slot-literal-write/`; Windows + WSL identical, exit 3)**; v0.64.3 re-test: C-13/C-14 **UNCHANGED** (both `acked` by the compiler lane 2026-10-10; verdicts filed; unfixed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
+| `docs/RELAY-COMPILER.md` | compiler | Addenda 3-11 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow; 11 = XVC-C-15 `Vec[Float32]` literal-slot narrowing) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-11 (lane `35e6d87`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted + verified, **publication pending OPS LIVE** (`REL-20261010-1908-packages`; items `-9` fixed / `-10` acked / `-12` closed) |
@@ -1415,14 +1452,15 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **study backlog complete (studies 01-03)** -- study 02
-`docs/REFERENCE-STUDY-02-QUANTIZATION.md` (Q-a = SQ8 trained ranges +
-two-tier exact rescore for sealed segments, first adoption candidate; PQ
-deferred; error-bound story required) and study 03
-`docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed record layout input
-for D5/D6/P5). Next: the **Q-a slice** (segment v-next + `probe_quantization`,
-full batteries), consuming study 03's record-layout input. P-a is DONE
-(63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
+NEXT TASK: **Q-a1 DONE (66th pass)** -- `src/index/quantize.xi` + the
+`probe_quantization` gate (17 checks; bit-identical rescore 10x3;
+documented error bounds pinned) + suite Section 16; study backlog
+complete (studies 01-03). Next: **Q-a2 (segment codec v-next +
+read-path wiring)** when D5's multi-segment reads land -- it consumes
+study 03's record-layout input and study 02's Q-a design (segment byte
+delta + overwrite/torn-tail gates). XVC-C-15 (literal stores into
+`Vec[Float32]` slots) filed during this slice; watch the compiler lane's
+verdict. P-a is DONE (63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;
 watch the packages lane's scope item `REL-20261010-1908-packages`; the
 wiring follows the vectors pattern: dependency + extraction-fidelity gate
