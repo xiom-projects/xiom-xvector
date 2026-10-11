@@ -75,3 +75,18 @@ pub fn wal_writer_resume(next_lsn: Int) -> WalWriter {
   var records = Vec[WalRecord].new();
   return WalWriter{ records: records, next_lsn: next_lsn, synced_lsn: next_lsn - 1 };
 }
+
+// Memory accounting estimate (model constants: see the
+// `hnsw_memory_estimate` header). WalRecord struct = 64 B (lsn, op tag,
+// key, value, payload Vec header, timestamp); payload heap = 8 B/word.
+pub fn wal_memory_estimate(w: &WalWriter) -> Int
+  ensures: result >= 0
+{
+  var bytes: Int = 24; // records Vec header
+  var i: Int = 0;
+  while i < w.records.len() {
+    bytes = bytes + 64 + w.records[i].payload.len() * 8;
+    i = i + 1;
+  }
+  return bytes;
+}

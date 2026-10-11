@@ -657,6 +657,73 @@ fn stats_from_entry(eng: &VectorEngine, e: &CollectionEntry) -> CollectionStats 
   };
 }
 
+// ---- Memory accounting estimate (M-P P2) ----
+//
+// A per-collection accounting estimate for capacity planning; the model
+// constants and per-structure formulas live in `hnsw_memory_estimate`
+// (graph), `index_memory_estimate` (flat store),
+// `payload_store_memory_estimate` and `wal_memory_estimate` (both
+// documented there). `wal_bytes` is engine-wide (one shared log) and
+// reported separately from `total_bytes` (store + graph + payloads for
+// this collection).
+pub type MemoryEstimate = {
+  name: Str;
+  dim: Int;
+  points: Int;
+  index_kind: AnnIndexKind;
+  store_bytes: Int;
+  graph_bytes: Int;
+  payload_bytes: Int;
+  total_bytes: Int;
+  wal_bytes: Int;
+}
+
+pub fn engine_memory_estimate(eng: &VectorEngine, name: Str) -> Result[MemoryEstimate, CoreError] {
+  var idx = collection_find(eng, name);
+  if idx < 0 {
+    return Err(CoreError.NotFound);
+  }
+  var dim: Int = 0;
+  var kind = AnnIndexKind.Flat;
+  var points: Int = 0;
+  var store_b: Int = 0;
+  var graph_b: Int = 0;
+  var payload_b: Int = 0;
+  if idx == eng.active_idx {
+    dim = eng.dimension;
+    kind = eng.index_kind;
+    points = engine_size(eng);
+    store_b = index_memory_estimate(&eng.store);
+    payload_b = payload_store_memory_estimate(&eng.payloads);
+    if eng.index_kind == AnnIndexKind.Hnsw {
+      var hm = hnsw_memory_estimate(&eng.graph);
+      graph_b = hm.bytes;
+    }
+  } else {
+    var e = eng.collections[idx];
+    dim = e.dimension;
+    kind = e.index_kind;
+    points = e.store.ids.len();
+    store_b = index_memory_estimate(&e.store);
+    payload_b = payload_store_memory_estimate(&e.payloads);
+    if e.index_kind == AnnIndexKind.Hnsw {
+      var hm2 = hnsw_memory_estimate(&e.graph);
+      graph_b = hm2.bytes;
+    }
+  }
+  return Ok(MemoryEstimate{
+    name: name,
+    dim: dim,
+    points: points,
+    index_kind: kind,
+    store_bytes: store_b,
+    graph_bytes: graph_b,
+    payload_bytes: payload_b,
+    total_bytes: store_b + graph_b + payload_b,
+    wal_bytes: wal_memory_estimate(&eng.wal),
+  });
+}
+
 // Per-collection statistics (active collection from the live fields; any
 // parked collection from its registry entry, which is synced at park time).
 pub fn engine_collection_stats(eng: &VectorEngine, name: Str) -> Result[CollectionStats, CoreError] {

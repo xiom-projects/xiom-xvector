@@ -1375,6 +1375,17 @@ fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
       out = json.json_set(out, "nodes", json.json_number(st.nodes as Float64));
       out = json.json_set(out, "tombstones", json.json_number(st.tombstones as Float64));
       out = json.json_set(out, "lsn", json.json_number(st.wal_lsn as Float64));
+      var mem = engine_memory_estimate(eng, st.name);
+      match mem {
+        Ok(m) => {
+          out = json.json_set(out, "mem_store", json.json_number(m.store_bytes as Float64));
+          out = json.json_set(out, "mem_graph", json.json_number(m.graph_bytes as Float64));
+          out = json.json_set(out, "mem_payloads", json.json_number(m.payload_bytes as Float64));
+          out = json.json_set(out, "mem_total", json.json_number(m.total_bytes as Float64));
+          out = json.json_set(out, "mem_wal", json.json_number(m.wal_bytes as Float64));
+        }
+        Err(_) => {}
+      }
       return http_response(200, out);
     }
     Err(_) => { return jerror(404, "unknown collection"); }

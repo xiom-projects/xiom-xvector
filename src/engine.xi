@@ -168,6 +168,10 @@ pub fn collection_stats(eng: &VectorEngine, name: Str) -> Result[CollectionStats
   return engine_collection_stats(eng, name);
 }
 
+pub fn memory_estimate(eng: &VectorEngine, name: Str) -> Result[MemoryEstimate, CoreError] {
+  return engine_memory_estimate(eng, name);
+}
+
 // Rebuild the active collection's index from the flat store (Hnsw:
 // tombstones reclaimed; Flat: no-op) with build/compact statistics.
 pub fn rebuild_index(eng: &mut VectorEngine) -> Result[IndexStats, CoreError] {
