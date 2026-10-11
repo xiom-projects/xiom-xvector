@@ -126,6 +126,18 @@ Honest framing for published numbers: single-threaded server (G phase),
 no fsync-backed durability claims on this stdlib pin (D phase). See
 `bench/adapters/README.md`.
 
+**Blocker found by the first HTTP-path run (2026-10-11):** the stdlib
+`json_parse` is quadratic on numeric payloads (2,500/5,000/10,000/20,000
+numbers -> 248 ms/1.10 s/4.77 s/17.9 s; the 50,000-number upsert body ->
+83.7 s, ~88% of the request). Measured through `xvectord` on the 5,000 x
+dim-25 corpus: upsert 661 s (~8 points/s, parser-dominated) while the
+recall curve over HTTP is correct at full precision (recall@10 1.000 at
+ef=128, 0.960 at ef=32, 0.779 at ef=8; ~45-54 single-threaded QPS at
+~19-22 ms/query). Repro + numbers:
+`docs/repro/xv-json-parse-quadratic/`; filed to stdlib as
+`REL-20261011-1453-xvector`. A lane-local fast numeric scanner for the
+upsert hot path is the next slice (benchmarks unblocked either way).
+
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.

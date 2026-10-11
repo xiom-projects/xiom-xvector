@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (70 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (71 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -832,6 +832,19 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   override + rejection, hnsw create/search). F 96 -> 100 (its last item
   shipped); overall 81.80 -> 82.12 -> 82 %. Next adapter: VectorDBBench
   client over the same surface.
+- **stdlib finding: json_parse quadratic (71st pass, 2026-10-11):** the
+  first HTTP-path benchmark (5k x dim-25) exposed it: `json_parse` of
+  numeric payloads is quadratic (2.5k/5k/10k/20k numbers ->
+  248ms/1.10s/4.77s/17.9s; the 50k-number 382KB upsert body -> 83.7s,
+  ~88% of the request; in-process engine insert is 2ms/vector).
+  Repro bundle `docs/repro/xv-json-parse-quadratic/` (self-contained
+  byte-buffer input, sweep + a 5s gate on 20k numbers, exit 1 pre-fix);
+  filed to stdlib (`REL-20261011-1453-xvector`, severity high) with
+  hypotheses and the string-vs-tokens discriminator; recorded in
+  `docs/BENCHMARKS.md` + the adapter README. **Next slice: lane-local
+  fast numeric scanner for the upsert hot path** (benchmarks run
+  regardless of the stdlib fix timeline; the adapter/browser paths
+  already default to safe batch sizes).
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -1093,7 +1106,17 @@ F 89 -> 96, overall -> **82 %**. -> benchmark integration (70th pass):
 per-request `ef_search` (no-rebuild beam override), `xvectord` applies
 the `XVECTOR_MAX_*` limits per request; new `bench/adapters/` (stdlib
 HTTP client + ann-benchmarks module/config + live smoke: recall@10 1.000
-at ef>=64, 0.940 at ef=8); **F 96 -> 100, overall 82.12 -> 82 %**.
+at ef>=64, 0.940 at ef=8); **F 96 -> 100, overall 82.12 -> 82 %** -> the
+first HTTP-path benchmark exposed a stdlib blocker (71st pass):
+**`json_parse` is quadratic on numeric payloads** (2.5k/5k/10k/20k
+numbers -> 248ms/1.10s/4.77s/17.9s; the 50k-number 382KB upsert body ->
+83.7s = ~88% of the request; engine itself 2ms/insert). Repro pinned
+(`docs/repro/xv-json-parse-quadratic/`, gate fails pre-fix) and filed to
+stdlib (`REL-20261011-1453-xvector`, high); HTTP-path numbers recorded
+in `docs/BENCHMARKS.md` (upsert 661s/5k parser-dominated; recall curve
+correct: 1.000 at ef>=64, 0.940 at ef=8). **Next slice: a lane-local
+fast numeric scanner for the upsert hot path** (benchmarks unblocked
+regardless of the stdlib fix timeline).
    Then: the **`xiom.ann` porter flow -- watch CLOSED; `xiom.ann` 0.2.0
    LIVE + verified in the lane home (m0 / headroom 0.2 / `hnsw_new_full`
    present; sha256 `0a243ce4...`); evaluation `docs/XIOM-ANN-EVAL.md`;
@@ -1585,12 +1608,15 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **Q-serve DONE (69th) + benchmark starter DONE (70th) --
-the lane is user-testable: `xvectord.exe` (runnable server, curl user
-test green), `GET /version`, index config at create, per-request
-`ef_search`, and `bench/adapters/` (ann-benchmarks drop-in + live smoke
-green: recall@10 1.000 at ef>=64). Phase F now 100.** Next: the
-**VectorDBBench client adapter** (same HTTP surface), then the **G-phase
+NEXT TASK: **benchmark starter DONE (70th) and the first HTTP-path run
+exposed a stdlib blocker (71st): `json_parse` quadratic -> filed
+(`REL-20261011-1453-xvector`) + repro pinned; NEXT SLICE: the
+lane-local fast numeric scanner for the upsert hot path so benchmarks
+run now.** Also standing: **Q-serve DONE (69th)** (`xvectord.exe`,
+curl user test green), `GET /version`, index config at create,
+per-request `ef_search`, `bench/adapters/` (ann-benchmarks drop-in +
+live smoke green: recall@10 1.000 at ef>=64). Phase F now 100. Next:
+the **VectorDBBench client adapter** (same HTTP surface), then the **G-phase
 (concurrency/scale)** and D continuation when the stdlib fsync gate
 clears; plus the standing queue: **Q-a1 + Q-a2a DONE** (SQ8
 module + segment v2 artifact); remaining Q-a2b (read-path wiring; D5),
