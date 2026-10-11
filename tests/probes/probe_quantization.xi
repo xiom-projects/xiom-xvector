@@ -18,6 +18,8 @@ use xiom.vectors;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
 use xiom.vector.index.quantize;
+use xiom.vector.index.ann_index;
+use xiom.vector.segment.segment_file;
 
 fn int_to_str(n: Int) -> Str {
   if n == 0 { return "0"; }
@@ -396,6 +398,61 @@ fn main() -> Int {
   io.println("    diag bytes/vector: f32=" + int_to_str(f32_bytes)
     + "B sq8=" + int_to_str(sq8_bytes) + "B ratio=" + int_to_str(f32_bytes / sq8_bytes) + "x (dim=8)");
 
+  // ---- Q-a2a: segment v2 artifact (SQ section, opt-in) ----
+  var sseg = sealed_segment_new(9, 1, dim, DistanceMetric.Euclidean, AnnIndexKind.Flat, AnnParams{ m: 16, ef_construction: 200, ef_search: 64 });
+  var sseal_ok = sealed_segment_seal(&mut sseg);
+  sseg.store = flat;
+  var sq_armed = sealed_segment_enable_sq(&mut sseg);
+  fails = check(sseal_ok && sq_armed && sseg.has_sq, "segment: seal + enable_sq arms the codes", fails);
+
+  var pplain = "out/quant_seg_plain.seg";
+  var psq = "out/quant_seg_sq.seg";
+  sseg.has_sq = false;
+  var ok_plain = segment_file_persist(&sseg, pplain);
+  sseg.has_sq = true;
+  var ok_sq = segment_file_persist(&sseg, psq);
+  var sz_plain: Int = -1;
+  var sz_sq: Int = -1;
+  match io.file_size(pplain) { Some(nn) => { sz_plain = nn; } None => {} }
+  match io.file_size(psq) { Some(nn) => { sz_sq = nn; } None => {} }
+  io.println("    diag segment: plain=" + int_to_str(sz_plain) + "B with_sq=" + int_to_str(sz_sq)
+    + "B delta/vector=" + int_to_str((sz_sq - sz_plain) / n) + "B (text; binary SQ8 would be "
+    + int_to_str(sq8_bytes) + "B vs f32 " + int_to_str(f32_bytes) + "B)");
+  fails = check(ok_plain && ok_sq && sz_sq > sz_plain, "segment: plain v1 + sq v2 persist; byte delta measured", fails);
+
+  var ld = segment_file_load(psq);
+  fails = check(ld.valid && ld.has_sq && ld.store.ids.len() == n && ld.codes.len() == n * dim
+    && sq_equal(&ld.sq, &sseg.sq) && codes_equal(&ld.codes, &sseg.codes),
+    "segment v2: load roundtrips ranges + codes", fails);
+  var ld1 = segment_file_load(pplain);
+  fails = check(ld1.valid && !ld1.has_sq && ld1.store.ids.len() == n,
+    "segment v1: plain file loads with has_sq false", fails);
+
+  var seg_ok: Bool = true;
+  qn = 0;
+  while qn < queries.len() {
+    var exact2 = search_knn(&ld.store, &queries[qn], k, DistanceMetric.Euclidean);
+    var resc2 = sq8_scan_rescore(&ld.store, &ld.sq, &ld.codes, &queries[qn], k, DistanceMetric.Euclidean, 8);
+    if !results_equal(&exact2, &resc2) { seg_ok = false; }
+    qn = qn + 1;
+  }
+  fails = check(seg_ok, "segment v2: rescore over the loaded artifact == exact (10 queries)", fails);
+
+  match io.read_file_bytes(psq) {
+    Ok(fb) => {
+      var cut1 = "out/quant_seg_cut1.seg";
+      var cut2 = "out/quant_seg_cut2.seg";
+      var w1 = write_slice(&fb, fb.len() - 1, cut1);
+      var w2 = write_slice(&fb, fb.len() - 4000, cut2);
+      var lc1 = segment_file_load(cut1);
+      var lc2 = segment_file_load(cut2);
+      fails = check(w1 && w2 && lc1.valid && !lc1.has_sq && lc1.store.ids.len() == n
+        && lc2.valid && !lc2.has_sq && lc2.store.ids.len() == n,
+        "segment v2: torn q/c section drops codes, vectors intact", fails);
+    }
+    Err(_) => { fails = fails + 1; }
+  }
+
   io.println("");
   io.println("probe_quantization: exit=" + int_to_str(fails));
   return fails;
@@ -415,4 +472,30 @@ fn results_equal_direct(a: &Vec[QuantHit], b: &Vec[QuantHit]) -> Bool {
     i = i + 1;
   }
   return true;
+}
+
+fn codes_equal(a: &Vec[Int], b: &Vec[Int]) -> Bool {
+  if a.len() != b.len() { return false; }
+  var i: Int = 0;
+  while i < a.len() {
+    if a[i] != b[i] { return false; }
+    i = i + 1;
+  }
+  return true;
+}
+
+fn write_slice(b: &Vec[UInt8], count: Int, path: Str) -> Bool {
+  var out = Vec[UInt8].new();
+  var i: Int = 0;
+  var nn: Int = count;
+  if nn > b.len() { nn = b.len(); }
+  while i < nn {
+    out.push(b[i]);
+    i = i + 1;
+  }
+  var res = io.write_file_bytes(path, &out);
+  match res {
+    Ok(_) => { return true; }
+    Err(_) => { return false; }
+  }
 }

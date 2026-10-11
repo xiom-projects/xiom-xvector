@@ -893,6 +893,26 @@ extraction with the packages lane.
   38 probes x2 + bench smoke (Windows) ALL GREEN; WSL spot green
   (suite 177/177, quantization x2 diag bit-identical, C-15 repro
   identical).
+- **2026-10-11 (sixty-seventh pass):** Q-a2a -- the segment artifact half
+  of Q-a: `SealedSegment` gains `has_sq/sq/codes` +
+  `sealed_segment_enable_sq` (opt-in SQ8 training on the segment's
+  vectors); segment codec **version 2** writes `q` (ranges) + `c` (code
+  records) sections after the graph only when armed (v1 output
+  byte-identical otherwise; header `xvector-segment 2`); the loader
+  accepts v1+v2, validates ranges/codes in store order, and drops a
+  torn/partial SQ section while keeping the vectors. Gates:
+  `probe_quantization` grew to 23 checks (seal + enable_sq, v1/v2
+  persist + load roundtrip of ranges+codes, rescore over the loaded
+  segment bit-equal to the exact scan for 10 queries, torn q/c keeps the
+  vectors, byte delta 35 B/vector in the text codec vs the future binary
+  layout's 8 B). No score change (artifact capability; the consuming
+  read path is Q-a2b at D5). Evidence: suite 177/177 x2 + sbom (40
+  modules, unsafe=0) + 38 probes x2 + bench smoke (Windows) ALL GREEN;
+  WSL spot green; segment v1 tear-sweep diags byte-identical.
+  Also: owner directive 2026-10-11 11:59Z (engine P3 vulkan/sdl
+  priority) routed read-only to bindings
+  (`REL-20261011-1203-xvector`) and packages (`-2`) -- no writes into
+  those live workspaces.
 
 ## Update rule
 
