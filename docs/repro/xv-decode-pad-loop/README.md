@@ -38,8 +38,9 @@ same context-sensitive lowering family as XVC-C-08/C-09.
 
 ## Repro (revision-pinned)
 
-`probe.xi` encodes a 12-node graph, sets `m = 512`, appends a junk word and
-decodes:
+`probe.xi` encodes a 12-node graph, sets `m = 512` (and, since the 2026-10-11
+P-a codec revision, the level-0 cap word `m0 = 1024` -- codec v3), appends a
+junk word and decodes:
 
 ```powershell
 . .\scripts\dev-env.ps1

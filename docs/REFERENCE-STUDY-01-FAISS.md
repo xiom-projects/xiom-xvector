@@ -16,19 +16,33 @@ revision (`--depth 1`, 2026-10-11).
 |---|---|---|
 | Level assignment | `faiss/impl/HNSW.cpp:63` `set_default_probas(M, 1.0/log(M))`; `:67` `random_level()` draws from a precomputed `assign_probas` table (float subtract loop) | deterministic per-insert LCG seeded by node position; `p(level >= l) ~ ml^-l`, fixed layer capacity 0..7 (documented in `src/index/hnsw.xi`) |
 | Visited set | `faiss/impl/VisitedTable.h` + `:428` (subclass + comparator, `vt.set/advance` inlined; generation-tag reuse) | per-search visited tracking in the beam loop (re-allocated per call) |
-| Neighbor selection | `faiss/impl/HNSW.cpp:245` `shrink_neighbor_list` (relative-neighborhood diversify; `keep_max_size_level0` keeps level-0 degree >= 2*M) | diversified pruning at build; level-0 degree bounded by M (tombstones excluded) |
+| Neighbor selection | `faiss/impl/HNSW.cpp:245` `shrink_neighbor_list` (relative-neighborhood diversify; `keep_max_size_level0` keeps level-0 degree >= 2*M); `:89` level-0 storage is `2*M`; `HNSW.h:148` `prune_headroom = 0.2` | diversified pruning at build; **P-a applied: level-0 capacity `2*m` + 0.2 headroom**; levels >= 1 cap at `m` (tombstones excluded) |
 | Memory mapping / zero-copy IO | `faiss/impl/mapped_io.h`, `zerocopy_io.h`, `io.h` (`IO_FLAG_MMAP` read path) | none (P5 gated on stdlib mmap) |
 | Quantization | `faiss/impl/ProductQuantizer.*`, `ScalarQuantizer.*` | none (full-precision store + Float64 WAL codec) |
 
-## Findings and proposals (ranked; none applied in this slice)
+## Findings and proposals (ranked; F1 applied 2026-10-11 in the first slice)
 
-**F1 -- Level-0 degree generosity (`keep_max_size_level0`).** FAISS
-deliberately avoids shrinking level-0 adjacency below `2*M` because
-over-pruned level-0 links hurt connectivity/recall on hard queries.
-*Ours:* level-0 is pruned like every layer (bounded by M, tombstones
-excluded). *Proposal P-a:* allow generous level-0 degree (or `2*M` at
-level 0 only) and re-measure with `probe_hnsw_recall` (n=200/800 corpora
-+ the per-ef trade table in `docs/BENCHMARKS.md`). Cheap, measurable.
+**F1 -- Level-0 degree generosity (`keep_max_size_level0`). [APPLIED
+2026-10-11, P-a]** FAISS gives level 0 `2*M` slots (`set_default_probas`,
+`faiss/impl/HNSW.cpp:89`) and prunes full blocks with `prune_headroom`
+0.2 (`HNSW.h:148`: "leave room for more neighbors to avoid O(n^2) costs
+and lock contention on frequently-pruned nodes"), so a saturated block is
+not re-pruned on every incoming edge; the optional
+`keep_max_size_level0` fill tops a level-0 block back up with the nearest
+diversification-rejected candidates. *Ours was:* level-0 pruned like every
+layer (bounded by `m`). *Adopted* (re-implemented in `src/index/hnsw.xi`,
+no vendoring): level-0 capacity `m0 = 2*m`; a full level-0 block prunes to
+80% of `m0` (the headroom) and refills by appends; adjacency rows stride
+`m0`; codec v3 carries `m0` (v2, `m0 = m`, still decodes). *Measured*
+(`probe_hnsw_recall`, 2026-10-11, compiler v0.64.3, Windows + WSL
+bit-identical; hard corpus = n=300 dim=16, 6 clusters, midpoint queries at
+ef=8): legacy control (`hnsw_new_full` with `m0 = m`) **275/300**,
+generous **285/300**; n=200 ef=8 296/300 -> 297/300; build work 62,129 ->
+60,852 distance ops (the headroom pays for the extra capacity); visited
++10-25% at n=200, +20% at n=800. The FAISS `keep_max_size_level0` fill
+arm was measured too: same hard-corpus win (285/300) but ~2.5x build work
+(150,716 ops) and ~40% more visited -> **not adopted** (selection stays
+good-only, matching FAISS's default `keep_max_size_level0=false`).
 
 **F2 -- Generation-tag visited sets.** FAISS reuses one `VisitedTable`
 per thread with tag increments, avoiding allocation per search; also
@@ -72,8 +86,10 @@ the compiler grows (no action).
 
 ## Next
 
-1. P-a (level-0 degree) is the first candidate slice: implement behind the
-   existing API, gate with `probe_hnsw_recall` + the per-ef table.
+1. **P-a DONE 2026-10-11** (F1 above): implemented behind the existing API
+   (`m0 = 2*m`, headroom 0.2, codec v3), gated by `probe_hnsw_recall`
+   (generosity + control gates), per-ef table refreshed in
+   `docs/BENCHMARKS.md`/`docs/hnsw-design.md`; both batteries green.
 2. Study item 2: quantization reconnaissance (FAISS SQ/PQ + sqlite-vec) ->
    `docs/REFERENCE-STUDY-02-QUANTIZATION.md`.
 3. Study items 3-4 (sqlite-vec kernels, DiskANN layout) remain queued.

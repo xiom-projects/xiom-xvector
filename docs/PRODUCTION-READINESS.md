@@ -10,8 +10,8 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-10 (v1.0.0-rc.1 candidate; three registry adoptions
-  + compiler v0.64.3 re-pin; lane-local toolchain isolation)
+- **As of:** 2026-10-11 (v1.0.0-rc.1 candidate; reference study 01 applied
+  -- generous HNSW level 0; lane-local toolchain isolation)
 - **Overall:** **81 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -28,7 +28,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 |---|-------|-------:|------:|-------|----------|
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
-| C | ANN index (HNSW hardening) | 14 | 98 | release-grade | file-backed persistence |
+| C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 74 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 89 | buildable | version endpoint |
@@ -37,8 +37,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x98 + 0.20x74 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.10 -> 81 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x74 + 0.08x100 +
+0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.24 -> 81 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -75,7 +75,7 @@ both index kinds; gate `probe_range_search` -- 72 radius x limit combos vs a
 brute-force scan), SearchHits public shape, error paths.
 Remaining: ANN-widened range (M-P tuning).
 
-### C. ANN index -- 98 %
+### C. ANN index -- 99 %
 Done: multi-layer HNSW graph (`index/hnsw.xi`: flat per-(node, layer)
 adjacency rows, deterministic geometric levels, greedy descent + layer-0
 beam honouring `ef`, metric-agnostic, user-id results; **O(log n) sorted
@@ -85,10 +85,15 @@ returned, routers kept, revive on re-insert), tombstone compaction
 wiring** (`VectorEngine.graph/index_kind/ann`, `set_index` Flat/Hnsw,
 upsert/delete upkeep, `engine_search` routing with `ef = ann.ef_search`,
 filtered search stays exact, recover + re-apply), **strict word codec**
-(`hnsw_encode`/`hnsw_decode` v2, map rebuilt on decode), **beam
+(`hnsw_encode`/`hnsw_decode` v3 carrying `m0`; v2 still decodes; map
+rebuilt on decode), **beam
 construction honouring `ef_construction`** with diversified pruning,
-recall harness vs the flat oracle (n=200: 300/300 at ef=64, 296/300 at
-ef=8; n=800: 200/200; after-delete 300/300; compacted 200/200; engine-level
+**generous level 0 (reference study 01, P-a)**: level-0 capacity
+`m0 = 2*m` with FAISS `prune_headroom` 0.2 (anti-churn) and a
+generous-vs-legacy control gate,
+recall harness vs the flat oracle (n=200: 300/300 at ef=64, 297/300 at
+ef=8; n=800: 200/200; hard clustered corpus 285/300 generous vs 275/300
+legacy; after-delete 300/300; compacted 200/200; engine-level
 recall 200/200 incl. ef_construction=32; gates `probe_hnsw_recall`,
 `probe_engine_hnsw`, `probe_hnsw_codec`), AnnParams validation.
 Remaining: file-backed graph segments (stdlib I/O pending). Latency proxies
@@ -828,6 +833,22 @@ extraction with the packages lane.
   `zerocopy_io.h`), SQ/PQ pointers. Ranked proposals with gate plans;
   P-a (level-0 degree `2*M`) is the first candidate slice. No score
   change (no product evidence yet).
+- **2026-10-11 (sixty-third pass):** P-a applied -- generous HNSW level 0,
+  re-implemented from reference study 01 (no vendoring): level-0 capacity
+  `m0 = 2*m`, full-block prune to 80% of `m0` (FAISS `prune_headroom` 0.2
+  anti-churn), adjacency rows stride `m0`, codec **v3** carries `m0`
+  (v2 still decodes), `hnsw_new_full` for the legacy control. Gate
+  `probe_hnsw_recall` extended: generosity-engaged structural checks, a
+  bit-identical WSL run, and a hard clustered corpus (n=300 dim=16,
+  midpoint queries at ef=8) where generous **285/300** beats the legacy
+  control **275/300**; the FAISS `keep_max_size_level0` fill arm was
+  measured (same recall, ~2.5x build work, ~40% more visited) and not
+  adopted. Costs recorded honestly: build 13.0 -> 14.7 s, W3 p50
+  +28/+34/+40% at ef=32/64/128, recovery +27% (n=5000, recall 1.000
+  unchanged); per-ef table refreshed in `docs/hnsw-design.md`. C 98 -> 99;
+  overall 81.10 -> 81.24 -> 81 %. Evidence: suite 171/171 x2 + sbom
+  (39 modules, unsafe=0) + 37 probes x2 + bench smoke, Windows AND WSL
+  (bit-identical), C-10 repro re-run green on codec v3.
 
 ## Update rule
 

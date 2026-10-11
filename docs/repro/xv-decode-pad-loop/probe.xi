@@ -22,7 +22,9 @@ fn main() -> Int {
     i = i + 1;
   }
   var words = hnsw_encode(&g);
-  words[1] = 512;      // inflate m (legal range at the time; 512 = AnnParams cap)
+  words[1] = 512;      // inflate m (legal range; 512 = AnnParams cap)
+  words[2] = 1024;     // inflate the level-0 cap too (max legal = 2 * m; the
+                       // P-a codec carries it as the v3 second header word)
   words.push(7);       // trailing junk => decode must return None after the work
   io.println("decode start (pre-fix revisions segfault here)");
   var dec = hnsw_decode(&words);

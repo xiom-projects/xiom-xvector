@@ -478,8 +478,9 @@ The places where correctness is enforced in code (and documented in
 - **Bounded results** -- `search_knn` / `hnsw_search` / `search_execute`
   `ensures: result.len() <= k`; `topk_heap.topk_push`
   `ensures: items.len() <= capacity`.
-- **Graph degree** -- HNSW neighbour selection bounds each node's adjacency by
-  `max_neighbors` (<= `core.limits.max_graph_degree()`).
+- **Graph degree** -- HNSW neighbour selection bounds each node's adjacency
+  by the layer cap: `m` on levels >= 1, `m0` (default `2*m`, generous
+  level 0; `m <= core.limits.max_graph_degree()` so `m0 <= 1024`).
 - **Segment lifecycle** -- `segment_state.segment_state_can_transition` is the
   single source of truth for legal state moves.
 - **WAL-before-ack** -- `engine_upsert`/`engine_delete` append to the WAL before
