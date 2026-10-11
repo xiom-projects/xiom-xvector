@@ -1030,11 +1030,19 @@ signed commits, docs updated).
    batch matches the engine ask) and packages
    (`REL-20261011-1203-xvector-2`: keep the publish chain current; sdl3
    0.7.0 published eco-v0.1.142, 0.8.0 in flight).
-   Then: the **`xiom.ann` porter flow -- watch CLOSED (LIVE 0.1.0);
-   evaluation done (`docs/XIOM-ANN-EVAL.md`); awaiting `xiom.ann` 0.2.0
-   (P-a + codec v3; refresh ask `REL-20261011-1206-xvector`) + owner
-   greenlight for the consumer swap**, the replay-loop delegation at the
-   D-ledger store migration, then the owner's public release + benchmark.
+   **Closed loop 13:07Z: `xiom.sdl3` 0.8.0 published (sha256
+   `5849f0cf...`); independent registry-artifact verification from this
+   lane (hidden-window RGBA blit, engine P3 acceptance shape) GREEN --
+   exit 0, SDL3 3.4.8; result relayed to engine
+   (`REL-20261011-1307-xvector`). The engine's windowed-demo blocker is
+   cleared on the published consume path.**
+   Then: the **`xiom.ann` porter flow -- watch CLOSED; `xiom.ann` 0.2.0
+   LIVE + verified in the lane home (m0 / headroom 0.2 / `hnsw_new_full`
+   present; sha256 `0a243ce4...`); evaluation `docs/XIOM-ANN-EVAL.md`;
+   **owner greenlight requested (`REL-20261011-1308-xvector`; vectors
+   precedent `-1550-xvector-12`) -- the swap is the next xvector slice on
+   go**; the replay-loop delegation at the D-ledger store migration, then
+   the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
    `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
    stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
