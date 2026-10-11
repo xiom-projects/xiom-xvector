@@ -120,8 +120,15 @@ server: a stdlib `xvector_client.py`, an ann-benchmarks drop-in
 (`module.py` + `config.yml`; metric map angular->cosine, euclidean,
 dot->dot; `ef_search` sweep 16..256 per request), and `smoke.py` -- the
 live verifier of the exact adapter calls (version -> HNSW create ->
-batched upsert -> ef sweep -> recall@10 vs a brute-force cosine oracle;
-green on a default-cap server: **1.000 at ef>=64, 0.940 at ef=8**).
+  batched upsert -> ef sweep -> recall@10 vs a brute-force cosine oracle;
+  green on a default-cap server: **1.000 at ef>=64, 0.940 at ef=8**).
+  **VectorDBBench (2026-10-11, 74th pass):** `bench/adapters/vectordbbench/`
+  -- drop-in DB client (`xvector_db.py`) + direct-mode live smoke
+  (`smoke_db.py`; 11/11 green: insert 400/400, recall 1.000 at the
+  configured ef, 0.930/1.000 at ef 8/128; metadata + filter cases fail
+  loudly until the payload routes land; no drop route -- restart for a
+  clean fit). Shared brute-force oracle extracted to
+  `bench/adapters/oracle.py`.
 Honest framing for published numbers: single-threaded server (G phase),
 no fsync-backed durability claims on this stdlib pin (D phase). See
 `bench/adapters/README.md`.

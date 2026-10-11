@@ -1026,6 +1026,21 @@ extraction with the packages lane.
   -1550-xvector-9 (vectors extraction), -1835 (toolchain hygiene)
   verified + closed; WIP signal `REL-20261011-1618-xvector` filed. No
   score change (82 %).
+- **2026-10-11 (seventy-fourth pass):** VectorDBBench adapter shipped:
+  `bench/adapters/vectordbbench/` -- `xvector_db.py` (framework-tolerant
+  DB client: create with drop_old best-effort, batched insert_embeddings
+  returning (count, error), search with (distance, id) rows, config
+  plumbing from db_config/env, metric map COSINE/L2/IP; metadata +
+  filters fail loudly -- not exposed over HTTP yet) + `smoke_db.py`
+  (direct-mode live smoke, 11 checks: insert 400/400, recall 1.000 at
+  the configured ef, 0.930 at ef=8, 1.000 at ef=128, unsupported-path +
+  drop-fallback checks) + the drop-in README. New shared
+  `bench/adapters/oracle.py` (smoke.py + quick_bench.py refactored onto
+  it; one brute-force implementation). Validation: py_compile 6/6 +
+  three live smokes against `xvectord` (raised caps); the .xi tree is
+  byte-identical to the `de151d6` tree (two batteries green this
+  session), so no separate battery for this Python-only slice -- the
+  wave-111 closure battery covers the wrap. No score change (82 %).
 
 ## Update rule
 

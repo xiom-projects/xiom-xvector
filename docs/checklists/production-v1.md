@@ -111,11 +111,14 @@ needed) -> signed commit. Red build = rejection.
 - [x] S6 `GET /version` + index configuration at create + per-request
   `ef_search` **(done 2026-10-11, 70th pass; closes phase F)**; `xvectord`
   applies the `XVECTOR_MAX_*` service limits
-- [x] Benchmark adapters (starter) **(done 2026-10-11, 70th pass)**:
-  `bench/adapters/` -- stdlib HTTP client, ann-benchmarks module +
-  config.yml (angular/euclidean/dot; ef sweep), live `smoke.py` green
-  (recall@10 1.000 at ef>=64, 0.940 at ef=8); VectorDBBench client is
-  the next adapter
+- [x] Benchmark adapters **(done 2026-10-11, 70th pass; VectorDBBench
+  adapter 74th pass)**: `bench/adapters/` -- stdlib HTTP client,
+  ann-benchmarks module + config.yml (angular/euclidean/dot; ef sweep),
+  live `smoke.py` green (recall@10 1.000 at ef>=64, 0.940 at ef=8);
+  **`vectordbbench/` client adapter** (drop-in DB client + direct-mode
+  `smoke_db.py` 11/11 live: insert 400/400, recall 1.000/0.930/1.000 at
+  ef 64/8/128; metadata/filter cases fail loudly until payload routes);
+  shared `oracle.py` (single brute-force impl)
 - [x] Upsert hot-path fast scanner **(done 2026-10-11, 72nd pass)**:
   `api.json_fast` (byte-level, conservative) + `HttpRequest.body_bytes`;
   228-case byte-equivalence gate + 52k-number body <5 s (strict ~84 s);
