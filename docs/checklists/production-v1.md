@@ -156,6 +156,9 @@ needed) -> signed commit. Red build = rejection.
   quantized scan tier + exact f32 rescore for sealed segments; explicit
   error-bound story section; no adoption yet)
 - [ ] Q-a adoption slice -- segment codec v-next + `probe_quantization`
-  (first adoption candidate; after study 03)
-- [ ] Study 03 -- DiskANN layout + quantized-graph notes (D5 delta
-  segments / P5 mmap design input)
+  (next; study backlog complete; consumes study 03's record-layout input)
+- [x] Study 03 -- DiskANN layout + quantized-graph notes **(done
+  2026-10-11)** -> `docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed
+  fixed-size records, co-located f32 + adjacency, buffer-then-seal
+  deltas, delete-by-rebuild, alignment as a format decision for
+  D5/D6/P5); study backlog complete
