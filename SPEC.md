@@ -498,6 +498,30 @@ requests through the transport-agnostic `http_service_handle`.
   guard 32 MiB. Benchmark adapters ship in `bench/adapters/` (stdlib
   client + ann-benchmarks module/config + live smoke).
 
+## `xiom.vector.api.json_fast` (72nd pass -- the upsert hot path)
+Lane-local scanner for the canonical upsert body
+`{"ids":[...],"vectors":[[...]]}`: byte-level, strict JSON grammar
+(leading zeros rejected; frac/exp digits required), operating directly on
+the request's `body_bytes` so the **quadratic `str_bytes`/`str_slice` and
+the superlinear generic parser are never touched on the hot path**
+(`REL-20261011-1453-xvector`; repro
+`docs/repro/xv-json-parse-quadratic/`). Conservative by construction: any
+other key, value kind, duplicate key, trailing byte, dimension 0, >15
+significant digits or |exp|>22 returns `None` and the caller takes the
+strict generic path -- acceptance can only shrink, never diverge.
+Numbers accumulate inline (one exact mantissa scale + one division;
+within a few ulp of the stdlib converter inside the stated bounds; the
+response contract does not echo values).
+- `json_fast_upsert_bytes(&Vec[UInt8]) -> Option[FastUpsert]` (service
+  path) and `json_fast_upsert(Str)` (convenience wrapper).
+- Gate: `probe_json_fast` -- fast vs strict responses byte-for-byte equal
+  across a 28-case hand matrix + 200 deterministic byte mutations (228
+  cases), accept/reject parity spot checks, and a 52,000-number body
+  under 5 s (strict ~84 s; actual ~1.7-2.9 s). `ServiceConfig.fast_upsert`
+  toggles the path for equivalence testing.
+- Measured effect: the 5,000 x dim-25 endpoint fit through `xvectord`
+  went 661 s -> 120 s (now HNSW-build-bound); search unchanged.
+
 ## `xiom.vector.api.vector_api`
 Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
 `src/engine.xi`.

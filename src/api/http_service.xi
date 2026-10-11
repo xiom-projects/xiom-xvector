@@ -48,6 +48,7 @@ use xiom.vector.index.ann_index;
 use xiom.vector.query.search_request;
 use xiom.vector.query.search_service;
 use xiom.vector.durability.wal_file;
+use xiom.vector.api.json_fast;
 
 // ---- Request model + parsing ----
 
@@ -60,6 +61,11 @@ pub type HttpRequest = {
   header_names: Vec[Str];
   header_values: Vec[Str];
   body: Str;
+  // The raw body bytes (linear copy from the request buffer): the fast
+  // upsert scanner and any byte-level consumer use these directly --
+  // `str_bytes`/`str_slice` on big Strs are quadratic on this stdlib pin
+  // (REL-20261011-1453-xvector).
+  body_bytes: Vec[UInt8];
 }
 
 fn bytes_to_str(b: &Vec[UInt8], from: Int, to: Int) -> Str {
@@ -103,6 +109,7 @@ pub fn http_parse_request(raw: &Vec[UInt8]) -> HttpRequest {
     header_names: Vec[Str].new(),
     header_values: Vec[Str].new(),
     body: "",
+    body_bytes: Vec[UInt8].new(),
   };
   var term = find_head_end(raw);
   if term < 0 {
@@ -220,7 +227,17 @@ pub fn http_parse_request(raw: &Vec[UInt8]) -> HttpRequest {
     return req;
   }
   if body_len > cl { return req; }
-  req.body = slice.str_slice(full, term + 4, slice.str_bytes(full).len());
+  // Body as BYTES (linear copy; the Str form below is for the strict path
+  // -- from_utf8 is linear, whereas str_bytes/str_slice on the request Str
+  // are quadratic on this stdlib pin, REL-20261011-1453-xvector).
+  var bb = Vec[UInt8].new();
+  var bi = term + 4;
+  while bi < raw.len() {
+    bb.push(raw[bi]);
+    bi = bi + 1;
+  }
+  req.body_bytes = bb;
+  req.body = Str::from_utf8(&bb);
   req.ok = true;
   return req;
 }
@@ -246,6 +263,10 @@ pub type ServiceConfig = {
   max_top_k: Int;
   max_batch: Int;
   max_dim: Int;
+  // Canonical upsert bodies take the lane-local fast scanner
+  // (`api.json_fast`) instead of the generic parser; disable for
+  // equivalence testing (the probe gates byte-equal responses).
+  fast_upsert: Bool;
 }
 
 pub fn service_config_default() -> ServiceConfig {
@@ -254,6 +275,7 @@ pub fn service_config_default() -> ServiceConfig {
     max_top_k: 1000,
     max_batch: 256,
     max_dim: 1024,
+    fast_upsert: true,
   };
 }
 
@@ -1310,6 +1332,27 @@ fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue, cfg: &Servi
   }
 }
 
+// Fast-path upsert handler: identical tail to `handle_upsert` (same
+// status codes and JSON), fed by the lane-local scanner.
+fn handle_upsert_fast(eng: &mut VectorEngine, name: Str, f: &FastUpsert, cfg: &ServiceConfig) -> Vec[UInt8] {
+  var sel = select_collection(eng, name);
+  match sel {
+    Ok(_) => {}
+    Err(_) => { return jerror(404, "unknown collection"); }
+  }
+  if f.ids.len() == 0 { return jerror(400, "bad points body"); }
+  if f.ids.len() > cfg.max_batch { return jerror(413, "batch exceeds service limit"); }
+  var res = upsert_many(eng, &f.ids, &f.vectors);
+  match res {
+    Ok(n) => {
+      var out = json.json_object_new();
+      out = json.json_set(out, "count", json.json_number(n as Float64));
+      return http_response(200, out);
+    }
+    Err(e) => { return core_err_response(e); }
+  }
+}
+
 fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
   var name_opt = query_param(query, "collection");
   var name = eng.active_name;
@@ -1399,14 +1442,24 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
   }
   if segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
     var name = segs[1];
-    if req.method == "POST" {
-      if !json_depth_ok(req.body, 64) { return jerror(400, "json nesting exceeds service limit"); }
-      var parsed = json.json_parse(req.body);
-      match parsed {
-        Ok(body) => { return handle_upsert(eng, name, body, cfg); }
-        Err(_) => { return jerror(400, "bad json"); }
-      }
-    }
+  if req.method == "POST" {
+  if !json_depth_ok(req.body, 64) { return jerror(400, "json nesting exceeds service limit"); }
+  // Fast path: the canonical {"ids":[...],"vectors":[[...]]} body is
+  // scanned directly (the generic parser is superlinear on numeric
+  // payloads; REL-20261011-1453-xvector). None -> strict path below.
+  if cfg.fast_upsert {
+  var fast = json_fast_upsert_bytes(&req.body_bytes);
+  match fast {
+  Some(f) => { return handle_upsert_fast(eng, name, &f, cfg); }
+  None => {}
+  }
+  }
+  var parsed = json.json_parse(req.body);
+  match parsed {
+  Ok(body) => { return handle_upsert(eng, name, body, cfg); }
+  Err(_) => { return jerror(400, "bad json"); }
+  }
+  }
     if req.method == "GET" {
       var id_opt = query_param(req.query, "id");
       var id: Int = -1;

@@ -46,11 +46,12 @@ with `ef_search`). A dedicated client module is the next adapter slice;
 
 ## Honest notes for benchmark runs
 
-- **JSON parser blocked (2026-10-11):** the stdlib `json_parse` is
-  quadratic on numeric payloads (20k numbers ~18 s; 50k ~84 s --
-  `docs/repro/xv-json-parse-quadratic/`, filed to the stdlib lane as
-  `REL-20261011-1453-xvector`). Large fits are unusable until the fix
-  (or the lane-local fast upsert scanner) lands; keep batches small.
+- **parser/Str hot path fixed in-lane (72nd pass):** the stdlib
+  `str_bytes`/`json_parse` quadratic (root-caused to `strnlen` accessors;
+  stdlib fix queued) is bypassed by the byte-level fast upsert scanner
+  (`docs/repro/xv-json-parse-quadratic/`); canonical bodies now scan
+  linearly. Keep batches <= `XVECTOR_MAX_BATCH` and raise
+  `XVECTOR_MAX_REQUEST_BYTES` for big dims.
 - the server is **single-threaded** (sequential accept): benchmark
   concurrency phases will serialize; report as a single-thread baseline
   (the G phase of `docs/PRODUCTION-READINESS.md` tracks this),
