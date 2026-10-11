@@ -1188,6 +1188,14 @@ at ef>=64, 0.940 at ef=8); **F 96 -> 100, overall 82.12 -> 82 %**.
   timestamps if it recovers.** (Info item from orbitdb
   `REL-20261011-1127-orbitdb` answered: hybrid T001s were package
   resolution, not our pin -- see our reply `REL-20261011-1146-xvector`.)
+- **Compiler batch plan (`REL-20261011-1342-compiler`, 2026-10-11
+  13:42Z): six fix batches; xvector's are #6 Float32 slot stores
+  (XVC-C-15; witness `docs/repro/xv-f32-slot-literal-write/`, expect
+  exit 0 post-fix) and #3 phantom imports (`REL-20261010-2124-xvector`;
+  expect one clear error, never a silent build). Keep workarounds until
+  each fix ships, then re-verify from the witnesses and re-run the full
+  batteries both platforms (protocol filed as `REL-20261011-1426-xvector`;
+  owner directive: continue until the compiler release unblocks).**
 - **Shared bus clone:** the local `xiom-relays` working copy is shared by
   several lane sessions on this machine -- scope `git add` to your own
   item files (never `git add .`), expect commits interleaved by other
