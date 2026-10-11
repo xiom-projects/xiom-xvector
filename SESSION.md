@@ -1062,7 +1062,16 @@ signed commits, docs updated).
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
   (`git pull --ff-only`) and process items addressed to this lane
   (`python tools/relay.py view --lane xvector`). Recurring doorbell: a
-  3-hour cron session check is armed.**
+  3-hour cron session check is armed.** **Ops hygiene rules
+  (`REL-20261011-1134-ops`, to: all, 2026-10-11): never delete or
+  downgrade the shared homes (`%LOCALAPPDATA%\xiom*`,
+  `~/.local/share/xiom`, `~/xiom`); install/uninstall/cleanup tests run
+  against an isolated `XIOM_HOME` + lane-local toolchain; announce
+  destructive windows with a to: all info item before starting; on
+  sudden unresolved-package T001s, stop, rerun once, file to ops with
+  timestamps if it recovers.** (Info item from orbitdb
+  `REL-20261011-1127-orbitdb` answered: hybrid T001s were package
+  resolution, not our pin -- see our reply `REL-20261011-1146-xvector`.)
 - **Shared bus clone:** the local `xiom-relays` working copy is shared by
   several lane sessions on this machine -- scope `git add` to your own
   item files (never `git add .`), expect commits interleaved by other
@@ -1256,7 +1265,7 @@ signed commits, docs updated).
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 81 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); 3-hour doorbell cron |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
