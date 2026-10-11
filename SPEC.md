@@ -465,6 +465,34 @@ Public facade over `engine.core` (acyclic: `core.shim <- engine.core <- engine`)
 Consumers that call `engine_*` symbols (engine_new/engine_size/engine_recover/
 ...) import `xiom.vector.engine.core` in addition to this module.
 
+## `xiom.vector.api.httpd` (Q-serve, 69th pass -- the runnable server)
+The user-testable face of the DB: `xvectord.exe` (build
+`scripts\build.ps1 src\api\httpd.xi -Name xvectord`) -- a single-threaded
+sequential-accept loop over the stdlib socket layer (`xiom.net.socket`,
+the PULSE production pattern; the C-PULSE-02 proof long delivered), whole
+requests through the transport-agnostic `http_service_handle`.
+- `httpd_read_request(fd) -> Vec[UInt8]`: headers to CRLFCRLF + exactly the
+  Content-Length body; 4 MiB socket-side guard (the service enforces its
+  own limits); recv errors/EOF -> empty (peer went away).
+- `httpd_once(eng, client) -> Int`: 30 s dead-peer guard
+  (`socket_set_timeout`), read -> `http_service_handle` -> `send_all`
+  (`TcpStream.write_all`) -> close; returns 0 served, 1 served + quit
+  requested (`X-Xvector-Quit: 1` header), -1 empty/error.
+- `httpd_serve(bind, port) -> Int`: ephemeral `engine_new()` (in-memory;
+  durability wiring follows the stdlib fsync chain), `SO_REUSEADDR`,
+  listen(128), accept loop; `main` parses `--bind` / `--port` (default
+  `127.0.0.1:7707`) plus `XVECTORD_BIND` / `XVECTORD_PORT`; prints the
+  banner and endpoint list; exits 0 on a quit request.
+- User test (verified 2026-10-11): start `.\out\xvectord.exe --port 7711`
+  then `curl http://127.0.0.1:7711/health` etc. -- create collection,
+  upsert points, `POST /search` returns the correct nearest neighbor,
+  `/stats` reflects the collection; `curl -H "X-Xvector-Quit: 1" ...`
+  shuts down cleanly.
+- Gates: `tests/probes/probe_http_server.xi` (10 checks over REAL sockets
+  in one process: ephemeral-band listener, self-connect round trips for
+  health/collections/points/stats/search, 409/404 honesty, Content-Length
+  body framing, quit rc, empty-connection close) x2 Windows + WSL.
+
 ## `xiom.vector.api.vector_api`
 Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
 `src/engine.xi`.
@@ -473,7 +501,7 @@ Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
 Transport-agnostic HTTP/1.1 service skeleton:
 `http_service_handle(eng, raw_bytes) -> response_bytes` -- parse -> route ->
 JSON -> serialize, pure and deterministic (no sockets; the real socket
-adapter over stdlib `xiom.net` is deferred to the C-PULSE-02 proof).
+adapter is `xiom.vector.api.httpd` -- `xvectord`, 69th pass).
 - Parsing (`http_parse_request -> HttpRequest { ok; incomplete; method;
   path; query; header_names; header_values; body }`): CRLF framing, strict
   method/path/query split, header names lowercased, `http_header` lookup,

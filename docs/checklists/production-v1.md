@@ -101,6 +101,14 @@ needed) -> signed commit. Red build = rejection.
   (`probe_http_fuzz`, 14 checks, 2500 inputs) with the JSON depth guard
   fixing a found stack-overflow DoS; `scripts/sbom.ps1`/`sbom.sh` SBOM +
   unsafe gate wired into both batteries; no-unsafe audit statement
+- [x] S5 runnable server `xvectord` **(done 2026-10-11, 69th pass)**:
+  `api.httpd` socket adapter over the stdlib `xiom.net` layer (the
+  C-PULSE-02 proof delivered), `main` entry -> `xvectord.exe`
+  (`--bind/--port` + `XVECTORD_*`), strict headers/Content-Length
+  framing, 4 MiB socket guard, 30 s dead-peer guard, `X-Xvector-Quit`
+  shutdown; `probe_http_server` (10 checks over real sockets) x2 Windows +
+  WSL; curl end-to-end user test green (create/upsert/search/stats/quit)
+- [ ] S6 version endpoint (`GET /version`) -- the last F item
 
 ## M-O -- Observability & operability
 

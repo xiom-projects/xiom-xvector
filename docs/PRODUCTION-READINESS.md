@@ -11,8 +11,9 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
 - **As of:** 2026-10-11 (v1.0.0-rc.1 candidate; reference study 01 applied
-  -- generous HNSW level 0; lane-local toolchain isolation)
-- **Overall:** **81 %** (weighted; see method)
+  -- generous HNSW level 0; **runnable HTTP server `xvectord` verified
+  end-to-end with curl**; lane-local toolchain isolation)
+- **Overall:** **82 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -31,14 +32,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
 | D | Persistence & durability | 20 | 74 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
 | E | Metadata & filtering | 8 | 100 | production | -- |
-| F | API & query surface | 8 | 89 | buildable | version endpoint |
+| F | API & query surface | 8 | 96 | release-grade | version endpoint |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x74 + 0.08x100 +
-0.08x89 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.24 -> 81 %**.
+0.08x96 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **81.80 -> 82 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -149,8 +150,14 @@ plan, and **multi-key intersections** (And of indexable clauses).
 Remaining: none (composite `In` intersections are a possible future
 stretch).
 
-### F. API & query surface -- 73 %
-Done: facade (create/upsert/search/delete/get + payloads + filtered search +
+### F. API & query surface -- 96 %
+Done: **runnable HTTP server (`xvectord.exe`, 69th pass): the socket
+adapter over the stdlib `xiom.net` layer (sequential accept, strict
+Content-Length framing, 30 s peer guard, `X-Xvector-Quit` shutdown),
+whole requests through the transport-agnostic `http_service_handle`;
+gate `probe_http_server` (10 checks over real sockets, x2 Windows + WSL)
+and a curl end-to-end user test (health/create/upsert/search/stats ->
+correct nearest neighbor -> clean quit)**; facade (create/upsert/search/delete/get + payloads + filtered search +
 exact range), batch ops (`upsert_many`/`delete_many`/`search_many`,
 all-or-nothing validation; gate `probe_batch_ops`), Result[..] error
 discipline, SearchHits/BatchHits shapes documented, SearchRequest wire
@@ -169,7 +176,7 @@ per point, tombstones + payload/index cleanup; gate
 and the request surface extensions (M-Q6: `SearchRequest` mode
 knn/range, radius, offset/after-id pagination; `SearchBatchRequest` +
 `search_batch_with_request`; gate `probe_search_request`, 24 checks).
-Remaining: version endpoint for the future service.
+Remaining: version endpoint.
 
 ### G. Concurrency & scalability -- 25 %
 Done: multi-collection registry (M-D3: named collections with per-
@@ -923,9 +930,25 @@ extraction with the packages lane.
   + codec v3 from our HEAD; evaluation recorded in
   `docs/XIOM-ANN-EVAL.md` (adoption plan + risks: codec v3 round-trip,
   mechanical re-extraction, WSL custom-home caveat). Swap next: package
-  0.2.0 + owner greenlight (vectors precedent). No score change (porter
+  0.2.0 + owner   greenlight (vectors precedent). No score change (porter
   flow, no product path yet); the orbitdb hybrid note was also confirmed
   fixed on their side (missing `xiom.vectors` deps -- our diagnosis).
+- **2026-10-11 (sixty-ninth pass):** the runnable server (`xvectord`) --
+  `src/api/httpd.xi`: sequential-accept socket adapter over the stdlib
+  `xiom.net` layer (the PULSE production pattern), strict
+  headers/Content-Length request framing with a 4 MiB socket guard,
+  `TcpStream.write_all` responses, 30 s dead-peer guard, graceful
+  `X-Xvector-Quit: 1` shutdown, `--bind/--port` + `XVECTORD_*` env;
+  `main` entry so the compiler emits a double-clickable `xvectord.exe`.
+  Gate `probe_http_server` (10 checks over real sockets in one process:
+  health/collections/points/stats/search, 409/404 honesty, quit rc,
+  empty-connection close) green x2 Windows + WSL; **curl end-to-end user
+  test green** (health -> create -> upsert 3 -> search k=2 returns id 1
+  at 0.0061 -> stats -> quit -> clean exit). F 89 -> 96 (only the version
+  endpoint remains); overall 81.24 -> 81.80 -> **82 %**. Evidence:
+  suite 177/177 x2 + sbom (41 modules, unsafe=0) + 39 probes x2 + bench
+  smoke (Windows) ALL GREEN; WSL spot (server probe x2 + service probe)
+  green. First user-testable artifact of the lane.
 
 ## Update rule
 
