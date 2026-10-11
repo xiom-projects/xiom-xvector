@@ -1073,6 +1073,18 @@ extraction with the packages lane.
   ~34x, now ~7-8x). Bus `-1453`/`-1543` verified + closed. No score
   change (82 %) -- the fix removes a scaling ceiling; the numbers land
   in `docs/BENCHMARKS.md`.
+- **2026-10-11 (P2 memory accounting, 75th pass):** shipped
+  `engine_memory_estimate` (+ facade `memory_estimate`) and the `/stats`
+  `mem_*` fields: per-collection store/graph/payload accounting plus the
+  engine-wide WAL estimate, on a documented model (24 B Vec/Str header,
+  32 B Vector struct; HNSW rows uniformly allocated -- `adj` =
+  nodes*8*m0 Ints -- so deltas are exact). Gate `probe_memory_estimate`
+  (17 checks, Windows + WSL); batteries ALL GATES GREEN with **41
+  probes** x2 both platforms. `docs/OPERATIONS.md` gains the
+  memory-budget section (rules of thumb: ~2.3 KiB/point HNSW m=16
+  dim=25; seal/compact triggers). P2's estimate+thresholds half is
+  done; budget-cap enforcement stays advisory in the ops docs. No
+  scored-phase change (82 %).
 
 ## Update rule
 

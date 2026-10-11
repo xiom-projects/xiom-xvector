@@ -166,7 +166,11 @@ needed) -> signed commit. Red build = rejection.
   collection + process-level sharding; in-process threads are post-gate
   (acceptance `docs/repro/xv-thread-abi`); consistency + G-1..G-5 slice
   order defined
-- [ ] P2 memory budget + seal/compaction thresholds; measured
+- [x] P2 memory budget + seal/compaction thresholds; measured **(done
+  2026-10-11, 75th pass: `engine_memory_estimate` + `/stats` `mem_*` +
+  `probe_memory_estimate` 17 checks x2 Win+WSL; thresholds + rules of
+  thumb in `docs/OPERATIONS.md` section 8; budget-cap enforcement stays
+  advisory)**
 - [ ] P3 SIMD/BLAS seam behind the `xiom.vectors` contract; benchmark delta
   recorded
 - [ ] P4 IVF/PQ prototype (v1.1 track) with recall/latency curve
