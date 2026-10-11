@@ -488,10 +488,15 @@ requests through the transport-agnostic `http_service_handle`.
   upsert points, `POST /search` returns the correct nearest neighbor,
   `/stats` reflects the collection; `curl -H "X-Xvector-Quit: 1" ...`
   shuts down cleanly.
-- Gates: `tests/probes/probe_http_server.xi` (10 checks over REAL sockets
+- Gates: `tests/probes/probe_http_server.xi` (15 checks over REAL sockets
   in one process: ephemeral-band listener, self-connect round trips for
-  health/collections/points/stats/search, 409/404 honesty, Content-Length
+  health/version/collections/points/stats/search, index-config create,
+  ef_search override + range rejection, 409/404 honesty, Content-Length
   body framing, quit rc, empty-connection close) x2 Windows + WSL.
+- Config: `httpd_once` applies the documented `XVECTOR_MAX_*` service
+  limits per request (`service_config_from_env`); socket-side buffer
+  guard 32 MiB. Benchmark adapters ship in `bench/adapters/` (stdlib
+  client + ann-benchmarks module/config + live smoke).
 
 ## `xiom.vector.api.vector_api`
 Merged stub (`// MERGED into xiom.vector.engine`); the public facade lives in
@@ -510,12 +515,17 @@ adapter is `xiom.vector.api.httpd` -- `xvectord`, 69th pass).
   trailing bytes -> 400 malformed. Head bytes are ASCII in practice and
   sliced from one materialized Str.
 - Routes: `GET /health` (`{"status":"ok","service":"xvector"}`), `GET
+  /version` (`{"name","version","api"}`; public), `GET
   /collections` (names), `POST /collections`
-  (`{"name","dim","metric"}`; duplicate -> 409), `GET
+  (`{"name","dim","metric"}` + optional index config
+  `{"index":"hnsw"|"flat","m","ef_construction","ef_search"}` -> the kind
+  is echoed; duplicate -> 409), `GET
   /collections/{n}/points?id=`, `POST /collections/{n}/points`
   (`{"ids":[...],"vectors":[[...]]}`), `DELETE
   /collections/{n}/points?id=`, `POST /search` (knn/range/pagination via
-  `SearchRequest` fields; a `"requests":[...]` array runs a batch),
+  `SearchRequest` fields; a `"requests":[...]` array runs a batch; an
+  optional `"ef_search"` overrides the HNSW beam for the call -- no
+  rebuild, 1..4096),
   `GET /stats?collection=`. Unknown route -> 404; wrong method -> 405;
   requests are routed to the named collection (`select_collection`).
 - Wire: responses are `HTTP/1.1 <status> <text>` + `Content-Type:

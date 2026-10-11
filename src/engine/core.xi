@@ -548,6 +548,21 @@ pub fn engine_set_index(eng: &mut VectorEngine, kind: AnnIndexKind, params: AnnP
   return Ok(true);
 }
 
+// Per-request HNSW beam override (a query parameter in spirit): validates
+// and updates the ACTIVE collection's `ef_search` WITHOUT rebuilding the
+// graph and WITHOUT a manifest write -- the configured beam stays what is
+// on disk; the next `select_collection` restores it. Service use: the
+// optional `ef_search` field on /search (benchmark sweeps).
+pub fn engine_set_ef_search(eng: &mut VectorEngine, ef: Int) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  if ef < 1 || ef > 4096 {
+    return Err(CoreError.InvalidInput("ef_search out of range"));
+  }
+  eng.ann.ef_search = ef;
+  return Ok(true);
+}
+
 // Compact the ANN graph: rebuild it from the live nodes, reclaiming
 // tombstoned slots (no-op returning 0 for a Flat collection). The flat
 // store is untouched. Returns the number of reclaimed graph nodes.

@@ -1,0 +1,18 @@
+# ann-benchmarks algorithm config for XIOM XVECTOR (xvectord over HTTP).
+# Copy into ann_benchmarks/algorithms/xvector/config.yml (same dir as
+# module.py). Schema follows current ann-benchmarks (module/constructor/
+# run_groups); on older revisions use the legacy keys `module`,
+# `constructor`, `any_parameters`/`query_parameters` with the same values.
+xvector:
+  module: xvector
+  constructor: Xvector
+  base_args: []
+  run_groups:
+    _default:
+      args: {}
+      query_args:
+        - 16
+        - 32
+        - 64
+        - 128
+        - 256

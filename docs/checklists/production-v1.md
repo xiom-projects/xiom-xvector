@@ -108,7 +108,14 @@ needed) -> signed commit. Red build = rejection.
   framing, 4 MiB socket guard, 30 s dead-peer guard, `X-Xvector-Quit`
   shutdown; `probe_http_server` (10 checks over real sockets) x2 Windows +
   WSL; curl end-to-end user test green (create/upsert/search/stats/quit)
-- [ ] S6 version endpoint (`GET /version`) -- the last F item
+- [x] S6 `GET /version` + index configuration at create + per-request
+  `ef_search` **(done 2026-10-11, 70th pass; closes phase F)**; `xvectord`
+  applies the `XVECTOR_MAX_*` service limits
+- [x] Benchmark adapters (starter) **(done 2026-10-11, 70th pass)**:
+  `bench/adapters/` -- stdlib HTTP client, ann-benchmarks module +
+  config.yml (angular/euclidean/dot; ef sweep), live `smoke.py` green
+  (recall@10 1.000 at ef>=64, 0.940 at ef=8); VectorDBBench client is
+  the next adapter
 
 ## M-O -- Observability & operability
 
