@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (64 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (65 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -90,7 +90,11 @@ reference study 02 quantization recon
 (`docs/REFERENCE-STUDY-02-QUANTIZATION.md`: SQ8 trained ranges + the
 two-tier rescore pattern as first candidate Q-a; PQ deferred pending
 deterministic training; explicit error-bound story required before any
-adoption).
+adoption) -> reference study 03 DiskANN layout recon
+(`docs/REFERENCE-STUDY-03-DISKANN.md`: sector-packed fixed-size records
+(4096 B, no node split), co-located f32 + adjacency, buffer-then-seal
+delta model, delete-by-rebuild, alignment as a format decision for
+D5/D6/P5; study backlog complete).
 
 ---
 
@@ -948,13 +952,13 @@ signed commits, docs updated).
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
    subset, **`xiom.vectors` swapped -- the package now backs all vector
    consumers**) + compiler v0.64.3 re-pinned lane-local (isolated).**
-   Remaining order: **study 02 quantization DONE (64th pass;
-   `docs/REFERENCE-STUDY-02-QUANTIZATION.md`)** -- next candidates are the
-   adopted-side slices **Q-a (SQ8 quantized scan tier + exact f32 rescore
-   for sealed segments; D4/D6)** and **study 03 (DiskANN layout notes for
-   D5/P5)**, then the `xiom.ann` porter flow (awaits its publication;
-   registry 404 as of 2026-10-10), the replay-loop delegation at the
-   D-ledger store migration, then the owner's public release + benchmark.
+   Remaining order: **study 03 DONE (65th pass) -- study backlog complete
+   (studies 01-03; item 3 folded into study 02).** Next: the **Q-a slice**
+   (SQ8 quantized scan tier + exact f32 rescore for sealed segments;
+   D4/D6; segment v-next consumes study 03's record-layout input), then
+   the `xiom.ann` porter flow (awaits its publication; registry 404 as of
+   2026-10-10), the replay-loop delegation at the D-ledger store
+   migration, then the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
    `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
    stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
@@ -1009,8 +1013,12 @@ signed commits, docs updated).
   ranges + two-tier exact rescore for sealed segments) is the first
   adoption candidate; PQ deferred pending deterministic training; a
   documented error-bound story is required before any lossy path; study
-  03 = DiskANN layout for D5/P5; backlog item 3 (sqlite-vec kernels) is
-  covered by study 02 F1-F3).**
+  03 DiskANN layout DONE 2026-10-11, 65th pass ->
+  `docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed records for
+  D5/D6/P5: 4096 B sectors, no node split, co-located f32 + adjacency,
+  buffer-then-seal deltas, delete-by-rebuild, alignment as a format
+  decision; backlog item 3 folded into study 02; **study backlog
+  complete**).**
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
@@ -1201,6 +1209,7 @@ signed commits, docs updated).
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted + verified, **publication pending OPS LIVE** (`REL-20261010-1908-packages`; items `-9` fixed / `-10` acked / `-12` closed) |
 | `docs/REFERENCE-STUDY-01-FAISS.md` | (record) | **P-a APPLIED 2026-10-11 (63rd)**: generous level 0 (`m0 = 2*m` + `prune_headroom` 0.2), codec v3, hard-corpus control gate 285/300 vs 275/300; fill arm measured, not adopted |
 | `docs/REFERENCE-STUDY-02-QUANTIZATION.md` | (record) | written 2026-10-11 (64th): FAISS SQ/PQ + sqlite-vec int8/binary/rescore/DiskANN recon; ranked Q-a..Q-d (Q-a = SQ8 + exact rescore for sealed segments); error-bound story section; no adoption yet |
+| `docs/REFERENCE-STUDY-03-DISKANN.md` | (record) | written 2026-10-11 (65th): DiskANN Rust + sqlite-vec LM-DiskANN recon -- sector-packed fixed-size records, co-located f32 + adjacency, buffer-then-seal deltas, delete-by-rebuild, alignment/format decision for D5/D6/P5; no format change yet |
 | `docs/XIOM-HTTP-EVAL.md` | packages (record) | written 2026-10-10: router/http evaluation; status-helper adoption + 507 upstream gap |
 | `docs/XIOM-VECTORS-EVAL.md` | packages (record) | written 2026-10-10: extraction fidelity (6/6 pins), wiring + gate, **atomic swap executed** (60th; §3) |
 | `docs/XIOM-METRICS-ADOPTION.md` | packages/compiler (record) | written 2026-10-10: observability internals on `xiom.metrics` 0.2.0; XVC-C-14 record + gates |
@@ -1405,15 +1414,14 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **study 02 is DONE (64th pass)** ->
+NEXT TASK: **study backlog complete (studies 01-03)** -- study 02
 `docs/REFERENCE-STUDY-02-QUANTIZATION.md` (Q-a = SQ8 trained ranges +
-two-tier exact rescore for sealed segments -- first adoption candidate;
-PQ deferred; error-bound story required). Next candidates, in order: the
-**Q-a slice** (segment codec v-next + `probe_quantization`, full
-batteries) and **study 03 (DiskANN layout notes for D5/P5)**. P-a
-(level-0 degree generosity) is DONE (63rd pass; `m0 = 2*m` +
-`prune_headroom` 0.2, codec v3, control gate 285/300 vs 275/300; fill arm
-measured, not adopted). Maintain in parallel: the **`xiom.ann` porter wiring** once the
+two-tier exact rescore for sealed segments, first adoption candidate; PQ
+deferred; error-bound story required) and study 03
+`docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed record layout input
+for D5/D6/P5). Next: the **Q-a slice** (segment v-next + `probe_quantization`,
+full batteries), consuming study 03's record-layout input. P-a is DONE
+(63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;
 watch the packages lane's scope item `REL-20261010-1908-packages`; the
 wiring follows the vectors pattern: dependency + extraction-fidelity gate

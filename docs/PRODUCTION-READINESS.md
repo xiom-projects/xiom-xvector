@@ -864,6 +864,19 @@ extraction with the packages lane.
   derived dot/L2/cosine bounds; the oracle probe stays the fidelity
   reference). No score change (no product evidence yet -- reconnaissance
   only; code tree unchanged, last full battery still valid).
+- **2026-10-11 (sixty-fifth pass, docs-only):** reference study 03 --
+  `docs/REFERENCE-STUDY-03-DISKANN.md` (MIT sources: the DiskANN Rust
+  rewrite + sqlite-vec's LM-DiskANN; no vendoring). Reconnaissance:
+  sector-packed fixed-size node records (4096 B sectors, nodes never
+  split, padding rules), record content (full-precision vector +
+  adjacency in one sector), header-in-sector-0 + layout-version bump
+  discipline, the three-way aligned-read contract, hot-vertex caching,
+  PQ on disk, the buffer-threshold-then-flush append model, and LM-Delete
+  edge repair/scrub. Design input recorded for D5 (fixed node_len + delta
+  tier), D5 search (merge + re-rank locality), D6 (drop/re-seal, never
+  in-place edge surgery) and P5 (alignment as a format decision now).
+  Study backlog complete (1-3; item 3 folded into study 02). No score
+  change (reconnaissance only; code tree unchanged).
 
 ## Update rule
 
