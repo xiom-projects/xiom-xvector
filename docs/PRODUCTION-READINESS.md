@@ -913,6 +913,19 @@ extraction with the packages lane.
   priority) routed read-only to bindings
   (`REL-20261011-1203-xvector`) and packages (`-2`) -- no writes into
   those live workspaces.
+- **2026-10-11 (sixty-eighth pass, docs-only):** `xiom.ann` porter
+  evaluation -- the registry watch closed (`xiom.ann` 0.1.0 LIVE,
+  eco-v0.1.139, sha256 `73f66ab5...`, deps `xiom.vectors 0.1.0`); the
+  published package is the pre-P-a snapshot (extracted @ `8a8b0ff`:
+  no `m0`/generous level 0, codec v2 only, legacy 296/300 recall), so
+  the consumer swap is blocked on a refresh; **`xiom.ann` 0.2.0 ask
+  filed** (`REL-20261011-1206-xvector`) to carry the P-a generous level 0
+  + codec v3 from our HEAD; evaluation recorded in
+  `docs/XIOM-ANN-EVAL.md` (adoption plan + risks: codec v3 round-trip,
+  mechanical re-extraction, WSL custom-home caveat). Swap next: package
+  0.2.0 + owner greenlight (vectors precedent). No score change (porter
+  flow, no product path yet); the orbitdb hybrid note was also confirmed
+  fixed on their side (missing `xiom.vectors` deps -- our diagnosis).
 
 ## Update rule
 
