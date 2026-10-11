@@ -124,16 +124,22 @@ recorded; gated pivots re-checked (fsync + mmap still stubs, no new
 compiler release); bus -2002/-1206/-9/-1835 verified+closed + WIP signal
 filed (`-1618`) -> 74th pass: VectorDBBench client adapter shipped
 (`bench/adapters/vectordbbench/`: drop-in DB client + direct-mode live
-smoke 11/11; shared `oracle.py` extracted; `xvector_client.drop_collection`).
+smoke 11/11; shared `oracle.py` extracted; `xvector_client.drop_collection`)
+-> G-phase thread gate probed: `xiom.thread.spawn[T]` compiles on
+v0.64.3 but AVs at the runtime entrypoint (Windows 0xC0000005 / WSL
+SIGSEGV; last mark `M2: spawn returned`); witness
+`docs/repro/xv-thread-abi/` filed (`REL-20261011-1627-xvector`); the
+concurrency phase stays gated on the next archive.
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `95699e9` (feat:
-VectorDBBench client adapter) + this wrap commit; tag `v1.0.0-rc.1`
-still on `530b041`.
-Recent slices: `95699e9` VectorDBBench adapter (74th), `039e240` 73rd
+**Repo:** private, no pushes; clean tree. HEAD `bc53759` (docs: G-phase
+thread gate -- xiom.thread real-spawn witness) + this wrap commit; tag
+`v1.0.0-rc.1` still on `530b041`.
+Recent slices: `bc53759` thread gate (G groundwork), `95699e9`
+VectorDBBench adapter (74th), `039e240` 73rd
 wrap, `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
 `5fce3cf` fast scanner (72nd), `ede0e20` json finding
 (71st), `29cfa57` benchmark wrap, `3051160` benchmark starter (70th),
@@ -158,7 +164,7 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.3 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); lane HEAD `fde5548e` (2026-10-11, fn-ABI batches m263-m265; **C-15 / phantom-import fixes NOT yet landed**; no release past v0.64.3) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| compiler | **v0.64.3 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); lane HEAD `fde5548e` (2026-10-11, fn-ABI batches m263-m265; **C-15 / phantom-import fixes NOT yet landed**; **thread gate: `spawn[T]` compiles but AVs -- re-run at the next release**; no release past v0.64.3) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `b8eda7d` (2026-10-11, wave 110) + **wave-111 WIP in the working tree** (`json.xi`/`slice.xi`/`string.xi` modified, uncommitted; sha256 `E69E0275...`/`874A8F67...`/`36D1F4FF...`; both xvector repros exit 0 -- formal closure on commit); **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `fb73c5c8` (2026-10-11: sdl3 0.15.0, batch 52, eco-v0.1.151); **`xiom.ann` 0.2.0 LIVE + verified** (`0a243ce4...`; swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` LIVE + swapped | `E:\xiom-packages\packages` |
 | xvector | `95699e9` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
@@ -901,6 +907,14 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   registration + limitations). Shared `oracle.py` extracted (`smoke.py` +
   `quick_bench.py` refactored onto it); client gains `drop_collection`
   (route may not exist; 404/405 tolerated).
+- **G-phase thread gate probed (2026-10-11):** `docs/repro/xv-thread-abi/`
+  -- real `xiom.thread.spawn[T]` compiles on v0.64.3 (fn-cast accepted)
+  but AVs at the runtime entrypoint (Windows `0xC0000005`, WSL SIGSEGV);
+  the marks variant localizes it to the worker-entry/join path after
+  `spawn` returns (`M2: spawn returned` is the last mark). Acceptance
+  pinned (exact sums + distinct worker id; exit 0); bus witness
+  `REL-20261011-1627-xvector`; re-run at the next archive (fn-ABI batch
+  m263-m265 / `fde5548e`). The concurrency phase stays gated until green.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -1507,7 +1521,7 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 81 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed)** |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; the wave-111 fix + thread gate + C-15/phantom are the next-archive re-verification set** |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
@@ -1875,7 +1889,9 @@ RE-VERIFICATION ERA -- NEXT STEPS (in order):
    re-run the C-15 repro (docs\repro\xv-f32-slot-literal-write; expect
    exit 0) and the phantom-import controls (expect exactly one clear
    error), re-test C-13/C-14 from their bundles, and drop the explicit
-   `as Float32` workaround in probe_quantization if green.
+   `as Float32` workaround in probe_quantization if green. Also re-run
+   the thread gate (docs\repro\xv-thread-abi\probe.xi; expect exit 0 =
+   G phase unblocked; witness REL-20261011-1627-xvector).
 3) Next slice: G-phase groundwork (concurrency/scale) and the remaining
    queue (Q-a2b at D5, ann swap on owner greenlight
    REL-20261011-1308-xvector); the VectorDBBench client adapter is DONE

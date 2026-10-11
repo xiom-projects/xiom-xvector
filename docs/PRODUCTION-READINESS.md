@@ -194,10 +194,17 @@ Done: multi-collection registry (M-D3: named collections with per-
 collection stores/payloads/index configs, create/select/drop/list, routed
 recovery + whole-registry manifest; gate `probe_collections`) and the
 benchmark harness + baseline (`docs/BENCHMARKS.md`; bench smoke in both
-batteries). The engine is still single-threaded and each call targets one
-active collection.
-Remaining: concurrent readers, write serialization model, segment growth /
-compaction policy, memory budget, scale tuning beyond the baseline.
+batteries). **Thread-primitive gate probed (2026-10-11):** real
+`xiom.thread.spawn[T]` compiles on v0.64.3 (fn-cast accepted) but the
+runtime thread entrypoint AVs (Windows 0xC0000005 / WSL SIGSEGV;
+`docs/repro/xv-thread-abi/`; marks localize it after `spawn` returns --
+last mark `M2: spawn returned`); acceptance pinned + witness
+`REL-20261011-1627-xvector`; re-run green at the next archive = the
+phase becomes actionable. The engine is still single-threaded and each
+call targets one active collection.
+Remaining: (thread gate green, then) concurrent readers, write
+serialization model, segment growth / compaction policy, memory budget,
+scale tuning beyond the baseline.
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -1041,6 +1048,16 @@ extraction with the packages lane.
   byte-identical to the `de151d6` tree (two batteries green this
   session), so no separate battery for this Python-only slice -- the
   wave-111 closure battery covers the wrap. No score change (82 %).
+- **2026-10-11 (G-phase groundwork: thread gate):** probed the real
+  threading path ahead of the concurrency phase. `xiom.thread.spawn[T]`
+  compiles on v0.64.3 (the fn-to-ptr cast is accepted) but the runtime
+  thread entrypoint AVs (Windows 0xC0000005 / WSL SIGSEGV); the marks
+  variant localizes the fault to the worker-entry/join path after
+  `spawn` returns (`docs/repro/xv-thread-abi/`; last mark
+  `M2: spawn returned`). Acceptance pinned (exact sums + distinct
+  worker id, exit 0) + bus witness `REL-20261011-1627-xvector`; re-run
+  at the next archive (fn-ABI batch m263-m265 / `fde5548e`). G stays 25
+  (blocker sharpened, not moved); no score change (82 %).
 
 ## Update rule
 
