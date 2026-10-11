@@ -978,6 +978,33 @@ extraction with the packages lane.
   modules, unsafe=0) + 39 probes x2 + bench smoke (Windows); WSL spot
   green.
 
+- **2026-10-11 (seventy-first pass):** the first HTTP-path benchmark
+  exposed a stdlib blocker: `json_parse` superlinear on numeric payloads
+  (2.5k/5k/10k/20k numbers -> 248 ms/1.10 s/4.77 s/17.9 s; the 50k-number
+  382 KB upsert body -> 83.7 s = ~88% of the request; engine insert
+  2 ms/vector). Pinned repro `docs/repro/xv-json-parse-quadratic/`
+  (self-contained, gate fails pre-fix) + `bench/adapters/quick_bench.py`;
+  filed to stdlib as `REL-20261011-1453-xvector` (high). HTTP-path
+  numbers recorded in `docs/BENCHMARKS.md`. No score change (blocker
+  documented).
+- **2026-10-11 (seventy-second pass):** hot-path unblock -- ROOT CAUSE
+  found: **`slice.str_bytes(Str)` is superlinear** (50/100/200/400 KB ->
+  116/289/1065/3981 ms; pinned probe
+  `docs/repro/xv-json-parse-quadratic/probe_strbytes.xi`); stdlib lane
+  independently root-caused it to the `strnlen` accessors and queued the
+  fix (wave-111 top candidate, `6fbd336`). Lane mitigation shipped:
+  `src/api/json_fast.xi` (byte-level canonical upsert scanner; inline
+  decimal accumulation; conservative bounds; None -> strict fallback) +
+  `HttpRequest.body_bytes` + the dispatch fast branch; gate
+  `probe_json_fast` (228 fast-vs-strict cases byte-for-byte equal; 52k
+  numbers in 1.7-2.9 s vs strict ~84 s). Measured: 5k x dim-25 fit
+  through `xvectord` **661 s -> 120 s** (HNSW-build-bound, ~42 pts/s);
+  search 53-78 QPS. F stays 100; overall 82 %. Evidence: suite 177/177
+  x2 + sbom (42 modules, unsafe=0) + 40 probes x2 + bench smoke
+  (Windows); WSL spot green. Re-verify the repros + batteries when the
+  stdlib fix lands; compiler fn-ABI batch `fde5548e` also landed (C-15 /
+  phantom-import re-tests are the next session's first step).
+
 ## Update rule
 
 Recompute at every wrap: adjust phase scores, recompute the weighted overall,

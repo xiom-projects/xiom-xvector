@@ -177,7 +177,7 @@ fn main() -> Int {
     "config file: empty -> loaded=false", fails);
 
   // ---- limits through the config-aware handler ----
-  var small = ServiceConfig{ max_request_bytes: 512, max_top_k: 5, max_batch: 2, max_dim: 4 };
+  var small = ServiceConfig{ max_request_bytes: 512, max_top_k: 5, max_batch: 2, max_dim: 4, fast_upsert: true };
   var eng = engine_new();
 
   // request size: pad past the limit, then exactly at the limit.

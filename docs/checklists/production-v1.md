@@ -116,6 +116,12 @@ needed) -> signed commit. Red build = rejection.
   config.yml (angular/euclidean/dot; ef sweep), live `smoke.py` green
   (recall@10 1.000 at ef>=64, 0.940 at ef=8); VectorDBBench client is
   the next adapter
+- [x] Upsert hot-path fast scanner **(done 2026-10-11, 72nd pass)**:
+  `api.json_fast` (byte-level, conservative) + `HttpRequest.body_bytes`;
+  228-case byte-equivalence gate + 52k-number body <5 s (strict ~84 s);
+  5k fit 661 s -> 120 s. Root cause `str_bytes` quadratic pinned
+  (`probe_strbytes.xi`); stdlib fix queued (wave-111 top candidate) --
+  re-run probes + batteries when it lands
 
 ## M-O -- Observability & operability
 
