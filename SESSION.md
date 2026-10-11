@@ -936,6 +936,24 @@ signed commits, docs updated).
 
 ## 2. Consumer-lane rules (non-negotiable)
 
+- **Reference study area (owner-granted, 2026-10-11): `E:\repos` may hold
+  cloned MIT-licensed projects as STUDY references -- ideas, patterns,
+  mechanics from battle-tested production code -- to elevate xvector.
+  Rules: MIT only; study, never vendor blindly or add as a build
+  dependency; any adopted pattern is re-implemented in our module tree
+  under our license and gated by our probes (commit notes the source
+  reference).** Cloned and MIT-verified 2026-10-11: `sqlite-vec`
+  (MIT/Apache; compact embeddable vector search -- brute-force kernels,
+  quantization, host ergonomics), `faiss` (MIT; HNSW/IVF/PQ mechanics,
+  memory mapping, SIMD layouts), `DiskANN` (MIT; SSD-resident ANN --
+  informs D5/D6 segment reads + P5 mmap). Sibling-lane references already
+  present: `redb`/`bbolt` (storage lanes), `godot`/`JoltPhysics` (game
+  lanes). Study backlog (one item per slice, findings recorded in the
+  slice docs): (1) faiss HNSW level assignment + search sampling vs ours;
+  (2) faiss/vec product quantization for compaction; (3) sqlite-vec
+  quantized brute-force kernels vs our flat scan; (4) DiskANN layout
+  notes for D5 delta segments + P5 mmap.**
+
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
   (`git pull --ff-only`) and process items addressed to this lane
