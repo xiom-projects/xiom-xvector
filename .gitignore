@@ -52,3 +52,7 @@ deps/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Python bytecode (bench adapters)
+__pycache__/
+*.pyc
