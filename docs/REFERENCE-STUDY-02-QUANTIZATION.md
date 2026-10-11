@@ -125,6 +125,16 @@ documented bound; (5) segment byte delta measured (bytes/vector table);
 the full batteries. Hazards: cursor semantics (`after_id` must stay
 exact), manifest/registry versioning, and the oracle probe staying the
 single fidelity reference.
+**Status 2026-10-11 (66th pass): Q-a1 DONE** -- the quantization module
+(`src/index/quantize.xi`: trained ranges, truncation codec, query tables,
+the two-tier rescore scan) + `probe_quantization` (17 checks;
+bit-identical rescore for 10 queries x 3 metrics; measured error bounds
+pinned) + suite Section 16 (6 checks) are in and green on both platforms.
+Q-a2 (segment codec v-next + read-path wiring, consuming study 03's
+record layout) lands with D5's multi-segment reads. This slice also
+surfaced compiler finding XVC-C-15 (literal stores into `Vec[Float32]`
+slots skip narrowing; repro `docs/repro/xv-f32-slot-literal-write/`,
+filed on the bus).
 
 **Q-b -- binary coarse tier** (very large sealed sets): 1 bit/dimension +
 Hamming pre-filter, exact rescore; gate floors after rescore on the
@@ -151,8 +161,9 @@ is the reference shape.
 
 ## Next
 
-1. Q-a is the first candidate adoption slice (after the remaining study
-   backlog item).
+1. **Q-a1 DONE 2026-10-11**; **Q-a2** (segment codec v-next + read-path
+   wiring; consumes study 03's record-layout input) is queued behind D5's
+   multi-segment reads.
 2. Study 03: DiskANN SSD layout + quantized-graph notes -> design input
    for D5 delta segments + P5 mmap (second reference: the sqlite-vec
    diskann file above).

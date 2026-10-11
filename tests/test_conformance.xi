@@ -4437,6 +4437,328 @@ fn test_recover_torn_payload_record() -> TestResult {
 }
 
 // ============================================================================
+// SECTION 16: SQ8 quantization (reference study 02, Q-a) -- mirror of
+// src/index/quantize.xi: trained per-dim ranges, truncation codec, the
+// per-component bound, clamping, constant dimensions, rejection, and the
+// two-tier candidates-then-exact-rescore equality on a tiny corpus.
+// ============================================================================
+
+pub type SQ8 = {
+  dim: Int;
+  vmin: Vec[Float32];
+  vstep: Vec[Float32];
+}
+
+fn sq8_max_error(sq: &SQ8) -> Float32 {
+  var m: Float32 = 0.0;
+  var d: Int = 0;
+  while d < sq.dim {
+    if sq.vstep[d] > m { m = sq.vstep[d]; }
+    d = d + 1;
+  }
+  return m;
+}
+
+fn sq8_train(vs: &Vec[Vector], out: &mut SQ8) -> Bool {
+  if vs.len() == 0 { return false; }
+  var dim: Int = vs[0].dimension;
+  if dim < 1 { return false; }
+  var vi: Int = 0;
+  while vi < vs.len() {
+    if vs[vi].dimension != dim { return false; }
+    vi = vi + 1;
+  }
+  var vmin = Vec[Float32].new();
+  var vmax = Vec[Float32].new();
+  var d: Int = 0;
+  while d < dim {
+    vmin.push(vs[0].data[d]);
+    vmax.push(vs[0].data[d]);
+    d = d + 1;
+  }
+  vi = 0;
+  while vi < vs.len() {
+    d = 0;
+    while d < dim {
+      var x = vs[vi].data[d];
+      if x < vmin[d] { vmin[d] = x; }
+      if x > vmax[d] { vmax[d] = x; }
+      d = d + 1;
+    }
+    vi = vi + 1;
+  }
+  out.dim = dim;
+  out.vmin = Vec[Float32].new();
+  out.vstep = Vec[Float32].new();
+  d = 0;
+  while d < dim {
+    var span = vmax[d] - vmin[d];
+    out.vmin.push(vmin[d]);
+    if span > 0.0 { out.vstep.push(span / 255.0); } else { out.vstep.push(0.0); }
+    d = d + 1;
+  }
+  return true;
+}
+
+fn sq8_encode_one(sq: &SQ8, v: &Vector) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var d: Int = 0;
+  while d < sq.dim {
+    var c: Int = 0;
+    if sq.vstep[d] > 0.0 {
+      var f = (v.data[d] - sq.vmin[d]) / sq.vstep[d];
+      c = f as Int;
+      if c < 0 { c = 0; }
+      if c > 255 { c = 255; }
+    }
+    out.push(c);
+    d = d + 1;
+  }
+  return out;
+}
+
+fn sq8_decode_one(sq: &SQ8, codes: &Vec[Int], out: &mut Vector) -> Bool {
+  if codes.len() != sq.dim { return false; }
+  var d: Int = 0;
+  while d < sq.dim {
+    var c = codes[d];
+    if c < 0 || c > 255 { return false; }
+    out.data[d] = sq.vmin[d] + (c as Float32) * sq.vstep[d];
+    d = d + 1;
+  }
+  return true;
+}
+
+fn run_sq8_train_ranges() -> Int {
+  var vs = Vec[Vector].new();
+  var a = vector_new(2);
+  vector_set(&mut a, 0, 1.0);
+  vector_set(&mut a, 1, 5.0);
+  vs.push(a);
+  var b = vector_new(2);
+  vector_set(&mut b, 0, 9.0);
+  vector_set(&mut b, 1, 5.0);
+  vs.push(b);
+  var c = vector_new(2);
+  vector_set(&mut c, 0, 5.0);
+  vector_set(&mut c, 1, 5.0);
+  vs.push(c);
+  var sq = SQ8{ dim: 0, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  if !sq8_train(&vs, &mut sq) { return 1; }
+  if !f32_eq(sq.vmin[0], 1.0) { return 2; }
+  if !f32_eq(sq.vmin[1], 5.0) { return 3; }
+  if !f32_eq(sq.vstep[0], 8.0 / 255.0) { return 4; }
+  if sq.vstep[1] != 0.0 { return 5; }
+  return 0;
+}
+fn test_sq8_train_ranges() -> TestResult {
+  if run_sq8_train_ranges() == 0 { return assert(true, "SQ8: per-dim min/step training (constant dim -> step 0)"); }
+  return assert(false, "SQ8: training ranges failed");
+}
+
+fn run_sq8_roundtrip_bound() -> Int {
+  var vs = Vec[Vector].new();
+  var i: Int = 0;
+  while i < 6 {
+    var v = vector_new(3);
+    vector_set(&mut v, 0, (i as Float32) * 1.5 - 4.0);
+    vector_set(&mut v, 1, (i as Float32) * 0.25 + 1.0);
+    vector_set(&mut v, 2, 7.0 - (i as Float32));
+    vs.push(v);
+    i = i + 1;
+  }
+  var sq = SQ8{ dim: 0, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  if !sq8_train(&vs, &mut sq) { return 1; }
+  i = 0;
+  while i < vs.len() {
+    var codes = sq8_encode_one(&sq, &vs[i]);
+    var dec = vector_new(3);
+    if !sq8_decode_one(&sq, &codes, &mut dec) { return 2; }
+    var d: Int = 0;
+    while d < 3 {
+      var err = vs[i].data[d] - dec.data[d];
+      if err < 0.0 { err = 0.0 - err; }
+      if err > sq.vstep[d] + 0.00001 { return 3; }
+      d = d + 1;
+    }
+    i = i + 1;
+  }
+  return 0;
+}
+fn test_sq8_roundtrip_bound() -> TestResult {
+  if run_sq8_roundtrip_bound() == 0 { return assert(true, "SQ8: roundtrip error <= step per component"); }
+  return assert(false, "SQ8: roundtrip bound violated");
+}
+
+fn run_sq8_clamp_constant() -> Int {
+  var vs = Vec[Vector].new();
+  var a = vector_new(2);
+  vector_set(&mut a, 0, 0.0);
+  vector_set(&mut a, 1, 7.0);
+  vs.push(a);
+  var b = vector_new(2);
+  vector_set(&mut b, 0, 10.0);
+  vector_set(&mut b, 1, 7.0);
+  vs.push(b);
+  var sq = SQ8{ dim: 0, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  if !sq8_train(&vs, &mut sq) { return 1; }
+  var lo = vector_new(2);
+  vector_set(&mut lo, 0, 0.0 - 5.0);
+  vector_set(&mut lo, 1, 7.0);
+  var hic = vector_new(2);
+  vector_set(&mut hic, 0, 10.0 + 500.0 * sq.vstep[0]);
+  vector_set(&mut hic, 1, 7.0);
+  var cl = sq8_encode_one(&sq, &lo);
+  var ch = sq8_encode_one(&sq, &hic);
+  if cl[0] != 0 { return 2; }
+  if ch[0] != 255 { return 3; }
+  // constant dim: code 0 and an exact decode
+  var cc = sq8_encode_one(&sq, &a);
+  if cc[1] != 0 { return 4; }
+  var dec = vector_new(2);
+  if !sq8_decode_one(&sq, &cc, &mut dec) { return 5; }
+  if !f32_eq(dec.data[1], 7.0) { return 6; }
+  return 0;
+}
+fn test_sq8_clamp_constant() -> TestResult {
+  if run_sq8_clamp_constant() == 0 { return assert(true, "SQ8: clamp 0/255 + constant dim exact"); }
+  return assert(false, "SQ8: clamp/constant-dim failed");
+}
+
+fn run_sq8_decode_rejects() -> Int {
+  var sq = SQ8{ dim: 2, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  sq.vmin.push(0.0);
+  sq.vmin.push(0.0);
+  sq.vstep.push(1.0);
+  sq.vstep.push(1.0);
+  var out = vector_new(2);
+  var short = Vec[Int].new();
+  short.push(1);
+  if sq8_decode_one(&sq, &short, &mut out) { return 1; }
+  var over = Vec[Int].new();
+  over.push(1);
+  over.push(256);
+  if sq8_decode_one(&sq, &over, &mut out) { return 2; }
+  var neg = Vec[Int].new();
+  neg.push(0 - 1);
+  neg.push(1);
+  if sq8_decode_one(&sq, &neg, &mut out) { return 3; }
+  return 0;
+}
+fn test_sq8_decode_rejects() -> TestResult {
+  if run_sq8_decode_rejects() == 0 { return assert(true, "SQ8: decode rejects short / 256 / negative codes"); }
+  return assert(false, "SQ8: decode rejection failed");
+}
+
+fn run_sq8_train_rejects() -> Int {
+  var empty = Vec[Vector].new();
+  var sq = SQ8{ dim: 0, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  if sq8_train(&empty, &mut sq) { return 1; }
+  var vs = Vec[Vector].new();
+  var a = vector_new(2);
+  vector_set(&mut a, 0, 0.5);
+  vs.push(a);
+  var b = vector_new(3);
+  vector_set(&mut b, 0, 0.5);
+  vs.push(b);
+  if sq8_train(&vs, &mut sq) { return 2; }
+  return 0;
+}
+fn test_sq8_train_rejects() -> TestResult {
+  if run_sq8_train_rejects() == 0 { return assert(true, "SQ8: train rejects empty + dimension mismatch"); }
+  return assert(false, "SQ8: train rejection failed");
+}
+
+fn run_sq8_rescore_equality() -> Int {
+  // tiny corpus: 5 vectors, dim 2; query between the points
+  var vs = Vec[Vector].new();
+  var i: Int = 0;
+  while i < 5 {
+    var v = vector_new(2);
+    vector_set(&mut v, 0, (i as Float32) * 1.25 - 2.0);
+    vector_set(&mut v, 1, ((i % 2) as Float32) * 1.5);
+    vs.push(v);
+    i = i + 1;
+  }
+  var sq = SQ8{ dim: 0, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() };
+  if !sq8_train(&vs, &mut sq) { return 1; }
+  var codes = Vec[Int].new();
+  i = 0;
+  while i < vs.len() {
+    var cw = sq8_encode_one(&sq, &vs[i]);
+    var j: Int = 0;
+    while j < cw.len() { codes.push(cw[j]); j = j + 1; }
+    i = i + 1;
+  }
+  var q = vector_new(2);
+  vector_set(&mut q, 0, 2.5);
+  vector_set(&mut q, 1, 0.25);
+  var k: Int = 3;
+  // phase 1: top k*8 (clamped to n) by quantized (decoded) distance
+  var cap: Int = k * 8;
+  if cap > vs.len() { cap = vs.len(); }
+  var cand = topk_new(cap);
+  var pos: Int = 0;
+  while pos < vs.len() {
+    var dec = vector_new(2);
+    var cw = Vec[Int].new();
+    var d: Int = 0;
+    while d < 2 { cw.push(codes[pos * 2 + d]); d = d + 1; }
+    if !sq8_decode_one(&sq, &cw, &mut dec) { return 2; }
+    topk_push(&mut cand, Neighbor{ id: pos, distance: euclidean_distance(&dec, &q) });
+    pos = pos + 1;
+  }
+  // phase 2: exact rescore of the candidates by ascending position
+  var poslist = Vec[Int].new();
+  i = 0;
+  while i < cand_items_len(&cand) { poslist.push(cand.items[i].id); i = i + 1; }
+  var p1: Int = 0;
+  while p1 < poslist.len() {
+    var p2: Int = p1 + 1;
+    while p2 < poslist.len() {
+      if poslist[p2] < poslist[p1] {
+        var t = poslist[p1];
+        poslist[p1] = poslist[p2];
+        poslist[p2] = t;
+      }
+      p2 = p2 + 1;
+    }
+    p1 = p1 + 1;
+  }
+  var tier2 = topk_new(k);
+  i = 0;
+  while i < poslist.len() {
+    var pp = poslist[i];
+    topk_push(&mut tier2, Neighbor{ id: pp, distance: euclidean_distance(&vs[pp], &q) });
+    i = i + 1;
+  }
+  // brute force
+  var brute = topk_new(k);
+  i = 0;
+  while i < vs.len() {
+    topk_push(&mut brute, Neighbor{ id: i, distance: euclidean_distance(&vs[i], &q) });
+    i = i + 1;
+  }
+  if cand_items_len(&tier2) != cand_items_len(&brute) { return 3; }
+  i = 0;
+  while i < cand_items_len(&brute) {
+    if tier2.items[i].id != brute.items[i].id { return 4; }
+    if !f32_eq(tier2.items[i].distance, brute.items[i].distance) { return 5; }
+    i = i + 1;
+  }
+  return 0;
+}
+
+fn cand_items_len(h: &TopKHeap) -> Int {
+  return h.items.len();
+}
+
+fn test_sq8_rescore_equality() -> TestResult {
+  if run_sq8_rescore_equality() == 0 { return assert(true, "SQ8: two-tier rescore equals the exact top-k"); }
+  return assert(false, "SQ8: two-tier rescore diverged");
+}
+
+// ============================================================================
 // Main -- manual dispatch
 // ============================================================================
 
@@ -4640,6 +4962,14 @@ fn main() -> Int {
   failed = failed + run_one_test(test_recover_delete_clears_payload()); total = total + 1;
   failed = failed + run_one_test(test_recover_torn_payload_record()); total = total + 1;
   failed = failed + run_one_test(test_recover_torn_tail_tolerated()); total = total + 1;
+
+  // SECTION 16: SQ8 quantization (reference study 02, Q-a)
+  failed = failed + run_one_test(test_sq8_train_ranges()); total = total + 1;
+  failed = failed + run_one_test(test_sq8_roundtrip_bound()); total = total + 1;
+  failed = failed + run_one_test(test_sq8_clamp_constant()); total = total + 1;
+  failed = failed + run_one_test(test_sq8_decode_rejects()); total = total + 1;
+  failed = failed + run_one_test(test_sq8_train_rejects()); total = total + 1;
+  failed = failed + run_one_test(test_sq8_rescore_equality()); total = total + 1;
 
   // Boundary/validation
   failed = failed + run_one_test(test_is_valid_dimension()); total = total + 1;

@@ -6,6 +6,9 @@
 > (REL-20261010-1550-xvector) and **XVC-C-14** (filed with this wrap)
 > go through the bus (`--to compiler --kind bug`); everything else in this
 > file is closed history. File new findings as relay items, not here.
+> **XVC-C-15** (found 2026-10-11, `REL-20261011-` item filed at the 66th
+> pass) is the same drill: bus item + repro bundle under
+> `docs/repro/xv-f32-slot-literal-write/`.
 
 # Compiler findings from the XVECTOR lane
 
@@ -25,10 +28,11 @@ re-tested again on v0.64.2 (2026-10-09); **XVC-C-08..C-12** were found later
 on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2; **XVC-C-13** and
 **XVC-C-14** were re-tested on v0.64.3 (2026-10-10) and are still open.
 
-**Current status (compiler v0.64.3, 2026-10-10): two XVECTOR findings are
-open (XVC-C-13, XVC-C-14, both re-tested unchanged on v0.64.3; verdicts
-filed on `release-checks/compiler-compiler-v0.64.3`).** 14 findings total
-(C-01..C-14), each with a repro bundle under `docs/repro/`:
+**Current status (compiler v0.64.3, 2026-10-11): three XVECTOR findings are
+open (XVC-C-13, XVC-C-14 re-tested unchanged on v0.64.3; XVC-C-15 found
+2026-10-11 on v0.64.3; verdicts filed on
+`release-checks/compiler-compiler-v0.64.3`).** 15 findings total
+(C-01..C-15), each with a repro bundle under `docs/repro/`:
 
 | Range | Status |
 |---|---|
@@ -37,7 +41,8 @@ filed on `release-checks/compiler-compiler-v0.64.3`).** 14 findings total
 | XVC-C-09 | **repro green** on WSL + Windows; workaround retained (weaker re-test -- the crash lived in the compiled engine path, not the repro shape) |
 | XVC-C-13 | **OPEN (re-tested on v0.64.3 2026-10-10: unchanged -- Win 71 / WSL 127)** -- `&Str` parameter types are unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values: `first_byte("A")` = 71 on Windows / 127 on WSL, expect 65) |
 | XVC-C-14 | **OPEN (re-tested on v0.64.3 2026-10-10: unchanged -- clang store mismatch at `xiominput.ll:850`, Windows + WSL)** -- two same-named struct types across modules: struct-field layouts resolve by short name, so one module's field silently takes the other type's layout (clang store reject when the shapes differ); found in the xiom.metrics adoption (shim `Counter` + package `Counter`) |
-| retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard, C-14 single type name program-wide (shim `Counter` retired) |
+| XVC-C-15 | **OPEN (found 2026-10-11 on v0.64.3, Windows; repro exit 3)** -- literal stores into `Vec[Float32]` slots skip numeric narrowing: a Float64 literal stores its raw low 32 bits (`a[1] = 7.0` -> 0.0) and an Int literal stores its raw bits as the f32 pattern (`b[1] = 7` -> 9.8e-45); struct-field stores (`vector.data[1] = 7.0`) corrupt the same way. Float32 variables, explicit `as Float32`, and `push` convert correctly. Found by `probe_quantization`'s constant-dimension check (a `c[1] = 7.0` setup line trained as 0) |
+| retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard, C-14 single type name program-wide (shim `Counter` retired), C-15 explicit `as Float32` on literal slot writes |
 
 Format: `| Date | Finding | Evidence | Workaround | Impact |`.
 Every finding carries a minimal repro bundle under `docs/repro/`.
@@ -110,10 +115,14 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-09 | **[fixed in context on v0.64.2]** **XVC-C-12: `io.read_file_bytes` aborts on files of <= 8 bytes** -- `contract violated: ensures at 947:12` (the ensures `result is Ok => result.len() >= 0` cannot be false for a successful read); zero-byte files included; 9+ bytes read fine. The same call is GREEN in a minimal control unit (unit-context-sensitive). | `docs/repro/xv-stdlib-file-read-defects/` (`probe_tiny_read.xi` green in its own unit; the abort context was `probe_wal_file`'s unit). | Guard with `io.file_size` and skip reads shorter than the shortest valid input (WAL guard `< 25`, semantically exact; v0.64.2 re-tested green in context -- the guard stays as defense in depth). | fatal abort for ordinary small-file reads in affected units (historical) |
 | 2026-10-09 | **[OPEN, v0.64.2]** **XVC-C-13: `&Str` parameter types are unknown to the type checker** -- `xiom: warning: unknown type '&Str' -- defaulting to i64. This may produce incorrect code.`; the function body then reads the parameter as an integer (`first_byte("A")` returns **71 on Windows / 127 on WSL** instead of 65; no crash). Found while adding the M-D2 manifest file: `manifest_name_valid(name: &Str)` made every name validate as invalid (`slice.str_bytes` on the i64 yields no bytes), so `manifest_persist` refused every registry. Every stdlib/lane Str parameter is by value, so the shape had never been exercised. | `docs/repro/xv-str-ref-param/probe.xi` (warning present on both builds; Windows 71 / WSL 127, both exit nonzero). | Pass `Str` **by value** (lane + stdlib convention); the manifest validator is by-value. | warning-loud but value-silent: a `&Str` parameter compiles and returns garbage |
 | 2026-10-10 | **[OPEN, v0.64.2]** **XVC-C-14: two same-named struct types across modules -- one layout takes over the other** -- found in the `xiom.metrics` 0.2.0 adoption: the xvector core shim's `Counter` and the package `Counter` coexisted in one program. `VectorEngine` (declared in `xiom.vector.engine.core`, importing only the shim) was emitted with `%struct.xiom.metrics.Counter` field layouts while `engine_new` produced shim values -- clang rejected the store (`xiominput.ll:20528`, `'%tmp24' ... shim.Counter ... but expected xiom.metrics.Counter`); all XIOM-level checks passed first. The minimal repro (4 modules) shows the reverse direction: `repro.tally` (importing `xiom.metrics`) gets the **shim** layout for its `Tally.hits` field while `metric_counter_new()` returns the package type. Trigger (tested): two modules each declare a struct field typed by the same short name, resolving to different same-named types; a single such struct stays green. The winning side is program-order dependent; when the two layouts are compatible the wrong fields compile silently. | `docs/repro/xv-counter-type-shadow/` (mini-project + `xiom.toml`; Windows + WSL identical: clang `xiominput.ll:850:36` store mismatch; WSL `opt` prints "LLVM IR verification failed" first and keeps the IR). | One type name, one type: the engine stat counters moved onto `xiom.metrics` and the shim `Counter` was retired in the adoption slice (single `Counter` type program-wide; batteries green). Keep the repro as the regression gate. | struct-field layout silently resolved by short name across modules; wrong fields when the layouts are compatible, clang error only when they differ |
-
+| 2026-10-11 | **[OPEN, v0.64.3]** **XVC-C-15: literal stores into `Vec[Float32]` slots skip numeric narrowing** -- `a[1] = 7.0` (Float64 literal) stores the raw low 32 bits of the f64 constant (**0.0**); `b[1] = 7` (Int literal) stores the raw integer bits as the f32 pattern (**9.80908925027372e-45**); struct-field stores (`vector.data[1] = 7.0`) corrupt the same way. A Float32 variable, an explicit `... as Float32`, and `push(...)` all convert correctly (`Vec[Float64]` slots are also fine). Silent data corruption: no warning, no clang error. Found by `probe_quantization`'s constant-dimension check (a `c[1] = 7.0` setup line made training see 0). | `docs/repro/xv-f32-slot-literal-write/probe.xi` (6-shape matrix: A/B/E corrupt, C/F/G controls green; v0.64.3 Windows exit **3**; deterministic across runs). | Explicit narrow on literal slot writes (`c[1] = 7.0 as Float32;`) or write from a typed variable; the lane's only affected site was the probe setup (fixed with the cast), keep the repro as the regression gate. | silent wrong values wherever a float literal is stored into a float vector element -- feeds training/encoding paths garbage |
 
 ## Notes for the compiler lane
 
+- C-15 repro (XVC-C-15, OPEN): `docs\repro\xv-f32-slot-literal-write\probe.xi` --
+  `.\scripts\build.ps1 docs\repro\xv-f32-slot-literal-write\probe.xi -Name repro_f32_slot_literal`
+  then run `out\repro_f32_slot_literal.exe` (v0.64.3: exit 3; shapes A/B/E
+  corrupt; C/F/G controls green).
 - Re-run recipe (Windows):
   `.\scripts\build.ps1 docs\repro\xv-f32-int-miscompile\probe_failing.xi -Name pf`
   then run `out\pf.exe`; repeat 3x — expect nondeterminism on Windows.
@@ -139,13 +148,13 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
   then the suite x2 + the probes, then re-pin in `SESSION.md` (done for
   v0.64.2 on 2026-10-09 -- see the re-test section).
-- Relay state: `docs/RELAY-COMPILER.md` Addenda 1-10 (9 = XVC-C-13,
-  10 = XVC-C-14). No open asks from this lane; C-01/C-02/C-04 stay as
+- Relay state: `docs/RELAY-COMPILER.md` Addenda 1-11 (9 = XVC-C-13,
+  10 = XVC-C-14, 11 = XVC-C-15). C-01/C-02/C-04 stay as
   deliberate lane choices.
-- Archive status (2026-10-10): **v0.64.3 released** (run `38071481303`;
-  tag `v0.64.3` on `a5b87965`) and installed lane-local on Windows + WSL;
-  full re-test done (all 12 repro bundles + isolated batteries); XVC-C-13
-  and XVC-C-14 remain open; release-check verdicts filed on
+- Archive status (2026-10-11): **v0.64.3** installed lane-local on Windows
+  + WSL; full re-test done (all repro bundles + isolated batteries);
+  XVC-C-13/C-14 re-tested unchanged; **XVC-C-15 found 2026-10-11 and filed
+  on the bus**; release-check verdicts filed on
   `release-checks/compiler-compiler-v0.64.3`.
 - Soak / mixed-workload gate: `tests/probes/probe_soak_mixed.xi`
   (600 deterministic ops with bookkeeping invariants + recovery).
