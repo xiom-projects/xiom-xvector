@@ -150,13 +150,14 @@ archive (next doorbell).
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `fcd2f64` (feat: P2
-memory accounting estimate) + this wrap commit; tag `v1.0.0-rc.1` still
-on `530b041`.
-Recent slices: `fcd2f64` P2 memory estimate (75th, this commit),
-`200cbc7` G-plan P1, `45e6f5b` wave-111 closure, `bc53759` thread gate
-(G groundwork), `95699e9` VectorDBBench adapter (74th), `039e240` 73rd
-wrap, `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
+**Repo:** private, no pushes; clean tree. HEAD `6da4c32` (wave-113
+re-verification records) + this context-handoff wrap commit; tag
+`v1.0.0-rc.1` still on `530b041`.
+Recent slices: `6da4c32` wave-113 re-verification (76th wrap),
+`fcd2f64` P2 memory estimate (75th), `200cbc7` G-plan P1, `45e6f5b`
+wave-111 closure, `bc53759` thread gate (G groundwork), `95699e9`
+VectorDBBench adapter (74th), `039e240` 73rd wrap, `de151d6` http
+re-sync (73rd), `bd1d521` 72nd wrap,
 `5fce3cf` fast scanner (72nd), `ede0e20` json finding
 (71st), `29cfa57` benchmark wrap, `3051160` benchmark starter (70th),
 `590310b` pyc hygiene, `7883ca3` Q-serve wrap, `5f6894b` Q-serve (69th),
@@ -1884,7 +1885,11 @@ trusting reds; bench loops hard-capped; the bindings/packages/engine
 
 ---
 
-## 9. PASTE PROMPT for the next XVECTOR session (current -- 73rd pass, supersedes 8)
+## 9. PASTE PROMPT for the next XVECTOR session (73rd pass, superseded by 10)
+
+> **NOTE (context handoff):** the prompt below is the 73rd-pass version,
+> kept as history. The CURRENT prompt is **section 10** at the end of
+> this file -- use that one.
 
 ```
 You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
@@ -1968,4 +1973,98 @@ stdlib str_bytes fix shipped in wave 111 -- still prefer byte bodies);
 suite x2 + WSL spot before any wrap; check free memory before trusting
 reds; bench loops hard-capped; the bindings/packages/engine workspaces are
 read-only for this lane.
+```
+
+---
+
+## 10. PASTE PROMPT for the next XVECTOR session (current -- context handoff at the 76th wrap, supersedes 9)
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first, then
+README/SPEC/ARCHITECTURE/ROADMAP/AUDIT and docs/ (PRODUCTION-PLAN,
+PRODUCTION-READINESS, BENCHMARKS, G-PHASE-PLAN, and the benchmark
+adapters). Consumer lane: never edit E:\xiom-lang\stdlib,
+E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo stays PRIVATE; no
+pushes except the private xiom-relays bus. Identity "Lefteris Notas
+<lefterisnotas@gmail.com>"; conventional commits, DCO -s.
+
+Orientation: HEAD 6da4c32 (wave-113 re-verification records) + the wrap
+commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is
+USER-TESTABLE and benchmark-integrated: out\xvectord.exe, bench/adapters
+(ann-benchmarks + VectorDBBench drop-ins + smoke.py/smoke_db.py/
+quick_bench.py), the byte-level fast upsert scanner (228-case gate; fit
+661 s -> 51.2 s / 98 pts/s), P2 memory accounting (engine_memory_estimate
++ /stats mem_*; probe_memory_estimate 17 checks). Lane pins: stdlib
+f501b65 on a996f7b (wave 113: str-family fully closed; fsync/mmap still
+Err stubs); packages fb73c5c8 (sdl3 0.15.0; xiom.ann 0.2.0 LIVE +
+verified; xiom.http 0.1.6); compiler **v0.64.4 STAGED, expected
+imminently** (batch stack m261-m271 complete; v0.64.3 still the
+installed archive; release-prep commit b1ee2f4f, no tag at wrap time).
+
+IMMEDIATE WORK -- the v0.64.4 archive (check git log in E:\xiom-lang\xiom
++ the bus; install lane-local, NEVER the shared homes):
+1) Install lane-local on Windows (out\toolchain) + WSL
+   (~/.xvector-toolchain), then run the compiler re-verification set:
+   - C-15 repro docs\repro\xv-f32-slot-literal-write -> expect exit 0
+     (m271/f69b542e); then the reporter verifies + closes
+     REL-20261011-1134-xvector;
+   - phantom-import controls -> expect exactly ONE clear unresolved-
+     import error (m266/m267); then verify + close REL-20261010-2124-
+     xvector;
+   - C-13 (docs\repro\xv-str-ref-param) + C-14
+     (docs\repro\xv-counter-type-shadow) bundles -> re-test;
+   - thread gate docs\repro\xv-thread-abi\probe.xi -> expect exit 0
+     (fn-ABI batch m263-m265; flips the G phase per
+     docs/G-PHASE-PLAN.md; witness REL-20261011-1627-xvector);
+   - if green, drop the explicit `as Float32` workaround in
+     probe_quantization;
+   - set the v0.64.3 release-check rows (release-checks\compiler-
+     compiler-v0.64.3.md: XVC-C-13 row, XVC-C-14 row, C-15 row per
+     NEXT-BATCH m271) verified, or bounce with evidence; create a
+     v0.64.4 check file at the archive if the compiler lane has not.
+2) Full batteries both platforms on the new toolchain (suite x2 + sbom
+   + all probes x2 + bench smoke, Windows; WSL spot) before re-pinning.
+
+Then the queue (docs/G-PHASE-PLAN.md section 6): P3 SIMD seam / P4
+IVF-PQ prototype (M-P), the sharding harness story (G v1), post-gate
+G-1..G-4 when the thread gate is green; Q-a2b stays at D5; the ann swap
+stays owner-gated (REL-20261011-1308-xvector).
+
+Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
+main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
+pull hits a multi-branch quirk); python tools/relay.py view --lane
+xvector; process items (ack/fix with refs; never edit another lane's
+item; push only xvector items with `relay.py commit --lane xvector`).
+Arm your own recurring 2-4h doorbell check.
+
+Autonomous mode: arm a goal with this objective (verbatim): "Continue the
+xiom-xvector lane from SESSION.md: when the v0.64.4 archive lands, install
+it lane-local and run the compiler re-verification set (C-15 repro,
+phantom-import controls, C-13/C-14 bundles, the thread gate probe; drop
+the `as Float32` workaround if green; set the release-check rows;
+verify/close -1134 and -2124), with full batteries both platforms; then
+work the remaining queue (P3 SIMD seam / P4 IVF-PQ, the sharding harness
+story per docs/G-PHASE-PLAN.md, post-gate G slices when the thread gate
+flips, Q-a2b at D5, the ann swap on owner greenlight
+REL-20261011-1308-xvector); keep the gated pivots re-checked every pass
+(stdlib fsync -> D5/D6, mmap -> P5, xiom.kv). Per slice: implement,
+extend probe/suite gates, run suite x2 + sbom + all probes x2 + bench
+smoke on Windows + WSL spot, update SPEC/ARCHITECTURE/SESSION/
+PRODUCTION-READINESS + checklist, commit signed. When the M-R criteria
+are met, report complete with the owner handoff summary. Report blocked
+only when no scheduled wait or non-gated slice can help."
+
+Toolchain: dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1
+/.sh; run-suite.*; run-probe.*; bench.ps1/.sh; bench\adapters\smoke.py +
+smoke_db.py + quick_bench.py against a running out\xvectord.exe (raised
+caps: XVECTOR_MAX_REQUEST_BYTES=33554432 XVECTOR_MAX_BATCH=1000). Green
+baseline: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 41 probes x2 +
+bench smoke. Discipline: struct literals list every field; locals
+initialized; Str by value (XVC-C-13); json.json_* qualified; keep bodies
+as BYTES (the fast scanner is the canonical upsert path; the str-family
+is linear since wave 113 -- byte bodies remain the design); suite x2 +
+WSL spot before any wrap; check free memory before trusting reds; bench
+loops hard-capped; the bindings/packages/engine workspaces are read-only
+for this lane.
 ```
