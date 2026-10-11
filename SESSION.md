@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (62 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (63 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -81,22 +81,24 @@ onto the package; five local modules deleted; codec extracted from
 vector_store; batteries green both platforms) -> reference study area
 opened per owner grant (`E:\repos`; sqlite-vec/faiss/DiskANN cloned,
 MIT-verified; study rules + backlog in 2) -> reference study 01 FAISS
-HNSW recon (`docs/REFERENCE-STUDY-01-FAISS.md`; P-a level-0 degree is
-the first candidate slice; P-e quantization is study item 2).
+HNSW recon (`docs/REFERENCE-STUDY-01-FAISS.md`) -> P-a APPLIED (63rd pass):
+generous HNSW level 0 (`m0 = 2*m` + FAISS `prune_headroom` 0.2; codec v3
+carries `m0`, v2 still decodes; adjacency rows stride `m0`; fill arm
+measured and NOT adopted), hard-corpus control gate 285/300 vs 275/300
+legacy; costs recorded (build +13%, W3 p50 +28..40%, recovery +27%).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `5cbe6ee` (docs: reference
-study 01 -- FAISS HNSW) + this handoff commit; tag `v1.0.0-rc.1` still on
-`530b041`. Recent slices: `5cbe6ee` study 01, `dc32d73` reference area
+**Repo:** private, no pushes; clean tree. HEAD `9f00836` (feat: reference
+study 01 P-a -- generous level 0 + codec v3) + this wrap commit; tag
+`v1.0.0-rc.1` still on `530b041`. Recent slices: `9f00836` P-a,
+`e04c723` handoff refresh, `5cbe6ee` study 01, `dc32d73` reference area
 (owner grant), `2d9b4d6` stdlib pin sync, `51290a1` vectors wrap,
 `c414e2a` vectors swap, `396b239` bus state sync, `e23ee3d` integration
 refresh, `a0d631f` rate adoption, `31b95d9` metrics adoption,
 `37e9d57`/`3c36f34` XV-ORBITDB-01 fix+wrap, `1db0550` relay bus.
-Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
-commits, DCO `git commit -s`.
 Identity `Lefteris Notas <lefterisnotas@gmail.com>`; conventional
 commits, DCO `git commit -s`.
 
@@ -104,10 +106,10 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965` | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `dd352f6` (wave 105.1, io `read_file_bytes` clause fix; compatibility re-checked 2026-10-11: suite 171/171 + codec probe green); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
-| packages | lane HEAD `2b9b1146` (SESSION 19:15Z: **`xiom.ann` extracted**; assimp 0.7.0 + glfw 0.3.0; eco-v0.1.132, 48 releases); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
-| xvector | `c414e2a` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965`; lane HEAD `ecc587ee` (2026-10-11) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| stdlib | lane HEAD `35e6d87` (2026-10-11, docs block 107); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11 at this HEAD) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| packages | lane HEAD `511dd0f5` (2026-10-11 11:10Z: batches 38-41 delivered; vulkan 0.5.0 + sdl3 0.4.0; 55 eco releases); **`xiom.ann` extracted, publication pending OPS LIVE** (`REL-20261010-1908-packages`; registry 404 for the lane); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
+| xvector | `9f00836` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -704,8 +706,30 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   (orbitdb verifies at its next release check).
 - **FloatVal workaround unwound** after the v0.64.1 fix: float payload
   gates restored in the suite and probes.
+- **P-a generous HNSW level 0 (63rd pass, 2026-10-11):** reference study 01
+  F1 applied in `src/index/hnsw.xi` (no vendoring): level-0 capacity
+  `m0 = 2*m`, full-block prune to 80% of `m0` (FAISS `prune_headroom` 0.2,
+  anti-churn), adjacency rows uniformly `m0`-strided,
+  `hnsw_new_full(m, ml, m0)` for explicit capacity (the legacy `m0 = m`
+  control graph), codec **v3** (`[3, m, m0, ml, ef, cap, entry, count,
+  ...]`; v2 still decodes; strict `m0 < m` / `m0 > 1024`; pad step stays
+  behind `pad_adj_slots`). Gate `probe_hnsw_recall` extended: `m0 == 2*m`,
+  "generosity engaged" (max L0 degree 26 > m; higher layers <= m),
+  reachability 200/200, and a hard clustered corpus (n=300 dim=16,
+  6 clusters, midpoint queries at ef=8): generous **285/300** vs legacy
+  control **275/300** (strict `>` gate; bit-identical Windows/WSL). The
+  FAISS `keep_max_size_level0` fill arm was measured (same hard-corpus
+  recall at ~2.5x build work: 150,716 vs 60,852 ops, ~40% more visited)
+  and NOT adopted. Costs recorded: n=200 build work 60,852 ops (~legacy
+  62,129); per-ef visited 70/93/134/175/197 (legacy 63/84/126/171/196);
+  n=800 avg_visited 346 (legacy 288); bench medium build 13.0 -> 14.7 s,
+  ef=32/64/128 p50 0.56/0.84/1.44 ms, recovery 16.0 s, recall 1.000
+  unchanged. `probe_hnsw_codec` 12 checks (v3 roundtrip + v2 strip
+  compat); C-10 pad-loop repro re-run green on v3 (m=512, m0=1024).
+  Record: `docs/REFERENCE-STUDY-01-FAISS.md` F1.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **80 % today**; recompute at every wrap.
+  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence); recompute
+  at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
 `d2b18dc` = 0.64.3; latest re-verification = XV-ORBITDB-01 fix pass on
@@ -823,6 +847,13 @@ the current tree):**
   representative probes compiled green on first try; scratch resolver
   experiments (positive/negative controls) confirmed the silent-import
   behavior filed as `REL-20261010-2124-xvector`.
+- **P-a pass (63rd):** Windows battery ALL GATES GREEN (suite **171/171
+  x2** + sbom (39 modules, unsafe=0) + **37 probes x2** + bench smoke);
+  WSL spot bit-identical (recall x2, codec x2, fuzz x2, engine_hnsw x2,
+  soak, segment, index_admin) + WSL bench smoke quick; P-a diag identical
+  on both platforms (build 60,852 ops; hard corpus 285 vs 275; n=800
+  visited 346; per-ef table in `docs/hnsw-design.md`, baseline refreshed
+  in `docs/BENCHMARKS.md`); C-10 repro re-run green on codec v3.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -911,9 +942,10 @@ signed commits, docs updated).
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
    subset, **`xiom.vectors` swapped -- the package now backs all vector
    consumers**) + compiler v0.64.3 re-pinned lane-local (isolated).**
-   Remaining order: the `xiom.ann` porter flow (awaits its publication;
-   registry 404 as of 2026-10-10), the replay-loop delegation at the
-   D-ledger store migration, then the owner's public release +
+   Remaining order: **study 02 quantization recon** (`docs/REFERENCE-STUDY-02-QUANTIZATION.md`;
+   P-a is DONE, 63rd pass), the `xiom.ann` porter flow (awaits its
+   publication; registry 404 as of 2026-10-10), the replay-loop delegation
+   at the D-ledger store migration, then the owner's public release +
    benchmark. Gated pivots: D5/D6 on the stdlib fsync chain (still Err
    stubs at `5468469`), the socket adapter on the stdlib `xiom.net`
    proof, P5 on stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
@@ -957,11 +989,13 @@ signed commits, docs updated).
   slice docs): (1) faiss HNSW level assignment + search sampling vs ours;
   (2) faiss/vec product quantization for compaction; (3) sqlite-vec
   quantized brute-force kernels vs our flat scan; (4) DiskANN layout
-  notes for D5 delta segments + P5 mmap. Study item 1 (FAISS HNSW)
+  notes for D5 delta segments + P5 mmap.   Study item 1 (FAISS HNSW)
   DONE 2026-10-11 -> `docs/REFERENCE-STUDY-01-FAISS.md` (ranked
-  proposals: P-a level-0 degree generosity -- first candidate slice, gate
-  `probe_hnsw_recall` + per-ef table; P-b visited generation tags for
-  M-P; P-e quantization next study).**
+  proposals: P-a level-0 degree generosity **APPLIED 2026-10-11, 63rd
+  pass** -- `m0 = 2*m` + FAISS `prune_headroom` 0.2, codec v3, hard-corpus
+  control gate 285/300 vs 275/300; the fill arm measured and not adopted;
+  gate `probe_hnsw_recall` + refreshed per-ef table; P-b visited
+  generation tags for M-P; study 02 quantization next).**
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
@@ -1077,7 +1111,8 @@ signed commits, docs updated).
 
 ## 5. Ecosystem status (2026-10-10)
 
-- **stdlib:** current lane HEAD `dd352f6` (wave 105.1: io `read_file_bytes`
+- **stdlib:** current lane HEAD `35e6d87` (2026-10-11, docs block 107;
+  behavior unchanged for the lane). Wave 105.1 `dd352f6`: io `read_file_bytes`
   clause made payload-free -- pulse-reported nested-path static-read
   trap; compatibility re-checked 2026-10-11: suite + codec probe green).
   Wave 102 `5b7bf8f` = **bounded-depth `json_parse` FIXED** -- the
@@ -1105,8 +1140,9 @@ signed commits, docs updated).
   to the checker -> i64 fallback, silent wrong values; Addendum 9)
   **and XVC-C-14** (same-named struct types shadow field layouts;
   Addendum 10; bus items `REL-20261010-1550-xvector` /
-  `-1709-xvector` now `acked`). Compiler-lane HEAD `6cbcc53e`.
-- **packages:** lane HEAD `2b9b1146` (2026-10-10 19:15Z: **`xiom.ann`
+  `-1709-xvector` now `acked`). Compiler-lane HEAD `ecc587ee` (2026-10-11).
+- **packages:** lane HEAD `511dd0f5` (2026-10-11 11:10Z: batches 38-41;
+  **`xiom.ann`
   extracted**, assimp 0.7.0 + glfw 0.3.0 published, eco-v0.1.132,
   48 eco releases); xiom.durable port + WAL reconciliation
   wrapped earlier (152/152 x2). **`xiom.wal` 0.1.0 is ADOPTED by XVECTOR
@@ -1146,8 +1182,9 @@ signed commits, docs updated).
 | `docs/COMPILER-FINDINGS-XVECTOR.md` | compiler | v0.64.3 re-test: C-13/C-14 **UNCHANGED** (both `acked` by the compiler lane 2026-10-10; verdicts filed; unfixed); v0.64.2-era: C-03/06/07/08 verified fixed; C-10 fixed; C-11/C-12 in-context green; C-09 repro green |
 | `docs/RELAY-COMPILER.md` | compiler | Addenda 3-10 (8 = v0.64.2 re-test; 9 = XVC-C-13 `&Str` params; 10 = XVC-C-14 short-name layout shadow) |
 | `docs/COMPILER-RELAY-2026-10-09-v0.64.2.md` | compiler -> XVECTOR | received; actioned (re-test done, no residual reds) |
-| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-10 (lane `030f748`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
-| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted (items `-9` fixed / `-10` acked / `-12` closed) |
+| `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-11 (lane `35e6d87`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
+| `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted + verified, **publication pending OPS LIVE** (`REL-20261010-1908-packages`; items `-9` fixed / `-10` acked / `-12` closed) |
+| `docs/REFERENCE-STUDY-01-FAISS.md` | (record) | **P-a APPLIED 2026-10-11 (63rd)**: generous level 0 (`m0 = 2*m` + `prune_headroom` 0.2), codec v3, hard-corpus control gate 285/300 vs 275/300; fill arm measured, not adopted |
 | `docs/XIOM-HTTP-EVAL.md` | packages (record) | written 2026-10-10: router/http evaluation; status-helper adoption + 507 upstream gap |
 | `docs/XIOM-VECTORS-EVAL.md` | packages (record) | written 2026-10-10: extraction fidelity (6/6 pins), wiring + gate, **atomic swap executed** (60th; §3) |
 | `docs/XIOM-METRICS-ADOPTION.md` | packages/compiler (record) | written 2026-10-10: observability internals on `xiom.metrics` 0.2.0; XVC-C-14 record + gates |
@@ -1173,20 +1210,22 @@ E:\xiom-lang\stdlib, E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo
 stays PRIVATE; no pushes. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-Orientation: HEAD `5cbe6ee` (docs: reference study 01 -- FAISS HNSW) +
-the handoff commit; tag `v1.0.0-rc.1` on `530b041`; clean tree;
+Orientation: HEAD `9f00836` (feat: reference study 01 P-a -- generous
+level 0 + codec v3) +
+the wrap commit; tag `v1.0.0-rc.1` on `530b041`; clean tree;
 `git log --oneline -12` shows the recent slice commits. Lane pins:
-stdlib `5468469` (fsync chain still stubs), packages `2b9b1146`
-(xiom.ann extracted in-tree, not yet published; xiom.vectors LIVE eco
-508), compiler **v0.64.3 installed lane-local** (Windows `out\toolchain`,
+stdlib `35e6d87` (fsync chain still stubs), packages `511dd0f5`
+(xiom.ann extracted in-tree, publication pending OPS LIVE; xiom.vectors
+LIVE eco 508), compiler **v0.64.3 installed lane-local** (Windows
+`out\toolchain`,
 WSL `~/.xvector-toolchain`; C-13/C-14 unchanged). **Toolchain + package
 homes are lane-local on purpose** (shared homes get wiped by concurrent
 sessions -- incident `REL-20261010-1835-xvector`); never point builds at
 `%LOCALAPPDATA%\xiom*` or `~/.local/share/xiom`. **Reference study area
 (owner-granted): `E:\repos` -- MIT-only clones as study references
 (sqlite-vec, faiss, DiskANN already cloned + MIT-verified; rules + study
-backlog in SESSION 2; study 01 done, findings in
-`docs/REFERENCE-STUDY-01-FAISS.md`).**
+backlog in SESSION 2; study 01 DONE and **P-a applied** -- findings in
+`docs/REFERENCE-STUDY-01-FAISS.md`; study 02 quantization is next).**
 
 Coordination bus (owner rollout 2026-10-10): the private `xiom-lang/
 xiom-relays` repo is the only cross-lane channel. At session start and
@@ -1350,14 +1389,13 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **reference-study slices first (owner-granted study area):**
-P-a level-0 degree generosity (FAISS `keep_max_size_level0` idea;
-implement behind the existing API; gate `probe_hnsw_recall` + the per-ef
-table in `docs/BENCHMARKS.md`), then **study 02 -- quantization
-reconnaissance** (FAISS `ScalarQuantizer`/`ProductQuantizer` +
-sqlite-vec kernels -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md`; any
+NEXT TASK: **study 02 -- quantization reconnaissance** (owner-granted
+study area): FAISS `ScalarQuantizer`/`ProductQuantizer` + sqlite-vec
+quantized kernels -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md`; any
 adoption needs a documented error-bound story so the oracle gate stays
-honest). Maintain in parallel: the **`xiom.ann` porter wiring** once the
+honest. P-a (level-0 degree generosity) is DONE (63rd pass; `m0 = 2*m` +
+`prune_headroom` 0.2, codec v3, control gate 285/300 vs 275/300; fill arm
+measured, not adopted). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;
 watch the packages lane's scope item `REL-20261010-1908-packages`; the
 wiring follows the vectors pattern: dependency + extraction-fidelity gate
