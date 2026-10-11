@@ -155,8 +155,11 @@ needed) -> signed commit. Red build = rejection.
   `docs/REFERENCE-STUDY-02-QUANTIZATION.md` (ranked Q-a..Q-d; Q-a = SQ8
   quantized scan tier + exact f32 rescore for sealed segments; explicit
   error-bound story section; no adoption yet)
-- [ ] Q-a adoption slice -- segment codec v-next + `probe_quantization`
-  (next; study backlog complete; consumes study 03's record-layout input)
+- [x] **Q-a1** -- SQ8 quantization module + `probe_quantization` (17
+  checks; bit-identical rescore 10x3) + suite Section 16 **(done
+  2026-10-11, 66th pass)**; found/filed XVC-C-15 around it
+- [ ] Q-a2 -- segment codec v-next + read-path wiring (lands with D5's
+  multi-segment reads; consumes study 03's record-layout input)
 - [x] Study 03 -- DiskANN layout + quantized-graph notes **(done
   2026-10-11)** -> `docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed
   fixed-size records, co-located f32 + adjacency, buffer-then-seal

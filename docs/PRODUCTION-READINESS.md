@@ -877,6 +877,22 @@ extraction with the packages lane.
   in-place edge surgery) and P5 (alignment as a format decision now).
   Study backlog complete (1-3; item 3 folded into study 02). No score
   change (reconnaissance only; code tree unchanged).
+- **2026-10-11 (sixty-sixth pass):** Q-a1 -- SQ8 quantization module +
+  two-tier rescore (reference study 02, no vendoring):
+  `src/index/quantize.xi` (trained per-dim ranges, FAISS truncation codec,
+  FAISS-pattern query tables, sqlite-vec's rescore contract),
+  `probe_quantization` (17 checks: determinism, bounds, rejection,
+  bit-identical rescore for 10 queries x 3 metrics, coarse deviation
+  measured 0.0257 <= documented bound 0.6307, bytes/vector 32 B -> 8 B),
+  suite Section 16 (177 checks total), scripts + repro updated. Found and
+  filed compiler finding **XVC-C-15** (literal stores into `Vec[Float32]`
+  slots skip narrowing; `REL-20261011-1134-xvector`; repro bundle;
+  Windows + WSL identical) and worked around it (explicit cast). No score
+  change: gated capability with no query path yet (Q-a2 lands with D5;
+  C stays 99). Evidence: suite 177/177 x2 + sbom (40 modules, unsafe=0) +
+  38 probes x2 + bench smoke (Windows) ALL GREEN; WSL spot green
+  (suite 177/177, quantization x2 diag bit-identical, C-15 repro
+  identical).
 
 ## Update rule
 

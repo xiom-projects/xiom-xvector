@@ -279,3 +279,33 @@ WSL by xvector; **C-13 and C-14 re-tested on it: both UNCHANGED** (C-13:
 `first_byte("A")` = 71 Win / 127 WSL; C-14: clang store mismatch at
 `xiominput.ll:850`, Windows + WSL); verdicts filed on
 `release-checks/compiler-compiler-v0.64.3`; items remain open.
+
+**Addendum 11 (2026-10-11): XVC-C-15 (new, OPEN) -- literal stores into
+`Vec[Float32]` slots skip numeric narrowing.**
+
+Found while landing the Q-a quantization slice (`probe_quantization`'s
+constant-dimension setup). `a[1] = 7.0` on a local `Vec[Float32]` stores
+the raw low 32 bits of the f64 constant (**0.0**); `b[1] = 7` stores the
+raw integer bits as the f32 pattern (**9.80908925027372e-45**); struct
+field stores (`vector.data[1] = 7.0`) corrupt the same way. A Float32
+variable, an explicit `... as Float32`, and `push(...)` all convert
+correctly; `Vec[Float64]` slots are fine. No warning, no clang error --
+silent corruption wherever a float literal is written into a float vector
+element (training/encoding paths get garbage values).
+
+Repro: `docs/repro/xv-f32-slot-literal-write/` (6-shape matrix; v0.64.3
+Windows exit **3**: shapes A/B/E corrupt, C/F/G controls green;
+deterministic across runs).
+
+Lane workaround (adopted): explicit narrow (`c[1] = 7.0 as Float32;`) or
+write from a typed variable; one probe setup site was affected and fixed.
+Ask: perform the numeric conversion at indexed/field stores the way
+`push` does, or reject the implicit literal narrowing at check time.
+
+Re-run recipe:
+
+```powershell
+. .\scripts\dev-env.ps1
+.\scripts\build.ps1 docs\repro\xv-f32-slot-literal-write\probe.xi -Name repro_f32_slot_literal
+.\out\repro_f32_slot_literal.exe   # v0.64.3: exit 3
+```

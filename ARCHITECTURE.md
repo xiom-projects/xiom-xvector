@@ -149,6 +149,10 @@ engine.core -> { core.shim, query.search_service -> storage.vector_store /
 index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric} + storage.vector_store
                (graph codec; no query dependency)
+index.quantize -> xiom.vectors (distances, magnitude, TopKHeap) +
+               storage.vector_store (SQ8 training + codec + query tables +
+               the two-tier scan; returns QuantHit, no query dependency;
+               reference study 02 Q-a, gates tests/probes/probe_quantization)
 collection/* -> types, index.ann_index, core.shim ids
 segment/* -> storage.vector_store, segment_state, core.shim ids;
              segment_file -> index.hnsw + payload.payload + durability.wal_file

@@ -127,6 +127,52 @@ indexes `deg`, adjacency blocks are `row*m0` row-major (live slots
 - `hnsw_delete(graph, id) -> Bool` -- tombstone: the node keeps routing traffic but is never returned (idempotent; false for unknown/already-deleted). `hnsw_live_count` reports non-deleted nodes. Re-inserting an id updates the vector in place, revives the node, and refreshes its edges for the new vector (re-linking landed 2026-10-09).
 - Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 297/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 346/800); P-a hard corpus (n=300, dim=16, 6 clusters, midpoint queries at ef=8) 285/300 generous vs 275/300 legacy control (generosity effect gate); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty; beam construction honours ef_construction (setter semantics checked).
 
+## `xiom.vector.index.quantize` (SQ8 + two-tier rescore; reference study 02 Q-a)
+Source-reconstructed from the studied FAISS (`QT_8bit` trained per-dimension
+ranges + the SQ distance-table/ADC pattern) and sqlite-vec (`int8` +
+`_rescore_chunks`/`_rescore_vectors` two-tier rescore) — no vendoring, no
+new dependency. Module `src/index/quantize.xi`.
+- `SQ8 { dim; vmin: Vec[Float32]; vstep: Vec[Float32] }` — trained ranges:
+  `sq8_train(&Vec[Vector]) -> Option[SQ8]` (per-dimension min/max; None on
+  empty/mismatched dims; constant dimensions get `vstep 0`), and
+  `sq8_max_error(sq) -> Float32` (the documented per-component bound =
+  max `vstep`).
+- Codec: `sq8_encode_one(sq, v) -> Vec[Int]` (FAISS truncation:
+  `clamp(trunc((x - vmin)/vstep), 0, 255)`; out-of-range clamps),
+  `sq8_decode_one(sq, codes) -> Option[Vector]` (None on wrong length /
+  code outside 0..255), `sq8_encode_store(store, sq) -> Vec[Int]`
+  (flattened: position `p` owns `codes[p*dim .. p*dim+dim]`; empty on a
+  dimension mismatch).
+- Query tables (the FAISS SQ distance-computer pattern; `dim*256` floats
+  each): `sq8_table_l2` (squared-L2 contributions), `sq8_table_ip`
+  (inner-product contributions), `sq8_table_norm2` (decoded squared
+  norms); per-candidate distances are `dim` table lookups —
+  `sq8_l2_distance`, `sq8_ip_distance`, `sq8_cos_distance` (zero guards
+  matching `cosine_distance`).
+- Two-tier scan: `sq8_scan_coarse(store, sq, codes, query, k, metric) ->
+  Vec[QuantHit]` (position-ranked converted to user ids; the gated
+  deviation tier, never claimed exact) and
+  `sq8_scan_rescore(store, sq, codes, query, k, metric, oversample) ->
+  Vec[QuantHit]` — phase 1 keeps `k*oversample` candidates (capped at
+  4096), phase 2 re-ranks them with the exact `vector_distance` in
+  store-position order using the same stable bounded insertion as
+  `search_knn`, so results are **bit-identical** to the exact scan
+  whenever the candidate set contains the true top-k (sqlite-vec's
+  rescore contract; the honesty device from study 02).
+- Gates: `tests/probes/probe_quantization.xi` (17 checks: training
+  determinism + order independence, empty/mismatch rejection, the
+  round-trip bound `<= vstep` measured at `0.9997 * vstep`, clamping,
+  constant dimensions, decode rejection, table distances vs exact on
+  decoded vectors (max deviation 0), the documented coarse deviation
+  bound (measured 0.0257 vs bound 0.6307 on the gate corpus),
+  bit-identical rescore for 10 queries x 3 metrics, determinism, empty
+  store, `k > n`, byte accounting f32 32 B vs SQ8 8 B per dim-8 vector
+  (4x)); suite Section 16 mirrors the math (6 checks). Error story and
+  ranked proposals: `docs/REFERENCE-STUDY-02-QUANTIZATION.md`.
+- Not yet wired to a query path: the segment/read-path integration
+  (Q-a2) lands with D5's multi-segment reads; today the module is
+  artifact/scan-level and fully gated.
+
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to the `xiom.vectors` metric functions today.
 
