@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (63 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (64 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -85,7 +85,12 @@ HNSW recon (`docs/REFERENCE-STUDY-01-FAISS.md`) -> P-a APPLIED (63rd pass):
 generous HNSW level 0 (`m0 = 2*m` + FAISS `prune_headroom` 0.2; codec v3
 carries `m0`, v2 still decodes; adjacency rows stride `m0`; fill arm
 measured and NOT adopted), hard-corpus control gate 285/300 vs 275/300
-legacy; costs recorded (build +13%, W3 p50 +28..40%, recovery +27%).
+legacy; costs recorded (build +13%, W3 p50 +28..40%, recovery +27%) ->
+reference study 02 quantization recon
+(`docs/REFERENCE-STUDY-02-QUANTIZATION.md`: SQ8 trained ranges + the
+two-tier rescore pattern as first candidate Q-a; PQ deferred pending
+deterministic training; explicit error-bound story required before any
+adoption).
 
 ---
 
@@ -942,13 +947,16 @@ signed commits, docs updated).
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
    subset, **`xiom.vectors` swapped -- the package now backs all vector
    consumers**) + compiler v0.64.3 re-pinned lane-local (isolated).**
-   Remaining order: **study 02 quantization recon** (`docs/REFERENCE-STUDY-02-QUANTIZATION.md`;
-   P-a is DONE, 63rd pass), the `xiom.ann` porter flow (awaits its
-   publication; registry 404 as of 2026-10-10), the replay-loop delegation
-   at the D-ledger store migration, then the owner's public release +
-   benchmark. Gated pivots: D5/D6 on the stdlib fsync chain (still Err
-   stubs at `5468469`), the socket adapter on the stdlib `xiom.net`
-   proof, P5 on stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
+   Remaining order: **study 02 quantization DONE (64th pass;
+   `docs/REFERENCE-STUDY-02-QUANTIZATION.md`)** -- next candidates are the
+   adopted-side slices **Q-a (SQ8 quantized scan tier + exact f32 rescore
+   for sealed segments; D4/D6)** and **study 03 (DiskANN layout notes for
+   D5/P5)**, then the `xiom.ann` porter flow (awaits its publication;
+   registry 404 as of 2026-10-10), the replay-loop delegation at the
+   D-ledger store migration, then the owner's public release + benchmark.
+   Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
+   `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
+   stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
 2. **M-Q query surface: DONE (Q1-Q6** -- range search, batch ops,
    pagination, delete-by-filter, per-collection stats + index admin,
    SearchRequest extensions). All gated by their probes.
@@ -995,7 +1003,13 @@ signed commits, docs updated).
   pass** -- `m0 = 2*m` + FAISS `prune_headroom` 0.2, codec v3, hard-corpus
   control gate 285/300 vs 275/300; the fill arm measured and not adopted;
   gate `probe_hnsw_recall` + refreshed per-ef table; P-b visited
-  generation tags for M-P; study 02 quantization next).**
+  generation tags for M-P; study 02 quantization DONE 2026-10-11, 64th
+  pass -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md` -- Q-a (SQ8 trained
+  ranges + two-tier exact rescore for sealed segments) is the first
+  adoption candidate; PQ deferred pending deterministic training; a
+  documented error-bound story is required before any lossy path; study
+  03 = DiskANN layout for D5/P5; backlog item 3 (sqlite-vec kernels) is
+  covered by study 02 F1-F3).**
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
@@ -1185,6 +1199,7 @@ signed commits, docs updated).
 | `docs/STDLIB-WISHLIST-XVECTOR.md` | stdlib | re-checked 2026-10-11 (lane `35e6d87`): fsync/fdatasync/fsync_dir + fd/append + f32-bits + truncate + flush_stdout still open; bounded-depth `json_parse` **FIXED** (wave 102 `5b7bf8f`) -- bus item -7 verified + closed |
 | `docs/PACKAGE-WISHLIST-XVECTOR.md` | packages | refreshed 2026-10-10: `xiom.wal` + `xiom.metrics` + `xiom.rate` **ADOPTED**; router/http evaluated (status subset adopted); **`xiom.vectors` WIRED + GATED + SWAPPED** (60th; the package backs all vector consumers); `xiom.vectors` LIVE eco 508 / `xiom.ann` extracted + verified, **publication pending OPS LIVE** (`REL-20261010-1908-packages`; items `-9` fixed / `-10` acked / `-12` closed) |
 | `docs/REFERENCE-STUDY-01-FAISS.md` | (record) | **P-a APPLIED 2026-10-11 (63rd)**: generous level 0 (`m0 = 2*m` + `prune_headroom` 0.2), codec v3, hard-corpus control gate 285/300 vs 275/300; fill arm measured, not adopted |
+| `docs/REFERENCE-STUDY-02-QUANTIZATION.md` | (record) | written 2026-10-11 (64th): FAISS SQ/PQ + sqlite-vec int8/binary/rescore/DiskANN recon; ranked Q-a..Q-d (Q-a = SQ8 + exact rescore for sealed segments); error-bound story section; no adoption yet |
 | `docs/XIOM-HTTP-EVAL.md` | packages (record) | written 2026-10-10: router/http evaluation; status-helper adoption + 507 upstream gap |
 | `docs/XIOM-VECTORS-EVAL.md` | packages (record) | written 2026-10-10: extraction fidelity (6/6 pins), wiring + gate, **atomic swap executed** (60th; §3) |
 | `docs/XIOM-METRICS-ADOPTION.md` | packages/compiler (record) | written 2026-10-10: observability internals on `xiom.metrics` 0.2.0; XVC-C-14 record + gates |
@@ -1389,11 +1404,13 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **study 02 -- quantization reconnaissance** (owner-granted
-study area): FAISS `ScalarQuantizer`/`ProductQuantizer` + sqlite-vec
-quantized kernels -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md`; any
-adoption needs a documented error-bound story so the oracle gate stays
-honest. P-a (level-0 degree generosity) is DONE (63rd pass; `m0 = 2*m` +
+NEXT TASK: **study 02 is DONE (64th pass)** ->
+`docs/REFERENCE-STUDY-02-QUANTIZATION.md` (Q-a = SQ8 trained ranges +
+two-tier exact rescore for sealed segments -- first adoption candidate;
+PQ deferred; error-bound story required). Next candidates, in order: the
+**Q-a slice** (segment codec v-next + `probe_quantization`, full
+batteries) and **study 03 (DiskANN layout notes for D5/P5)**. P-a
+(level-0 degree generosity) is DONE (63rd pass; `m0 = 2*m` +
 `prune_headroom` 0.2, codec v3, control gate 285/300 vs 275/300; fill arm
 measured, not adopted). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;

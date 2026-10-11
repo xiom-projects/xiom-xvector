@@ -90,6 +90,10 @@ the compiler grows (no action).
    (`m0 = 2*m`, headroom 0.2, codec v3), gated by `probe_hnsw_recall`
    (generosity + control gates), per-ef table refreshed in
    `docs/BENCHMARKS.md`/`docs/hnsw-design.md`; both batteries green.
-2. Study item 2: quantization reconnaissance (FAISS SQ/PQ + sqlite-vec) ->
-   `docs/REFERENCE-STUDY-02-QUANTIZATION.md`.
-3. Study items 3-4 (sqlite-vec kernels, DiskANN layout) remain queued.
+2. Study item 2: quantization reconnaissance (FAISS SQ/PQ + sqlite-vec)
+   **DONE 2026-10-11** -> `docs/REFERENCE-STUDY-02-QUANTIZATION.md`
+   (ranked proposals Q-a..Q-d; Q-a = SQ8 quantized scan tier + exact
+   rescore for sealed segments is the first adoption candidate).
+3. Study items 3-4 (sqlite-vec kernels, DiskANN layout) remain queued
+   (item 3 is largely covered by study 02 F1-F3; study 03 = DiskANN
+   layout for D5/P5).
