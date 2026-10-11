@@ -751,15 +751,15 @@ fn handle_state_inner(eng: &mut VectorEngine, raw: &Vec<UInt8>, st: &mut Service
 // ---- Response writing ----
 
 // Status reason phrases come from the xiom.http package (adoption
-// 2026-10-10; docs/XIOM-HTTP-EVAL.md). Lane delta kept deliberately:
-// xiom.http.status has no 507 entry (it returns "Unknown"), and the lane
-// fallback for codes outside the table stays "Error" -- every code the
-// service emits therefore keeps its pre-adoption text byte-for-byte
-// (probe_http_service pins the 507 line).
+// 2026-10-10; re-synced to 0.1.6 on 2026-10-11 after the 507 gap closed
+// upstream; docs/XIOM-HTTP-EVAL.md). Lane delta kept deliberately: codes
+// outside the package table fall back to "Error" (the package returns
+// "Unknown" by documented contract), so every code the service emits
+// keeps its pre-adoption text byte-for-byte (probe_http_service pins the
+// raw 507 line; probe_package_http pins the native 507 entry).
 fn status_text(status: Int) -> Str {
   var t = http_status_text(status);
   if t != "Unknown" { return t; }
-  if status == 507 { return "Insufficient Storage"; }
   return "Error";
 }
 
