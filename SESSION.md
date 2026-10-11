@@ -100,7 +100,7 @@ commits, DCO `git commit -s`.
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965` | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `5468469` (website-10 portable crypto fix); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-10) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| stdlib | lane HEAD `dd352f6` (wave 105.1, io `read_file_bytes` clause fix; compatibility re-checked 2026-10-11: suite 171/171 + codec probe green); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `2b9b1146` (SESSION 19:15Z: **`xiom.ann` extracted**; assimp 0.7.0 + glfw 0.3.0; eco-v0.1.132, 48 releases); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
 | xvector | `c414e2a` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
@@ -1050,11 +1050,13 @@ signed commits, docs updated).
 
 ## 5. Ecosystem status (2026-10-10)
 
-- **stdlib:** current lane HEAD `030f748` (doorbell round; wave 102
-  `5b7bf8f` = **bounded-depth `json_parse` FIXED** -- the xvector bus item
-  `-7` is verified + closed 2026-10-10: 128-deep Ok; 129/60000 Err;
-  Windows + WSL identical). **Re-checked 2026-10-10: fsync/fdatasync/
-  fsync_dir return Err stubs (`xiom/os/fs_ffi.xi:238`,
+- **stdlib:** current lane HEAD `dd352f6` (wave 105.1: io `read_file_bytes`
+  clause made payload-free -- pulse-reported nested-path static-read
+  trap; compatibility re-checked 2026-10-11: suite + codec probe green).
+  Wave 102 `5b7bf8f` = **bounded-depth `json_parse` FIXED** -- the
+  xvector bus item `-7` is verified + closed 2026-10-10: 128-deep Ok;
+  129/60000 Err; Windows + WSL identical. **Re-checked 2026-10-11:
+  fsync/fdatasync/fsync_dir return Err stubs (`xiom/os/fs_ffi.xi:238`,
   `xiom/os/sync_io.xi:88`); the fd path (`write_all` etc.),
   `append_file_bytes`, `truncate`/`ftruncate` still open; no
   `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
