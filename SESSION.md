@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (66 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (67 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -102,16 +102,25 @@ bit-identical rescore 10 queries x 3 metrics; documented error bounds
 pinned) + suite Section 16; compiler finding **XVC-C-15** found and filed
 during the slice (literal stores into `Vec[Float32]` slots skip
 narrowing; repro `xv-f32-slot-literal-write`; bus item
-`REL-20261011-1134-xvector`).
+`REL-20261011-1134-xvector`) -> Q-a2a applied (67th pass): segment codec
+**v2** (opt-in SQ section: `has_sq/sq/codes` + `sealed_segment_enable_sq`;
+`q`/`c` sections after the graph; v1 output byte-identical when not
+armed; loader accepts both versions with torn-section drop) + artifact
+gates in `probe_quantization` (roundtrip, rescore over the loaded segment
+bit-equal to exact, torn q/c keeps vectors, byte delta 35 B/vector text
+vs 8 B future binary); owner directive 11:59Z routing also recorded
+(bus `-1203-xvector/-2`).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `ea73829` (feat: reference
-study 02 Q-a1 -- SQ8 quantization + two-tier rescore) + this wrap commit;
-tag `v1.0.0-rc.1` still on `530b041`. Recent slices: `ea73829` Q-a1
-(feat), `f3aacdf` pin sync, `9c340df` study 03, `6a25c1d` pin sync,
+**Repo:** private, no pushes; clean tree. HEAD `d42171c` (feat: Q-a2a --
+segment codec v2 with the opt-in SQ section) + this wrap commit;
+tag `v1.0.0-rc.1` still on `530b041`. Recent slices: `d42171c` Q-a2a,
+`a7a4d0e` session note (owner directive routing), `69379bc` bus note,
+`c25c756` Q-a1 wrap, `ea73829` Q-a1 (feat), `f3aacdf` pin sync,
+`9c340df` study 03, `6a25c1d` pin sync,
 `1fce9fe` study 02, `a73fc5e` P-a wrap, `9f00836`
 P-a (feat: generous level 0 + codec v3), `e04c723` handoff refresh,
 `5cbe6ee` study 01, `dc32d73` reference area
@@ -129,7 +138,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.3 installed lane-local (2026-10-10)** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); release run `38071481303` green; tag `v0.64.3` on `a5b87965`; lane HEAD `ecc587ee` (2026-10-11) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `35e6d87` (2026-10-11, docs block 107); **fsync/fdatasync/fsync_dir still Err stubs** (re-checked 2026-10-11 at this HEAD) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `511dd0f5` (2026-10-11 11:10Z: batches 38-41 delivered; vulkan 0.5.0 + sdl3 0.4.0; 55 eco releases); **`xiom.ann` extracted, publication pending OPS LIVE** (`REL-20261010-1908-packages`; registry 404 for the lane); **`xiom.vectors` LIVE (eco 508)** | `E:\xiom-packages\packages` |
-| xvector | `ea73829` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `d42171c` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -766,9 +775,22 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   8 B SQ8 (dim 8). Suite Section 16 mirrors the math (177/177 total).
   Q-a2 = segment codec v-next + read-path wiring (lands with D5);
   XVC-C-15 (this slice's compiler finding) filed + fixed around.
+- **Q-a2a segment v2 artifact (67th pass, 2026-10-11):**
+  `SealedSegment` gains `has_sq/sq/codes` + `sealed_segment_enable_sq`
+  (trains SQ8 on the segment's vectors, opt-in); codec **version 2**
+  writes `q <vmin words dim> <vstep words dim>` + `c <id> <codes dim>`
+  after the graph only when armed (v1 files byte-identical otherwise);
+  the loader accepts v1+v2, validates ranges/codes in store order, and
+  drops a torn/partial SQ section while keeping the vectors
+  (`has_sq` gate). Gates: `probe_quantization` grew to 23 checks (seal +
+  enable_sq, v1/v2 persist, load roundtrip of ranges+codes, rescore over
+  the loaded artifact == exact for 10 queries, torn q/c drop, byte delta
+  35 B/vector text); `probe_segment_file` (38) and the engine probes
+  unchanged-green (v1 path byte-identical). Q-a2b (read-path wiring)
+  lands with D5.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence; Q-a1 adds
-  gated capability, no score change -- no product path yet); recompute
+  scorecard, **81 % today** (C 98 -> 99 with the P-a evidence; Q-a1/Q-a2a
+  add gated capability, no score change -- no product path yet); recompute
   at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
@@ -899,6 +921,11 @@ the current tree):**
   smoke); WSL spot (suite 177/177; `probe_quantization` x2 with diag
   bit-identical to Windows; C-15 repro identical on both platforms);
   C-15 filed on the bus (`REL-20261011-1134-xvector`, pushed).
+- **Q-a2a pass (67th):** Windows battery ALL GATES GREEN (suite
+  **177/177 x2** + sbom (40 modules, unsafe=0) + **38 probes x2** + bench
+  smoke); WSL spot (quantization x2 diag bit-identical, segment_file,
+  collections, index_admin) green; segment v1 path byte-identical
+  (14-point tear sweep diags unchanged).
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -987,10 +1014,16 @@ signed commits, docs updated).
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
    subset, **`xiom.vectors` swapped -- the package now backs all vector
    consumers**) + compiler v0.64.3 re-pinned lane-local (isolated).**
-   Remaining order: **study backlog complete + Q-a1 DONE (66th pass)** --
-   next: **Q-a2** (segment codec v-next + read-path wiring; lands with
-   D5's multi-segment reads and consumes study 03's record-layout input),
-   then the `xiom.ann` porter flow (awaits its publication; registry 404
+   Remaining order: **Q-a1 + Q-a2a DONE (66th/67th passes)** -- the
+   quantization module + the segment v2 artifact are in and gated;
+   **Q-a2b** (read-path wiring: scan sealed segments via codes + exact
+   rescore) lands with D5's multi-segment reads (stdlib fsync gate).
+   **Owner directive 2026-10-11 11:59Z (engine P3 / vulkan-sdl /
+   package coverage) was routed read-only** to bindings
+   (`REL-20261011-1203-xvector`: their in-flight sdl3 0.8.0 present-path
+   batch matches the engine ask) and packages
+   (`REL-20261011-1203-xvector-2`: keep the publish chain current).
+   Then: the `xiom.ann` porter flow (awaits its publication; registry 404
    as of 2026-10-10), the replay-loop delegation at the D-ledger store
    migration, then the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
@@ -1468,15 +1501,14 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **Q-a1 DONE (66th pass)** -- `src/index/quantize.xi` + the
-`probe_quantization` gate (17 checks; bit-identical rescore 10x3;
-documented error bounds pinned) + suite Section 16; study backlog
-complete (studies 01-03). Next: **Q-a2 (segment codec v-next +
-read-path wiring)** when D5's multi-segment reads land -- it consumes
-study 03's record-layout input and study 02's Q-a design (segment byte
-delta + overwrite/torn-tail gates). XVC-C-15 (literal stores into
-`Vec[Float32]` slots) filed during this slice; watch the compiler lane's
-verdict. P-a is DONE (63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
+NEXT TASK: **Q-a1 + Q-a2a DONE (66th/67th)** -- the SQ8 module and the
+segment v2 artifact are in and gated (`probe_quantization` 23 checks;
+suite 177). Remaining: **Q-a2b** (read-path wiring over sealed segments;
+lands with D5) + the standing watches (xiom.ann porter flow, replay-loop
+delegation, gated pivots re-checked every pass). **Owner directive routed
+2026-10-11 11:59Z** (engine P3 vulkan/sdl priority): read-only routing to
+bindings/packages via `REL-20261011-1203-xvector` and `-2`; this lane
+makes no writes into those live workspaces. P-a is DONE (63rd pass). Maintain in parallel: the **`xiom.ann` porter wiring** once the
 package is published (extracted in-tree, registry 404 as of 2026-10-11;
 watch the packages lane's scope item `REL-20261010-1908-packages`; the
 wiring follows the vectors pattern: dependency + extraction-fidelity gate
