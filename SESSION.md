@@ -96,9 +96,10 @@ adoption).
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `9f00836` (feat: reference
-study 01 P-a -- generous level 0 + codec v3) + this wrap commit; tag
-`v1.0.0-rc.1` still on `530b041`. Recent slices: `9f00836` P-a,
+**Repo:** private, no pushes; clean tree. HEAD `1fce9fe` (docs: reference
+study 02 -- quantization recon) + this pin-sync commit; tag
+`v1.0.0-rc.1` still on `530b041`. Recent slices: `1fce9fe` study 02,
+`a73fc5e` P-a wrap, `9f00836` P-a (feat: generous level 0 + codec v3),
 `e04c723` handoff refresh, `5cbe6ee` study 01, `dc32d73` reference area
 (owner grant), `2d9b4d6` stdlib pin sync, `51290a1` vectors wrap,
 `c414e2a` vectors swap, `396b239` bus state sync, `e23ee3d` integration
