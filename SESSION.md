@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (71 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (72 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -120,12 +120,12 @@ owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md`.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `3051160` (feat: benchmark
-integration starter -- /version, index config, per-request ef_search,
-ann-benchmarks adapters) + `590310b` (pyc hygiene) + this wrap commit;
-tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `3051160` benchmark starter (70th), `7883ca3` Q-serve
-wrap, `5f6894b` Q-serve (69th),
+**Repo:** private, no pushes; clean tree. HEAD `5fce3cf` (feat: byte-level
+fast upsert scanner -- str_bytes root cause + 5k fit 661s -> 120s) + this
+wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: `5fce3cf` fast scanner (72nd), `ede0e20` json finding
+(71st), `29cfa57` benchmark wrap, `3051160` benchmark starter (70th),
+`590310b` pyc hygiene, `7883ca3` Q-serve wrap, `5f6894b` Q-serve (69th),
 `404d80c` session note (sdl3 0.8.0
 verification + ann greenlight request), `80d8579` ann porter eval,
 `d42171c` Q-a2a,
@@ -845,6 +845,21 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   fast numeric scanner for the upsert hot path** (benchmarks run
   regardless of the stdlib fix timeline; the adapter/browser paths
   already default to safe batch sizes).
+- **Upsert hot-path fast scanner (72nd pass, 2026-10-11):**
+  `src/api/json_fast.xi` -- byte-level scanner for the canonical
+  `{"ids":[...],"vectors":[[...]]}` body (strict grammar mirror; inline
+  decimal accumulation; conservative bounds: 15 significant digits,
+  |exp| <= 22, else None -> strict generic path) + `HttpRequest.body_bytes`
+  (linear byte copy; one `from_utf8` keeps the Str for the strict path)
+  + the dispatch fast branch behind `ServiceConfig.fast_upsert`. Gate
+  `probe_json_fast` (in CI now; 40 probes): **fast vs strict responses
+  byte-for-byte equal across 228 cases** (28-case hand matrix + 200
+  deterministic byte mutations), 409/404/400 parity, 52k-number body in
+  1.7-2.9 s (strict ~84 s). ROOT CAUSE pinned:
+  `docs/repro/xv-json-parse-quadratic/probe_strbytes.xi` (400 KB
+  str_bytes = ~4 s, quadratic) + README ask filed; measured effect:
+  **5k x dim-25 fit via `xvectord` 661 s -> 120 s** (HNSW-build bound,
+  ~42 pts/s); search 53-78 QPS. Batteries green both platforms.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -992,6 +1007,12 @@ the current tree):**
   **adapter smoke live-green** against `xvectord` (default caps):
   recall@10 1.000 at ef>=64 / 0.940 at ef=8, duplicate 409; all adapter
   Python syntax-checked.
+- **Fast-scanner pass (72nd):** Windows battery ALL GATES GREEN (suite
+  **177/177 x2** + sbom (**42 modules**, unsafe=0) + **40 probes x2** +
+  bench smoke); WSL spot (json_fast 228-case byte-equality + big body
+  1.7s, http_server 15/15, http_service 42/42) green; quick_bench 5k
+  x dim-25 through `xvectord`: upsert 120s (was 661s), recall 0.779 /
+  0.960 / 1.000 at ef 8/32/128, 53-78 QPS.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -1116,7 +1137,16 @@ stdlib (`REL-20261011-1453-xvector`, high); HTTP-path numbers recorded
 in `docs/BENCHMARKS.md` (upsert 661s/5k parser-dominated; recall curve
 correct: 1.000 at ef>=64, 0.940 at ef=8). **Next slice: a lane-local
 fast numeric scanner for the upsert hot path** (benchmarks unblocked
-regardless of the stdlib fix timeline).
+regardless of the stdlib fix timeline). -> fast scanner applied (72nd
+pass): ROOT CAUSE of the quadratic = **`slice.str_bytes(Str)`
+superlinear** (stdlib lane root-caused it to `strnlen` accessors; fix is
+their wave-111 top candidate, `6fbd336`). Lane now keeps bodies as BYTES
+(`HttpRequest.body_bytes`) and scans the canonical upsert body at byte
+level (`src/api/json_fast.xi`), gated by `probe_json_fast` (228
+fast-vs-strict cases byte-for-byte; 52k numbers 1.7-2.9s vs strict ~84s);
+**5k x dim-25 fit through `xvectord` 661s -> 120s** (now HNSW-build
+bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
+(`b8eda7d`) landed during the pass -- re-verification era begins.
    Then: the **`xiom.ann` porter flow -- watch CLOSED; `xiom.ann` 0.2.0
    LIVE + verified in the lane home (m0 / headroom 0.2 / `hnsw_new_full`
    present; sha256 `0a243ce4...`); evaluation `docs/XIOM-ANN-EVAL.md`;
@@ -1419,6 +1449,10 @@ regardless of the stdlib fix timeline).
 
 ## 7. Paste prompt for the next XVECTOR session
 
+> **NOTE (72nd pass):** the prompt below is the older (62nd-pass) version,
+> kept as history. The CURRENT prompt is **section 8** at the end of this
+> file -- use that one.
+
 ```
 You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
 production-grade XIOM vector database. Read SESSION.md first, then
@@ -1649,4 +1683,81 @@ codes; check free memory before trusting a red build; suite x2 green before
 any wrap; WSL spot every wrap; update
 SESSION.md STATE + relay rows + docs/PRODUCTION-READINESS.md at every wrap;
 commit signed at every step.
+```
+
+
+## 8. PASTE PROMPT for the next XVECTOR session (current -- 72nd pass, supersedes 7)
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first, then
+README/SPEC/ARCHITECTURE/ROADMAP/AUDIT and docs/ (PRODUCTION-PLAN,
+PRODUCTION-READINESS, BENCHMARKS, and the benchmark adapters). Consumer
+lane: never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the private
+xiom-relays bus. Identity "Lefteris Notas <lefterisnotas@gmail.com>";
+conventional commits, DCO -s.
+
+Orientation: HEAD 5fce3cf (feat: byte-level fast upsert scanner) + this
+wrap commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is
+USER-TESTABLE and benchmark-integrated: out\xvectord.exe (HTTP server,
+curl-verified, /version, index config at create, per-request ef_search),
+bench/adapters (ann-benchmarks drop-in module+config, stdlib client,
+smoke.py, quick_bench.py), and the byte-level fast upsert scanner (228-case
+fast-vs-strict byte-equivalence gate; 5k x dim-25 fit 661s -> 120s, now
+HNSW-build-bound). Lane pins: stdlib b8eda7d (wave 110; the str_bytes/
+json_parse quadratic was root-caused there to the strnlen accessors -- fix
+is the wave-111 top candidate, note 6fbd336), packages 263684d9 (sdl3
+0.13.0; xiom.ann 0.2.0 LIVE), compiler fde5548e (fn-value ABI batch:
+C-boundary marshaling, cast-fn-ptr Float64 returns, Vec[fn] arity --
+closes the bindings/pulse items).
+
+RE-VERIFICATION ERA -- DO THIS FIRST (unblocking events landed while we
+worked):
+1) Check the lanes for the next compiler release + the stdlib wave-111
+   strnlen fix (git log in E:\xiom-lang\stdlib + E:\xiom-lang\xiom; bus
+   view). If a new compiler release exists: install lane-local (Windows
+   out\toolchain + WSL ~/.xvector-toolchain; never the shared homes),
+   then re-run the C-15 repro
+   (docs\repro\xv-f32-slot-literal-write: expect exit 0) and the
+   phantom-import controls (expect exactly one clear error), and drop
+   the explicit `as Float32` workaround in probe_quantization if green.
+2) If stdlib fixed the strnlen accessors: re-run BOTH probes in
+   docs\repro\xv-json-parse-quadratic (expect exit 0) and re-run
+   quick_bench.py against xvectord (expect a further upsert speedup).
+3) Run the full batteries on the new pins (suite x2 + sbom + 40 probes
+   x2 + bench smoke, Windows; WSL spot) and update the records.
+
+Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
+main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
+pull hits a multi-branch quirk); python tools/relay.py view --lane xvector;
+process items (ack/fix with refs; never edit another lane's item; push only
+xvector items). Arm your own recurring 2-4h doorbell check.
+
+Autonomous mode: arm a goal with this objective (verbatim): "Continue the
+xiom-xvector lane from SESSION.md: re-verify on the new compiler/stdlib
+pins first (C-15 repro, phantom-import controls, the strnlen/str_bytes
+repros, quick_bench, then full batteries both platforms), then proceed
+with the VectorDBBench client adapter and the remaining queue (Q-a2b at D5,
+the ann swap on owner greenlight REL-20261011-1308-xvector, G-phase
+groundwork); keep the xiom.ann porter wiring watch and the gated pivots
+re-checked every pass (stdlib fsync -> D5/D6, mmap -> P5, xiom.kv). Per
+slice: implement, extend probe/suite gates, run suite x2 + sbom + all
+probes x2 + bench smoke on Windows + WSL spot, update
+SPEC/ARCHITECTURE/SESSION/PRODUCTION-READINESS + checklist, commit signed.
+When the M-R criteria are met, report complete with the owner handoff
+summary. Report blocked only when no scheduled wait or non-gated slice can
+help."
+
+Toolchain: dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1
+/.sh; run-suite.*; run-probe.*; bench.ps1/.sh; bench\adapters\smoke.py +
+quick_bench.py against a running out\xvectord.exe (start it with raised
+caps: XVECTOR_MAX_REQUEST_BYTES=33554432 XVECTOR_MAX_BATCH=1000). Green
+baseline: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 40 probes x2 +
+bench smoke. Discipline: struct literals list every field; locals
+initialized; Str by value (XVC-C-13); json.json_* qualified; NEVER
+str_bytes/str_slice big Strs (quadratic on this pin -- keep bodies as
+bytes); suite x2 + WSL spot before any wrap; check free memory before
+trusting reds; bench loops hard-capped; the bindings/packages/engine
+workspaces are read-only for this lane.
 ```
