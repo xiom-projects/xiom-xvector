@@ -62,17 +62,23 @@ The reranking primitive that makes invariant #3 compose across sources.
 **Why:** whether one index or many segments feed the heap, the bound holds after
 every push, so the final result is bounded regardless of fan-out.
 
-## 5. HNSW node degree <= `max_neighbors`
+## 5. HNSW node degree <= the level cap
 
-Each node's adjacency list is bounded per layer.
+Each node's adjacency list is bounded per layer: `m` on levels >= 1, `m0`
+(default `2 * m`, generous) on level 0.
 
 **Enforced in code:**
-- `index.hnsw.select_neighbors` -- collects at most `max_n` (`= graph.max_neighbors`) ids.
-- `index.hnsw.hnsw_new` -- `requires: max_neighbors > 0`.
+- `index.hnsw.layer_degree_cap` -- the single cap consumed by `add_edge` and
+  `beam_select` (`m0` on level 0, `m` above).
+- `index.hnsw.hnsw_new` -- `requires: m > 0`; `hnsw_new_full` requires
+  `m0 > 0` and clamps `m0` up to `m`.
+- `index.hnsw.hnsw_decode` -- strict: rejects `m > 512`, `m0 > 1024`,
+  `m0 < m`, and any row whose degree exceeds its layer cap.
 - `index.ann_index.ann_params_valid` -- `m <= core.limits.max_graph_degree()` (512).
 
 **Why:** unbounded degree destroys HNSW's sub-linear guarantees and memory
-predictability.
+predictability; the level-0 capacity is deliberately generous (reference
+study 01, P-a) but still bounded at `2 * max_graph_degree()`.
 
 ## 6. WAL-before-ack (durability)
 

@@ -139,3 +139,19 @@ needed) -> signed commit. Red build = rejection.
 - [ ] R3 benchmark report + security checklist + SBOM committed
 - [ ] R4 owner handoff note (repo/runners/rulesets/benchmark); **tell the
   owner -- public release is the owner's action**
+
+## Reference study (owner grant, 2026-10-11)
+
+- [x] Study-area rules + backlog (SESSION 2): MIT-only clones, study never
+  vendor, adopted patterns re-implemented + gated here
+- [x] Study 01 -- FAISS HNSW recon **(done 2026-10-11)** ->
+  `docs/REFERENCE-STUDY-01-FAISS.md` (ranked proposals P-a..P-e)
+- [x] P-a generous level-0 degree applied **(done 2026-10-11)**: level-0
+  capacity `m0 = 2*m` + FAISS `prune_headroom` 0.2; codec v3 carries `m0`
+  (v2 decodes); hard-corpus control gate in `probe_hnsw_recall` (285/300
+  generous vs 275/300 legacy); fill arm measured (same recall, ~2.5x build
+  work) and not adopted
+- [ ] Study 02 -- quantization recon (FAISS SQ/PQ + sqlite-vec) ->
+  `docs/REFERENCE-STUDY-02-QUANTIZATION.md`
+- [ ] Study 03-04 -- sqlite-vec quantized kernels; DiskANN layout (D5/P5
+  design input)

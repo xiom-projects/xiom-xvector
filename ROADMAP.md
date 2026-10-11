@@ -161,10 +161,12 @@ of XVC-C-06; the FloatVal roundtrip pin probe guards it).
 - [OK] Delete + tombstone handling in the graph (routers kept, revive on re-insert, `hnsw_compact`).
 - [OK] Recall/latency benchmarks vs the flat oracle (per-ef visited/recall table, build-work proxy).
 - [OK] Engine wiring, strict graph codec (`hnsw_encode/decode`), sorted id map, update re-linking.
+- [OK] Reference study 01 (FAISS): generous level-0 degree (`m0 = 2*m` + FAISS `prune_headroom` 0.2), codec v3, hard-corpus control gate (`probe_hnsw_recall`).
 
 **Exit criteria:** recall@k meets targets against the flat oracle across the
 tuning ranges, and `ef`/`M` parameters measurably move recall and latency.
-**Met** (n=200: 300/300 at ef=64; n=800: 200/200; after delete/compaction
+**Met** (n=200: 300/300 at ef=64; n=800: 200/200; P-a hard corpus
+285/300 vs 275/300 legacy control; after delete/compaction
 and 60 in-place updates 200/200; gates `probe_hnsw_recall`,
 `probe_engine_hnsw`, `probe_hnsw_codec`).
 

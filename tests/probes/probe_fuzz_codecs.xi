@@ -182,6 +182,7 @@ fn main() -> Int {
         hn_some = hn_some + 1;
         var cap = hnsw_layer_capacity();
         var okv: Bool = g.m > 0;
+        if g.m0 < g.m || g.m0 > 1024 { okv = false; }
         if g.id_keys.len() != g.ids.len() { okv = false; }
         if g.id_vals.len() != g.ids.len() { okv = false; }
         if g.ids.len() > 0 {
@@ -197,10 +198,12 @@ fn main() -> Int {
           while l2 < cap {
             var row = n4 * cap + l2;
             var dg = g.deg[row];
-            if dg < 0 || dg > g.m { okv = false; }
+            var dcap: Int = g.m;
+            if l2 == 0 { dcap = g.m0; }
+            if dg < 0 || dg > dcap { okv = false; }
             var sl: Int = 0;
             while sl < dg {
-              var nb = g.adj[row * g.m + sl];
+              var nb = g.adj[row * g.m0 + sl];
               if nb < 0 || nb >= g.ids.len() { okv = false; }
               sl = sl + 1;
             }

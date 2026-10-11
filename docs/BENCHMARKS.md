@@ -43,14 +43,14 @@ honesty rule from `docs/PRODUCTION-PLAN.md` §5).
   platforms (cosine 1.70e-07, dot 9.83e-07, euclidean 5.06e-07), so the
   measured numbers below are kernel-faithful, not kernel-dependent.
 
-## Baseline (2026-10-09)
+## Baseline (2026-10-11, post-P-a refresh)
 
 - **Host:** DESKTOP-0OJEN1F -- AMD Ryzen 9 3950X (16C/32T), 128 GB RAM,
   Windows 11 Pro 26200. WSL2 (kernel 6.6.87.2-microsoft-standard-WSL2) for
   the Linux spot.
-- **Toolchain:** compiler v0.64.2 (tag `c51170a6`); stdlib lane `1b85edb`;
-  xvector state: range M-Q1 + batch M-Q2 + the M-G `wal_persist` linear
-  builder fix (`src/durability/wal_file.xi`).
+- **Toolchain:** compiler v0.64.3 (lane-local); stdlib lane `dd352f6`;
+  xvector state: reference study 01 applied -- generous level 0
+  (`m0 = 2*m` + FAISS `prune_headroom` 0.2; codec v3) in `src/index/hnsw.xi`.
 - **Configuration:** dim=4, Cosine; Flat for exact workloads, Hnsw (default
   params, m=16) for ANN; k=10; ef sweep {32, 64, 128}; n=5000; 200 queries.
 - **Units:** p50/p95/p99 in milliseconds (ms) or microseconds (us) as noted.
@@ -58,34 +58,43 @@ honesty rule from `docs/PRODUCTION-PLAN.md` §5).
 | Workload | Result |
 |---|---|
 | W1 ingest (Flat, single upserts) | ~2.5M points/s (2 ms / 5000; ~0.4 us/point) |
-| W2 exact KNN (Flat, k=10) | p50 **10.7 ms**, p95 12.1 ms, p99 13.2 ms (~93 qps) |
-| W4 filtered (Flat, 50% `In`) | p50 **65.9 ms** (linear fit) |
-| W4 filtered (Flat, 10% `Eq`, index plan) | p50 **1.13 ms** (~58x faster than the 50% scan) |
-| W6 range r=0.6 | p50 **18.8 ms**, avg 198 hits |
-| W6 range r=1.2 | p50 **62.3 ms**, avg 505 hits |
-| W3 HNSW build (5000 x dim-4) | **13.0 s** |
-| W3 HNSW ef=32 | recall **1.000**, p50 **0.44 ms** (~2288 qps) |
-| W3 HNSW ef=64 | recall **1.000**, p50 **0.63 ms** (~1600 qps) |
-| W3 HNSW ef=128 | recall **1.000**, p50 **1.03 ms** (~969 qps) |
-| W4 filtered on Hnsw (10% `Eq`) | p50 **2.81 ms** |
-| W5 batch upsert (1000 pts) | single ~0.5 us/op vs `upsert_many` < 0.125 us/op (per-op, quantized) |
-| W5 batch search (100 queries) | 211 ms single vs 220 ms `search_many` (~1.0x) |
-| W7 recovery | checkpoint 1.68 s / 762 KB; load+recover 12.6 s (HNSW rebuild dominates); 152 bytes/vector |
+| W2 exact KNN (Flat, k=10) | p50 **11.8 ms**, p95 13.4 ms, p99 14.2 ms (~84 qps) |
+| W4 filtered (Flat, 50% `In`) | p50 **57.5 ms** (linear fit) |
+| W4 filtered (Flat, 10% `Eq`, index plan) | p50 **1.19 ms** (~48x faster than the 50% scan) |
+| W6 range r=0.6 | p50 **20.5 ms**, avg 198 hits |
+| W6 range r=1.2 | p50 **67.1 ms**, avg 505 hits |
+| W3 HNSW build (5000 x dim-4) | **14.7 s** |
+| W3 HNSW ef=32 | recall **1.000**, p50 **0.56 ms** (~1779 qps) |
+| W3 HNSW ef=64 | recall **1.000**, p50 **0.84 ms** (~1186 qps) |
+| W3 HNSW ef=128 | recall **1.000**, p50 **1.44 ms** (~695 qps) |
+| W4 filtered on Hnsw (10% `Eq`) | p50 **3.44 ms** |
+| W5 batch upsert (1000 pts) | single ~0.7 us/op vs `upsert_many` ~0.13 us/op (per-op, quantized; ratio ~0.19) |
+| W5 batch search (100 queries) | 258 ms single vs 290 ms `search_many` (~1.1x) |
+| W7 recovery | checkpoint 2.33 s / 762 KB; load+recover 16.0 s (HNSW rebuild dominates); 152 bytes/vector |
 
 **Reading the numbers (honest):**
 
 - These are **pure-XIOM, single-threaded, unoptimized-kernel** numbers --
   a baseline, not a finished performance story. The flat scan costs about
-  ~2 us per candidate at dim 4; at n=5000 HNSW is ~10-24x faster than the
+  ~2.4 us per candidate at dim 4; at n=5000 HNSW is ~8-21x faster than the
   exact scan with perfect recall on this synthetic set.
-- Filtered `Eq` uses the sorted payload index (58x faster than the linear
+- Filtered `Eq` uses the sorted payload index (48x faster than the linear
   majority scan); range search is exact (linear scan) by construction.
-- HNSW build (13 s / 5k) is the main build-time cost; SIMD/BLAS (M-P3)
+- **P-a note (2026-10-11):** the generous level 0 raises HNSW search cost
+  (+28/+34/+40% p50 at ef=32/64/128 vs the 2026-10-09 run; visited +20% at
+  n=800), build time (13.0 -> 14.7 s) and recovery (+27%), while recall on
+  this synthetic set stays 1.000; the recall win shows on hard clustered
+  sets (`probe_hnsw_recall` P-a gate: 285/300 vs 275/300 at ef=8). The
+  generous arm was chosen over the FAISS `keep_max_size_level0` fill arm
+  (same recall, lower build/search cost). Flat-path numbers re-measured in
+  the same session drift up to ~10% (run-to-run variance); the HNSW deltas
+  exceed that.
+- HNSW build (14.7 s / 5k) is the main build-time cost; SIMD/BLAS (M-P3)
   and index tuning target it.
-- `upsert_many` amortizes per-op overhead (sub-0.125 us/op at 100-pt
-  chunks); `search_many` is a convenience batching (no throughput win).
+- `upsert_many` amortizes per-op overhead; `search_many` is a convenience
+  batching (no throughput win).
 - Recovery includes rebuilding the HNSW graph from the replayed log
-  (12.6 s / 5k); checkpoint write is 1.68 s for 762 KB.
+  (16.0 s / 5k); checkpoint write is 2.33 s for 762 KB.
 
 ## Fixed while building this (M-G finding)
 
@@ -101,7 +110,7 @@ checks (1200-record append/persist/load/roundtrip). Checkpoint time is
 ## Cross-platform spot (WSL)
 
 The quick mode runs green on WSL2 (same workloads, same recall); quick
-checkpoint 762 ms / 225 KB vs 473 ms Windows. Full WSL parity is enforced
+checkpoint 951 ms / 225 KB vs 515 ms Windows. Full WSL parity is enforced
 by `scripts/ci.sh` (bench smoke + suite x2 + all probes x2).
 
 ## What the owner's benchmark can use

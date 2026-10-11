@@ -62,6 +62,7 @@ fn vec_from_coords(coords: &Vec[Float32]) -> Vector {
 
 fn graphs_equal(a: &HNSWGraph, b: &HNSWGraph) -> Bool {
   if a.m != b.m { return false; }
+  if a.m0 != b.m0 { return false; }
   if float.float_bits(a.ml as Float64) != float.float_bits(b.ml as Float64) { return false; }
   if a.ef_construction != b.ef_construction { return false; }
   if a.entry != b.entry { return false; }
@@ -83,7 +84,7 @@ fn graphs_equal(a: &HNSWGraph, b: &HNSWGraph) -> Bool {
       if a.deg[row] != b.deg[row] { return false; }
       var s: Int = 0;
       while s < a.deg[row] {
-        if a.adj[row * a.m + s] != b.adj[row * b.m + s] { return false; }
+        if a.adj[row * a.m0 + s] != b.adj[row * b.m0 + s] { return false; }
         s = s + 1;
       }
       l = l + 1;
@@ -127,8 +128,8 @@ fn main() -> Int {
 
   // --- clean roundtrip: structure identical + search parity ---
   var words = hnsw_encode(&g);
-  fails = check(words.len() > 0 && words[0] == 2 && words[3] == 77,
-    "encode: version-2 word stream carrying ef_construction=77", fails);
+  fails = check(words.len() > 0 && words[0] == 3 && words[2] == g.m0 && words[4] == 77,
+    "encode: version-3 word stream carrying m0 + ef_construction=77", fails);
   match hnsw_decode(&words) {
     Some(g2) => {
       fails = check(graphs_equal(&g, &g2) && hnsw_find_node_pos(&g2, 100) == 99
@@ -149,6 +150,37 @@ fn main() -> Int {
     }
     None => { fails = check(false, "decode(encode(g)) -> Some", fails); }
   }
+
+  // --- version-2 backward compatibility: a legacy (m0 = m) graph encodes
+  // as v3; stripping the m0 word and lowering the version decodes to the
+  // same structure (the pre-P-a on-disk format). ---
+  var gc = hnsw_new_full(16, 4.0, 16);
+  var cj: Int = 0;
+  while cj < 40 {
+    var cc = Vec[Float32].new();
+    state = rand_coords(state, dim, &mut cc);
+    var cv = vec_from_coords(&cc);
+    hnsw_insert(&mut gc, cj + 1, cv, DistanceMetric.Euclidean);
+    cj = cj + 1;
+  }
+  var v3w = hnsw_encode(&gc);
+  var v2w = Vec[Int].new();
+  v2w.push(2);
+  v2w.push(v3w[1]);
+  var ri: Int = 3;
+  while ri < v3w.len() {
+    v2w.push(v3w[ri]);
+    ri = ri + 1;
+  }
+  var v2ok: Bool = false;
+  match hnsw_decode(&v2w) {
+    Some(gv2) => {
+      v2ok = graphs_equal(&gc, &gv2) && gv2.m0 == 16;
+    }
+    None => {}
+  }
+  fails = check(gc.m0 == 16 && v2ok,
+    "v2 compat: legacy control (m0 = m) strips to v2 and decodes identically", fails);
 
   // --- tombstones survive the roundtrip ---
   hnsw_delete(&mut g, 10);
@@ -181,20 +213,23 @@ fn main() -> Int {
   var short = Vec[Int].new();
   var n1 = hnsw_decode(&short);
   var bad_ver = hnsw_encode(&eg);
-  bad_ver[0] = 3;
+  bad_ver[0] = 4;
   var n2 = hnsw_decode(&bad_ver);
   var trunc = hnsw_encode(&g);
   trunc.pop();
   var n3 = hnsw_decode(&trunc);
   var bad_cap = hnsw_encode(&eg);
-  bad_cap[4] = 99;
+  bad_cap[5] = 99;
   var n4 = hnsw_decode(&bad_cap);
   var bad_ml = hnsw_encode(&eg);
-  bad_ml[2] = 0;
+  bad_ml[3] = 0;
   var n5 = hnsw_decode(&bad_ml);
   var bad_ef = hnsw_encode(&eg);
-  bad_ef[3] = 0;
+  bad_ef[4] = 0;
   var n5b = hnsw_decode(&bad_ef);
+  var bad_m0 = hnsw_encode(&eg);
+  bad_m0[2] = 7;
+  var n5c = hnsw_decode(&bad_m0);
   var junk = hnsw_encode(&eg);
   junk.push(7);
   var n6 = hnsw_decode(&junk);
@@ -210,15 +245,17 @@ fn main() -> Int {
   match n5 { Some(_) => { no5 = false; } None => {} }
   var no5b: Bool = true;
   match n5b { Some(_) => { no5b = false; } None => {} }
+  var no5c: Bool = true;
+  match n5c { Some(_) => { no5c = false; } None => {} }
   var no6: Bool = true;
   match n6 { Some(_) => { no6 = false; } None => {} }
-  fails = check(no1 && no2 && no3 && no4 && no5 && no5b && no6,
-    "reject: short, bad version, truncated, bad capacity, ml=0, ef=0, trailing junk", fails);
+  fails = check(no1 && no2 && no3 && no4 && no5 && no5b && no5c && no6,
+    "reject: short, bad version, truncated, bad capacity, ml=0, ef=0, m0<m, trailing junk", fails);
 
   // out-of-range neighbor position: node 0's first layer-0 edge.
   var tam = hnsw_encode(&g);
-  var vw0: Int = tam[10];
-  var deg_pos: Int = 11 + vw0;
+  var vw0: Int = tam[11];
+  var deg_pos: Int = 12 + vw0;
   var deg0: Int = tam[deg_pos];
   var no7: Bool = false;
   if deg0 > 0 {
@@ -237,7 +274,7 @@ fn main() -> Int {
   hnsw_insert(&mut sg, 1, s1, DistanceMetric.Euclidean);
   hnsw_insert(&mut sg, 2, s2, DistanceMetric.Euclidean);
   var dupw = hnsw_encode(&sg);
-  var pw: Int = 7;
+  var pw: Int = 8;
   var vw1: Int = dupw[pw + 3];
   pw = pw + 4 + vw1;
   var rr: Int = 0;
@@ -246,7 +283,7 @@ fn main() -> Int {
     pw = pw + 1 + dgw;
     rr = rr + 1;
   }
-  dupw[pw] = dupw[7];
+  dupw[pw] = dupw[8];
   var ndup = hnsw_decode(&dupw);
   var no_dup: Bool = true;
   match ndup { Some(_) => { no_dup = false; } None => {} }

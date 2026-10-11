@@ -109,18 +109,23 @@ Implemented today: `VectorIndex` + `index_new/add/remove/get/size` + the vector 
 
 ## `xiom.vector.index.hnsw` (working multi-layer graph)
 Flat parallel arrays (no nested `Vec[Struct-with-Vec]` -- the AUDIT T001
-family): `HNSWGraph { ids; vectors; levels; adj; deg; m; ml; entry }` with a
-fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer` indexes
-`deg`, adjacency blocks are `row*m` row-major (live slots `0..deg[row]`).
-- `hnsw_new(m, ml)` `requires: m > 0, ml > 0.0`; `hnsw_set_ef_construction(graph, ef)` sets the build beam (default 200; values < 1 ignored).
-- `hnsw_insert(graph, id, vec, metric)` -- deterministic geometric level assignment (`ml`), greedy descent, per-layer beam construction honouring `ef_construction` (clamped to >= `m`) with diversified neighbour selection, bidirectional edges; the entry tracks the highest-level node. Re-inserting an existing id updates the vector in place, revives a tombstone, and refreshes the node's edges for the new vector (per-layer re-link).
+family): `HNSWGraph { ids; vectors; levels; adj; deg; m; m0; ml; entry }`
+with a fixed 8-layer capacity per node; `row(pos, layer) = pos*8 + layer`
+indexes `deg`, adjacency blocks are `row*m0` row-major (live slots
+`0..deg[row]`; level 0 is generous: `m0 = 2*m`, higher layers cap at `m`).
+- `hnsw_new(m, ml)` `requires: m > 0, ml > 0.0` (level-0 capacity `2*m`);
+  `hnsw_new_full(m, ml, m0)` sets the level-0 capacity explicitly (clamped
+  up to `m`; the recall gate builds the legacy `m0 = m` control with it);
+  `hnsw_set_ef_construction(graph, ef)` sets the build beam (default 200;
+  values < 1 ignored).
+- `hnsw_insert(graph, id, vec, metric)` -- deterministic geometric level assignment (`ml`), greedy descent, per-layer beam construction honouring `ef_construction` (clamped to >= `m`) with diversified neighbour selection, bidirectional edges; the entry tracks the highest-level node. A full block is pruned to the layer cap (`m0` on level 0, `m` above); a generous level-0 block prunes to 80% of `m0` (FAISS `prune_headroom` 0.2, anti-churn headroom) and refills by appends. Re-inserting an existing id updates the vector in place, revives a tombstone, and refreshes the node's edges for the new vector (per-layer re-link).
 - `hnsw_search(graph, query, k, ef, metric)` `requires: k > 0` `ensures: result.len() <= k` -- greedy descent above layer 0, then a best-first beam (breadth = `max(k, ef)`); `Vec[Neighbor]` with user ids; empty graph / dimension mismatch -> empty.
 - `hnsw_search_visited` (visited-node count, latency proxy), `hnsw_build_ops` (construction distance-op counter; metric only -- not persisted by the codec), `hnsw_size`, `hnsw_level_of`, `hnsw_layer_capacity`, `hnsw_find_node_pos` (O(log n) over the sorted `id_keys`/`id_vals` map; duplicates rejected on insert).
 - `hnsw_insert_ref(graph, id, vec_ref, metric)` -- copy-insert for callers that must keep their vector (one engine upsert feeds store + graph).
-- `hnsw_compact(graph, metric) -> HNSWGraph` -- fresh graph from the live nodes only (same `m`/`ml`, insertion order preserved): tombstone compaction + edge rebuild; engine wrapper `compact_index`.
-- `hnsw_encode(graph) -> Vec[Int]` / `hnsw_decode(words) -> Option[HNSWGraph]` -- deterministic persistence codec: `[version=2, m, ml_bits, ef_construction, layer_capacity, entry, node_count, per node: id, level, deleted, vector words..., per layer row: degree + neighbor positions]` (vectors via `storage.vector_store.vector_encode`). Decode is strict: malformed/truncated/tampered input returns `None`, `m > 512` (AnnParams max degree) or `count > words.len()` is rejected, duplicate ids are rejected (the id map is unique), and the map is rebuilt on decode; trailing junk rejected. The pad step runs behind `pad_adj_slots` (XVC-C-10 workaround: the inline loop segfaulted at larger `m`).
+- `hnsw_compact(graph, metric) -> HNSWGraph` -- fresh graph from the live nodes only (same `m`/`m0`/`ml`, insertion order preserved): tombstone compaction + edge rebuild; engine wrapper `compact_index`.
+- `hnsw_encode(graph) -> Vec[Int]` / `hnsw_decode(words) -> Option[HNSWGraph]` -- deterministic persistence codec: `[version=3, m, m0, ml_bits, ef_construction, layer_capacity, entry, node_count, per node: id, level, deleted, vector words..., per layer row: degree + neighbor positions]` (vectors via `storage.vector_store.vector_encode`). Version 2 (no `m0` word; `m0 = m`) stays decodable. Decode is strict: malformed/truncated/tampered input returns `None`, `m > 512` / `m0 > 1024` / `m0 < m` (AnnParams max degree and the generous cap) or `count > words.len()` is rejected, duplicate ids are rejected (the id map is unique), and the map is rebuilt on decode; trailing junk rejected. The pad step runs behind `pad_adj_slots` (XVC-C-10 workaround: the inline loop segfaulted at larger `m`).
 - `hnsw_delete(graph, id) -> Bool` -- tombstone: the node keeps routing traffic but is never returned (idempotent; false for unknown/already-deleted). `hnsw_live_count` reports non-deleted nodes. Re-inserting an id updates the vector in place, revives the node, and refreshes its edges for the new vector (re-linking landed 2026-10-09).
-- Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 296/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 299/800); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty; beam construction honours ef_construction (setter semantics checked).
+- Recall harness (`tests/probes/probe_hnsw_recall.xi`): n=200 recall@10 300/300 (ef=64) and 297/300 (ef=8), cosine 100/100, top level 4; n=800 200/200 at ef=64 (avg visited 346/800); P-a hard corpus (n=300, dim=16, 6 clusters, midpoint queries at ef=8) 285/300 generous vs 275/300 legacy control (generosity effect gate); after deleting id 42 recall 300/300 with stray42=0, revive restores live 200, delete-all -> empty; beam construction honours ef_construction (setter semantics checked).
 
 ## `xiom.vector.distance.{cosine,dot,l2}`
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to the `xiom.vectors` metric functions today.

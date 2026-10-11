@@ -104,4 +104,5 @@ delete_point(point) -> WAL append + removed from store
 Enforced via `xiom.core.limits`:
 - Dimension: `1 ... max_dimensions()` (65536).
 - top_k: `1 ... max_top_k()` (10000).
-- HNSW degree: `<= max_graph_degree()` (512).
+- HNSW degree: `m <= max_graph_degree()` (512); level-0 capacity `m0 = 2*m`
+  (still <= 1024).
