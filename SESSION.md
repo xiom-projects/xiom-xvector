@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (67 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (68 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -109,15 +109,21 @@ armed; loader accepts both versions with torn-section drop) + artifact
 gates in `probe_quantization` (roundtrip, rescore over the loaded segment
 bit-equal to exact, torn q/c keeps vectors, byte delta 35 B/vector text
 vs 8 B future binary); owner directive 11:59Z routing also recorded
-(bus `-1203-xvector/-2`).
+(bus `-1203-xvector/-2`) -> xiom.ann porter evaluation (68th pass):
+registry watch CLOSED -- `xiom.ann` 0.1.0 LIVE (eco-v0.1.139); the
+package is the pre-P-a snapshot (`8a8b0ff`; codec v2, legacy 296/300) ->
+**0.2.0 refresh ask filed** (`REL-20261011-1206-xvector`: carry the P-a
+generous level 0 + codec v3); the consumer swap awaits package 0.2.0 +
+owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md`.
 
 ---
 
 ## 0. STATE (hand-off point)
 
 **Repo:** private, no pushes; clean tree. HEAD `d42171c` (feat: Q-a2a --
-segment codec v2 with the opt-in SQ section) + this wrap commit;
-tag `v1.0.0-rc.1` still on `530b041`. Recent slices: `d42171c` Q-a2a,
+segment codec v2 with the opt-in SQ section) + the 67th wrap `2312fda` +
+this 68th-pass note commit; tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: 68th ann watch eval (this commit), `d42171c` Q-a2a,
 `a7a4d0e` session note (owner directive routing), `69379bc` bus note,
 `c25c756` Q-a1 wrap, `ea73829` Q-a1 (feat), `f3aacdf` pin sync,
 `9c340df` study 03, `6a25c1d` pin sync,
@@ -1022,10 +1028,13 @@ signed commits, docs updated).
    package coverage) was routed read-only** to bindings
    (`REL-20261011-1203-xvector`: their in-flight sdl3 0.8.0 present-path
    batch matches the engine ask) and packages
-   (`REL-20261011-1203-xvector-2`: keep the publish chain current).
-   Then: the `xiom.ann` porter flow (awaits its publication; registry 404
-   as of 2026-10-10), the replay-loop delegation at the D-ledger store
-   migration, then the owner's public release + benchmark.
+   (`REL-20261011-1203-xvector-2`: keep the publish chain current; sdl3
+   0.7.0 published eco-v0.1.142, 0.8.0 in flight).
+   Then: the **`xiom.ann` porter flow -- watch CLOSED (LIVE 0.1.0);
+   evaluation done (`docs/XIOM-ANN-EVAL.md`); awaiting `xiom.ann` 0.2.0
+   (P-a + codec v3; refresh ask `REL-20261011-1206-xvector`) + owner
+   greenlight for the consumer swap**, the replay-loop delegation at the
+   D-ledger store migration, then the owner's public release + benchmark.
    Gated pivots: D5/D6 on the stdlib fsync chain (still Err stubs at
    `35e6d87`), the socket adapter on the stdlib `xiom.net` proof, P5 on
    stdlib mmap, `xiom.kv` on C-PULSE-10 + fsync.
