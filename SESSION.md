@@ -122,16 +122,19 @@ retired, tripwire re-synced); the stdlib wave-111 `strnlen` fix
 green on the wave-110/WIP pins (Windows + WSL spot); quick_bench re-run
 recorded; gated pivots re-checked (fsync + mmap still stubs, no new
 compiler release); bus -2002/-1206/-9/-1835 verified+closed + WIP signal
-filed (`-1618`).
+filed (`-1618`) -> 74th pass: VectorDBBench client adapter shipped
+(`bench/adapters/vectordbbench/`: drop-in DB client + direct-mode live
+smoke 11/11; shared `oracle.py` extracted; `xvector_client.drop_collection`).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `de151d6` (feat: xiom.http
-0.1.6 re-sync -- native 507 Insufficient Storage) + this wrap commit;
-tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
+**Repo:** private, no pushes; clean tree. HEAD `95699e9` (feat:
+VectorDBBench client adapter) + this wrap commit; tag `v1.0.0-rc.1`
+still on `530b041`.
+Recent slices: `95699e9` VectorDBBench adapter (74th), `039e240` 73rd
+wrap, `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
 `5fce3cf` fast scanner (72nd), `ede0e20` json finding
 (71st), `29cfa57` benchmark wrap, `3051160` benchmark starter (70th),
 `590310b` pyc hygiene, `7883ca3` Q-serve wrap, `5f6894b` Q-serve (69th),
@@ -158,7 +161,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.3 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); lane HEAD `fde5548e` (2026-10-11, fn-ABI batches m263-m265; **C-15 / phantom-import fixes NOT yet landed**; no release past v0.64.3) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `b8eda7d` (2026-10-11, wave 110) + **wave-111 WIP in the working tree** (`json.xi`/`slice.xi`/`string.xi` modified, uncommitted; sha256 `E69E0275...`/`874A8F67...`/`36D1F4FF...`; both xvector repros exit 0 -- formal closure on commit); **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `fb73c5c8` (2026-10-11: sdl3 0.15.0, batch 52, eco-v0.1.151); **`xiom.ann` 0.2.0 LIVE + verified** (`0a243ce4...`; swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` LIVE + swapped | `E:\xiom-packages\packages` |
-| xvector | `de151d6` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `95699e9` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -887,6 +890,17 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   verified+closed; WIP signal `REL-20261011-1618-xvector`. Gated pivots:
   fsync chain + full mmap family still stubs; compiler C-15/phantom not
   yet landed (no release past v0.64.3).
+- **VectorDBBench client adapter (74th pass, 2026-10-11):**
+  `bench/adapters/vectordbbench/` -- drop-in DB client (`xvector_db.py`:
+  framework-tolerant; init/ready, create with `drop_old` best-effort,
+  batched `insert_embeddings` returning `(count, error)`, `search` with
+  `(distance, id)` rows, metric map COSINE/L2/IP; metadata + filters fail
+  loudly -- not exposed over HTTP yet) + `smoke_db.py` (direct-mode live
+  smoke, 11/11: insert 400/400, recall 1.000/0.930/1.000 at ef 64/8/128,
+  unsupported-path + drop-fallback checks) + README (drop-in
+  registration + limitations). Shared `oracle.py` extracted (`smoke.py` +
+  `quick_bench.py` refactored onto it); client gains `drop_collection`
+  (route may not exist; 404/405 tolerated).
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -1049,6 +1063,10 @@ the current tree):**
   42/42 x2) green; both repro probes exit 0 on the WIP; quick_bench 5k
   x dim-25: upsert **57.4 s** (87 pts/s), recall 0.779/0.960/1.000,
   58-82 QPS; `probe_package_http` now 6 checks.
+- **VectorDBBench adapter (74th):** py_compile 6/6 across the adapter
+  modules; live smokes against `xvectord` (raised caps): `smoke_db.py`
+  11/11 (exit 0), `smoke.py` 7/7 (exit 0), `quick_bench.py` small-run
+  (N=600) exit 0 after the oracle refactor.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -1831,8 +1849,9 @@ Orientation: HEAD de151d6 (feat: xiom.http 0.1.6 re-sync) + the 73rd wrap
 commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is USER-TESTABLE
 and benchmark-integrated: out\xvectord.exe (HTTP server; /version, index
 config at create, per-request ef_search), bench/adapters (ann-benchmarks
-drop-in + stdlib client + smoke.py + quick_bench.py), and the byte-level
-fast upsert scanner (228-case fast-vs-strict gate). Fit history: 661 s ->
++ VectorDBBench drop-ins + stdlib client + smoke.py + smoke_db.py +
+quick_bench.py), and the byte-level fast upsert scanner (228-case
+fast-vs-strict gate). Fit history: 661 s ->
 120 s -> 57.4 s (87 pts/s on the wave-111 WIP; HNSW-build bound). Lane
 pins: stdlib b8eda7d (wave 110) + the wave-111 WIP working tree (json.xi
 E69E0275..., slice.xi 874A8F67..., string.xi 36D1F4FF...; BOTH repros
@@ -1857,10 +1876,11 @@ RE-VERIFICATION ERA -- NEXT STEPS (in order):
    exit 0) and the phantom-import controls (expect exactly one clear
    error), re-test C-13/C-14 from their bundles, and drop the explicit
    `as Float32` workaround in probe_quantization if green.
-3) Next slice: the VectorDBBench client adapter (bench/adapters/;
-   xvector_client.py carries the calls), then G-phase groundwork and the
-   remaining queue (Q-a2b at D5, ann swap on owner greenlight
-   REL-20261011-1308-xvector).
+3) Next slice: G-phase groundwork (concurrency/scale) and the remaining
+   queue (Q-a2b at D5, ann swap on owner greenlight
+   REL-20261011-1308-xvector); the VectorDBBench client adapter is DONE
+   (74th pass -- bench/adapters/vectordbbench/, direct-mode smoke 11/11,
+   metadata/filters fail loudly until payload routes).
 
 Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
 main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
@@ -1872,10 +1892,10 @@ recurring 2-4h doorbell check.
 Autonomous mode: arm a goal with this objective (verbatim): "Continue the
 xiom-xvector lane from SESSION.md: close the wave-111 loop first (when
 stdlib commits the fix: re-run both repros + quick_bench + full batteries,
-verify/close REL-20261011-1453-xvector), then build the VectorDBBench
-client adapter over bench/adapters and work the remaining queue (Q-a2b at
-D5, the ann swap on owner greenlight REL-20261011-1308-xvector, G-phase
-groundwork); keep the compiler batch watch (C-15 repro + phantom-import
+verify/close REL-20261011-1453-xvector); the VectorDBBench client adapter
+is DONE (74th pass) -- work the remaining queue (Q-a2b at D5, the ann
+swap on owner greenlight REL-20261011-1308-xvector, G-phase groundwork);
+keep the compiler batch watch (C-15 repro + phantom-import
 controls on the next lane-local release) and the gated pivots re-checked
 every pass (stdlib fsync -> D5/D6, mmap -> P5, xiom.kv). Per slice:
 implement, extend probe/suite gates, run suite x2 + sbom + all probes x2 +
