@@ -810,6 +810,15 @@ extraction with the packages lane.
   completed: extract -> wire -> swap -> verify); overall 80.94 -> 81.10
   -> 81 %. Evidence: suite 171/171 x2 + sbom + 37 probes x2 + bench
   smoke, Windows + WSL, ALL GATES GREEN.
+- **2026-10-11 (sixty-first pass, docs-only):** owner granted the
+  reference study area (`E:\repos`): clone MIT-licensed OSS as study
+  references (never vendored, never a build dependency; adopted patterns
+  are re-implemented under our license and gated). Cloned and
+  MIT-verified: `sqlite-vec`, `faiss`, `DiskANN`; study backlog seeded in
+  SESSION 2. No score change (no product evidence yet). Independent
+  re-verification at the quiet era: suite 171/171 x2 + sbom + 37 probes
+  x2 + bench smoke (Windows, compiler v0.64.3, lane-local XIOM_HOME, 39
+  modules), ALL GATES GREEN; `xiom.ann` still 404 at the registry.
 
 ## Update rule
 
