@@ -19,9 +19,9 @@ the `str_bytes`/`json_parse` quadratic is **FIXED + verified on the
 committed pin** (both xvector repros exit 0 on Windows + WSL; bus
 `REL-20261011-1453-xvector` / `-1543-xvector` closed; see
 `docs/repro/xv-json-parse-quadratic/`); the bounded-depth `json_parse`
-row is FIXED (wave 102 `5b7bf8f`). Upstream note: `str_chars` /
-`str_code_points` still use the strnlen accessors (same family, outside
-our acceptance).** Format:
+row is FIXED (wave 102 `5b7bf8f`). `str_chars`/`str_code_points` were
+fixed at **wave 113 (`a996f7b`)** -- the str-family is fully closed and
+re-verified at that HEAD (2026-10-11).** Format:
 `| Need | Evidence | Workaround | Blocks |`.
 
 **Status detail (2026-10-11):**

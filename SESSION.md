@@ -138,7 +138,13 @@ linearity bound (20x-ratio + 3 s net); bus `-1453`/`-1543` verified +
 closed -> 75th pass: P2 memory accounting estimate + budget thresholds
 (`engine_memory_estimate` + `/stats` mem_* fields; documented uniform-row
 model; `probe_memory_estimate` 17 checks; 41-probe batteries green both
-platforms; `docs/OPERATIONS.md` section 8).
+platforms; `docs/OPERATIONS.md` section 8) -> wave-113 re-verification
+(19:00Z doorbell): stdlib `a996f7b` str-family fully closed -- both repro
+probes + full battery green (41 probes x2) on Windows; WSL suite 177/177
+x2 + `probe_json_fast` 228/228 x2 + `probe_memory_estimate` x2; stdlib
+item `-1856` acked -> fixed. Compiler batches 1-6 complete (m261-m271),
+v0.64.4 staged -- C-15/-1134 + phantom/-2124 both `fixed`, re-run at the
+archive (next doorbell).
 
 ---
 
@@ -175,7 +181,7 @@ commits, DCO `git commit -s`.
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.3 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); lane HEAD `fde5548e` (2026-10-11, fn-ABI batches m263-m265; **C-15 / phantom-import fixes NOT yet landed**; **thread gate: `spawn[T]` compiles but AVs -- re-run at the next release**; no release past v0.64.3) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `9a2b5ab` (2026-10-11, **wave 111: `str_bytes`/`json_parse` linear; committed + verified** -- both xvector repros exit 0 Windows + WSL; acceptance gate re-pinned to a linearity bound; bus `-1453`/`-1543` closed); remaining upstream: `str_chars`/`str_code_points` strnlen accessors; **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| stdlib | lane HEAD `f501b65` (docs) on `a996f7b` (**wave 113: `str_chars`/`str_code_points` linear -- str-family fully closed**; wave 111 `str_bytes`/`json_parse` verified earlier; re-verified 2026-10-11 at this HEAD: repros + 41-probe battery green Windows, WSL spot green; bus `-1856` fixed); **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-11) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `fb73c5c8` (2026-10-11: sdl3 0.15.0, batch 52, eco-v0.1.151); **`xiom.ann` 0.2.0 LIVE + verified** (`0a243ce4...`; swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` LIVE + swapped | `E:\xiom-packages\packages` |
 | xvector | `95699e9` + this wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
