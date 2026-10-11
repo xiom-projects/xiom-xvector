@@ -135,16 +135,20 @@ pre-verified WIP); both repros exit 0 Windows + WSL; batteries green
 (Windows ALL GATES; WSL suite 177/177 x2 + probes); xvectord 5k x
 dim-25 fit 661 s -> 51.2 s (98 pts/s); acceptance gate re-pinned to a
 linearity bound (20x-ratio + 3 s net); bus `-1453`/`-1543` verified +
-closed.
+closed -> 75th pass: P2 memory accounting estimate + budget thresholds
+(`engine_memory_estimate` + `/stats` mem_* fields; documented uniform-row
+model; `probe_memory_estimate` 17 checks; 41-probe batteries green both
+platforms; `docs/OPERATIONS.md` section 8).
 
 ---
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `bc53759` (docs: G-phase
-thread gate) + this closure wrap commit (wave-111 closure records); tag
-`v1.0.0-rc.1` still on `530b041`.
-Recent slices: wave-111 closure (this commit), `bc53759` thread gate
+**Repo:** private, no pushes; clean tree. HEAD `fcd2f64` (feat: P2
+memory accounting estimate) + this wrap commit; tag `v1.0.0-rc.1` still
+on `530b041`.
+Recent slices: `fcd2f64` P2 memory estimate (75th, this commit),
+`200cbc7` G-plan P1, `45e6f5b` wave-111 closure, `bc53759` thread gate
 (G groundwork), `95699e9` VectorDBBench adapter (74th), `039e240` 73rd
 wrap, `de151d6` http re-sync (73rd), `bd1d521` 72nd wrap,
 `5fce3cf` fast scanner (72nd), `ede0e20` json finding
@@ -934,6 +938,14 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   while scaling is linear on both (pre-fix 34x). Bus: `-1453`/`-1543`
   verified + closed. Upstream note: `str_chars`/`str_code_points` still
   use the strnlen accessors (outside our acceptance).
+- **P2 memory accounting (75th pass, 2026-10-11):** `engine_memory_estimate`
+  + facade `memory_estimate` + `/stats` `mem_*` fields (per-collection
+  store/graph/payloads + engine-wide WAL); documented model
+  (`hnsw_memory_estimate` constants; HNSW rows are uniform: `adj` =
+  nodes*8*m0, level-independent) with exact deltas; gate
+  `probe_memory_estimate` (17 checks x2 Win+WSL); `docs/OPERATIONS.md`
+  section 8 (rules of thumb: ~2.3 KiB/point at m=16 dim=25; seal/compact
+  triggers). Batteries ALL GATES GREEN with **41 probes x2**.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
   scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
@@ -1910,11 +1922,11 @@ RE-VERIFICATION ERA -- NEXT STEPS (in order):
    `as Float32` workaround in probe_quantization if green. Also re-run
    the thread gate (docs\repro\xv-thread-abi\probe.xi; expect exit 0 =
    G phase unblocked; witness REL-20261011-1627-xvector).
-3) Next slice: G-phase groundwork (concurrency/scale) and the remaining
-   queue (Q-a2b at D5, ann swap on owner greenlight
-   REL-20261011-1308-xvector); the VectorDBBench client adapter is DONE
-   (74th pass -- bench/adapters/vectordbbench/, direct-mode smoke 11/11,
-   metadata/filters fail loudly until payload routes).
+3) Done since: VectorDBBench adapter (74th), G-phase thread gate +
+   `docs/G-PHASE-PLAN.md` P1, wave-111 closure, P2 memory estimate +
+   thresholds (`fcd2f64`; 41 probes). Next queue: P3 SIMD seam / P4
+   IVF-PQ prototype (M-P), the sharding harness story (G v1), owner-
+   gated ann swap REL-20261011-1308-xvector; Q-a2b stays at D5.
 
 Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
 main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
@@ -1942,11 +1954,11 @@ Toolchain: dot-source scripts\dev-env.ps1 (and .sh twin); scripts\build.ps1
 /.sh; run-suite.*; run-probe.*; bench.ps1/.sh; bench\adapters\smoke.py +
 quick_bench.py against a running out\xvectord.exe (start it with raised
 caps: XVECTOR_MAX_REQUEST_BYTES=33554432 XVECTOR_MAX_BATCH=1000). Green
-baseline: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 40 probes x2 +
+baseline: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 41 probes x2 +
 bench smoke. Discipline: struct literals list every field; locals
 initialized; Str by value (XVC-C-13); json.json_* qualified; keep bodies
 as BYTES (the byte-level fast scanner is the canonical upsert path; the
-stdlib str_bytes fix is verified in the WIP -- still prefer byte bodies);
+stdlib str_bytes fix shipped in wave 111 -- still prefer byte bodies);
 suite x2 + WSL spot before any wrap; check free memory before trusting
 reds; bench loops hard-capped; the bindings/packages/engine workspaces are
 read-only for this lane.
