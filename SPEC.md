@@ -310,10 +310,18 @@ removes the point's payload.
   Mutable -> Sealing -> Sealed through the real transition table first),
   dim >= 1, stable metric/kind codes, valid params. `SealedSegment {
   valid; seg_id; cid; state; dim; metric; kind; m; ef_construction;
-  ef_search; store; payloads; has_graph; graph }` +
-  `sealed_segment_new/sealed_segment_seal`. `segment_file_persist(ss,
+  ef_search; store; payloads; has_graph; graph; has_sq; sq; codes }` +
+  `sealed_segment_new/sealed_segment_seal` + `sealed_segment_enable_sq`
+  (Q-a2a, reference study 02: trains SQ8 ranges on the segment's vectors
+  and encodes them; opt-in -- without it the file stays a byte-identical
+  v1). `segment_file_persist(ss,
   path)` is whole-file + atomic (`<path>.tmp` -> `io.rename`; invalid meta /
-  non-sealed state / IO error -> false, target untouched). `segment_file_load(path)`
+  non-sealed state / IO error -> false, target untouched). **Version 2**
+  (only when `has_sq`): header `xvector-segment 2` plus, after the graph,
+  `q <vmin words dim> <vstep words dim>` (f32 bit words) and
+  `c <id> <code words dim>` per vector (int8 codes, store order); a v2 load
+  keeps `has_sq` only when the ranges and every code record parsed (torn /
+  partial sections drop the codes, the v/p/g prefix survives). `segment_file_load(path)`
   is byte-level (never a Str) and torn-tail tolerant: missing/garbage/
   headerless files are invalid; a truncated or malformed tail yields the
   longest prefix of complete records (a malformed line stops the prefix);
@@ -327,7 +335,12 @@ removes the point's payload.
   replays the restored state. Gate: `tests/probes/probe_segment_file.xi`
   (38 checks: degradation, roundtrip, atomic staged/partial temp injection,
   14-point truncation sweep, malformed prefixes, seal/restore with
-  bit-exact search, WAL durability after restore, refusals, Flat/empty).
+  bit-exact search, WAL durability after restore, refusals, Flat/empty)
+  + the v2 artifact gates in `tests/probes/probe_quantization.xi` (seal +
+  enable_sq + persist/load roundtrip of ranges+codes, rescore over the
+  loaded segment bit-equal to exact, torn q/c drops codes with vectors
+  intact, byte delta measured: text codes ~35 B/vector at dim 8 vs the
+  future binary layout's 8 B).
 
 ## `xiom.vector.durability.{wal,recovery,write_ahead_events,wal_file,manifest_file}` (extracted modules)
 **Registry alignment (2026-10-10):** the lane consumes **`xiom.wal` 0.1.0**

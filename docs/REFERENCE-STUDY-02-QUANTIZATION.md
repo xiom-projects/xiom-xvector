@@ -130,8 +130,16 @@ single fidelity reference.
 the two-tier rescore scan) + `probe_quantization` (17 checks;
 bit-identical rescore for 10 queries x 3 metrics; measured error bounds
 pinned) + suite Section 16 (6 checks) are in and green on both platforms.
-Q-a2 (segment codec v-next + read-path wiring, consuming study 03's
-record layout) lands with D5's multi-segment reads. This slice also
+**Q-a2a DONE (67th pass):** the segment artifact half -- `SealedSegment`
+gains `has_sq/sq/codes` + `sealed_segment_enable_sq`, the codec gains
+**version 2** (`q` ranges + `c` code records after the graph; written only
+when armed, so v1 output is byte-identical) and the loader accepts both
+versions with torn-section drop semantics; artifact gates added to
+`probe_quantization` (roundtrip, rescore over the loaded segment == exact
+for 10 queries, torn q/c keeps the vectors, byte delta 35 B/vector in the
+text codec vs the future binary 8 B). Q-a2b (the read-path wiring that
+consumes the codes) lands with D5's multi-segment reads and consumes study
+03's record layout. This slice also
 surfaced compiler finding XVC-C-15 (literal stores into `Vec[Float32]`
 slots skip narrowing; repro `docs/repro/xv-f32-slot-literal-write/`,
 filed on the bus).

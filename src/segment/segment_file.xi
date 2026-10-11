@@ -14,6 +14,17 @@ module xiom.vector.segment.segment_file
 //   p <id> <payload_encode words...>
 //   g <hnsw_encode words...>
 //
+// Version 2 (Q-a2a, reference study 02; opt-in) appends two sections after
+// the graph and is written ONLY when `sealed_segment_enable_sq` armed the
+// segment -- a v1 file stays byte-identical otherwise:
+//
+//   q <vmin words dim> <vstep words dim>     (f32 bit words; trained ranges)
+//   c <id> <code words dim>                  (int8 codes 0..255, store order)
+//
+// On load a v2 file keeps `has_sq` true only when the ranges AND every
+// code record of the store order parsed; a torn/partial section is dropped
+// (the vectors/payloads/graph prefix survives, exactly like the graph).
+//
 // Rules: seg_id >= 1, cid >= 1, state in 0..6 -- persist accepts only
 // Sealed or Immutable (the engine drives Mutable -> Sealing -> Sealed
 // through the real transition table first); dim >= 1; codes are the stable
@@ -26,10 +37,12 @@ module xiom.vector.segment.segment_file
 
 use xiom.io;
 use xiom.convert;
+use xiom.num.float;
 use xiom.string.slice;
 use xiom.vectors;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
+use xiom.vector.index.quantize;
 use xiom.vector.storage.vector_store;
 use xiom.vector.payload.payload;
 use xiom.vector.segment.segment_state;
@@ -50,6 +63,9 @@ pub type SealedSegment = {
   payloads: PayloadStore;
   has_graph: Bool;
   graph: HNSWGraph;
+  has_sq: Bool;
+  sq: SQ8;
+  codes: Vec[Int];
 }
 
 pub fn sealed_segment_new(seg_id: Int, cid: Int, dim: Int, metric: DistanceMetric, kind: AnnIndexKind, params: AnnParams) -> SealedSegment
@@ -70,6 +86,9 @@ pub fn sealed_segment_new(seg_id: Int, cid: Int, dim: Int, metric: DistanceMetri
     payloads: payload_store_new(),
     has_graph: false,
     graph: hnsw_new(params.m, 4.0),
+    has_sq: false,
+    sq: SQ8{ dim: dim, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() },
+    codes: Vec[Int].new(),
   };
 }
 
@@ -94,9 +113,30 @@ fn append_word_list(out: &mut Vec[UInt8], words: &Vec[Int]) {
   append_bytes(out, "\n");
 }
 
+// Opt-in SQ8 section (reference study 02, Q-a2a): train per-dimension
+// ranges on the segment's vectors and encode them for the future
+// multi-segment read path (D5). False (no change) on an empty store. A
+// segment without this stays a byte-identical v1 file.
+pub fn sealed_segment_enable_sq(ss: &mut SealedSegment) -> Bool {
+  var trained = sq8_train(&ss.store.vectors);
+  var got: Bool = false;
+  match trained {
+    Some(s) => {
+      ss.sq = s;
+      ss.codes = sq8_encode_store(&ss.store, &ss.sq);
+      got = ss.codes.len() == ss.store.ids.len() * ss.dim && ss.store.ids.len() > 0;
+    }
+    None => {}
+  }
+  ss.has_sq = got;
+  if !got { ss.codes = Vec[Int].new(); }
+  return got;
+}
+
 // Whole-file atomic write: `<path>.tmp` then io.rename. False (target
 // untouched) when the meta is out of range, the state is not Sealed /
-// Immutable, or on any IO error.
+// Immutable, or on any IO error. Header version 2 only when the SQ section
+// is armed (v1 output otherwise, byte-identical to the pre-Q-a2a codec).
 pub fn segment_file_persist(ss: &SealedSegment, path: Str) -> Bool {
   if ss.seg_id < 1 || ss.cid < 1 { return false; }
   if ss.dim < 1 { return false; }
@@ -105,7 +145,11 @@ pub fn segment_file_persist(ss: &SealedSegment, path: Str) -> Bool {
   var p = AnnParams{ m: ss.m, ef_construction: ss.ef_construction, ef_search: ss.ef_search };
   if !ann_params_valid(&p) { return false; }
   var out = Vec[UInt8].new();
-  append_bytes(&mut out, "xvector-segment 1\n");
+  if ss.has_sq {
+    append_bytes(&mut out, "xvector-segment 2\n");
+  } else {
+    append_bytes(&mut out, "xvector-segment 1\n");
+  }
   append_bytes(&mut out, "meta");
   append_bytes(&mut out, " ");
   append_bytes(&mut out, convert.int_to_string(ss.seg_id));
@@ -148,6 +192,35 @@ pub fn segment_file_persist(ss: &SealedSegment, path: Str) -> Bool {
     var gwords = hnsw_encode(&ss.graph);
     append_bytes(&mut out, "g");
     append_word_list(&mut out, gwords);
+  }
+  if ss.has_sq && ss.sq.dim == ss.dim && ss.codes.len() == ss.store.ids.len() * ss.dim && ss.store.ids.len() > 0 {
+    var qw = Vec[Int].new();
+    var d: Int = 0;
+    while d < ss.sq.dim {
+      qw.push(float.float_bits(ss.sq.vmin[d] as Float64));
+      d = d + 1;
+    }
+    d = 0;
+    while d < ss.sq.dim {
+      qw.push(float.float_bits(ss.sq.vstep[d] as Float64));
+      d = d + 1;
+    }
+    append_bytes(&mut out, "q");
+    append_word_list(&mut out, qw);
+    var ci: Int = 0;
+    while ci < ss.store.ids.len() {
+      append_bytes(&mut out, "c");
+      append_bytes(&mut out, " ");
+      append_bytes(&mut out, convert.int_to_string(ss.store.ids[ci]));
+      var cw = Vec[Int].new();
+      d = 0;
+      while d < ss.sq.dim {
+        cw.push(ss.codes[ci * ss.sq.dim + d]);
+        d = d + 1;
+      }
+      append_word_list(&mut out, cw);
+      ci = ci + 1;
+    }
   }
   var tmp = path + ".tmp";
   var wres = io.write_file_bytes(tmp, &out);
@@ -209,6 +282,9 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
     payloads: payload_store_new(),
     has_graph: false,
     graph: hnsw_new(1, 4.0),
+    has_sq: false,
+    sq: SQ8{ dim: 1, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() },
+    codes: Vec[Int].new(),
   };
   if !io.file_exists(path) { return ss; }
   var fsz = io.file_size(path);
@@ -225,19 +301,25 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
     Ok(x) => { b = x; }
     Err(_) => { return ss; }
   }
-  var hdr = slice.str_bytes("xvector-segment 1");
-  if b.len() < hdr.len() + 1 { return ss; }
+  var hdr = slice.str_bytes("xvector-segment ");
+  if b.len() < hdr.len() + 2 { return ss; }
   var hi: Int = 0;
   while hi < hdr.len() {
     if b[hi] != hdr[hi] { return ss; }
     hi = hi + 1;
   }
-  var pos: Int = hdr.len();
+  var ver: Int = 0;
+  if b[hi] == 49 { ver = 1; }
+  else if b[hi] == 50 { ver = 2; }
+  else { return ss; }
+  var pos: Int = hi + 1;
   if pos < b.len() && b[pos] == 13 { pos = pos + 1; }
   if pos >= b.len() || b[pos] != 10 { return ss; }
   pos = pos + 1;
   var meta_done: Bool = false;
   var stop: Bool = false;
+  var sq_ranges: Bool = false;
+  var codes_done: Int = 0;
   while pos < b.len() && !stop {
     var tag = b[pos];
     if tag == 109 {
@@ -395,9 +477,82 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
           pos = pw3.pos;
         }
       }
+    } elif tag == 113 {
+      // q <vmin words dim> <vstep words dim> (v2 only; f32 bit words)
+      if !meta_done || ver != 2 || sq_ranges || pos + 1 > b.len() {
+        stop = true;
+      } else {
+        var p6: Int = pos + 1;
+        if p6 < b.len() && b[p6] == 32 { p6 = p6 + 1; }
+        var pw4 = parse_words_until_newline(b, p6);
+        if !pw4.ok || pw4.words.len() != ss.dim * 2 {
+          stop = true;
+        } else {
+          var vmin2 = Vec[Float32].new();
+          var vstep2 = Vec[Float32].new();
+          var okq: Bool = true;
+          var dq: Int = 0;
+          while dq < ss.dim {
+            var vm = float.bits_to_float(pw4.words[dq]) as Float32;
+            var vs = float.bits_to_float(pw4.words[ss.dim + dq]) as Float32;
+            if !(vs >= 0.0) { okq = false; }
+            vmin2.push(vm);
+            vstep2.push(vs);
+            dq = dq + 1;
+          }
+          if !okq {
+            stop = true;
+          } else {
+            ss.sq = SQ8{ dim: ss.dim, vmin: vmin2, vstep: vstep2 };
+            sq_ranges = true;
+            pos = pw4.pos;
+          }
+        }
+      }
+    } elif tag == 99 {
+      // c <id> <code words dim> (v2 only; store order; codes 0..255)
+      if !meta_done || ver != 2 || !sq_ranges || codes_done >= ss.store.ids.len() {
+        stop = true;
+      } else {
+        var rid3 = parse_int_at(b, pos + 2);
+        if !rid3.ok {
+          stop = true;
+        } else {
+          var cidw = rid3.value;
+          var p7: Int = rid3.pos;
+          if p7 < b.len() && b[p7] == 32 { p7 = p7 + 1; } else { stop = true; }
+          var pw5 = parse_words_until_newline(b, p7);
+          if !pw5.ok || pw5.words.len() != ss.dim {
+            stop = true;
+          } else if cidw != ss.store.ids[codes_done] {
+            stop = true;
+          } else {
+            var okc: Bool = true;
+            var dc: Int = 0;
+            while dc < ss.dim {
+              var cc = pw5.words[dc];
+              if cc < 0 || cc > 255 { okc = false; }
+              ss.codes.push(cc);
+              dc = dc + 1;
+            }
+            if !okc {
+              stop = true;
+            } else {
+              codes_done = codes_done + 1;
+              pos = pw5.pos;
+            }
+          }
+        }
+      }
     } else {
       stop = true;
     }
+  }
+  if sq_ranges && ver == 2 && codes_done == ss.store.ids.len() && codes_done > 0 {
+    ss.has_sq = true;
+  } else {
+    ss.has_sq = false;
+    ss.codes = Vec[Int].new();
   }
   return ss;
 }
