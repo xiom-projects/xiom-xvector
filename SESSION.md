@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (69 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-11 (70 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -120,10 +120,13 @@ owner greenlight (vectors precedent); eval in `docs/XIOM-ANN-EVAL.md`.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `5f6894b` (feat: Q-serve --
-runnable `xvectord` HTTP server + curl user test) + this wrap commit;
+**Repo:** private, no pushes; clean tree. HEAD `3051160` (feat: benchmark
+integration starter -- /version, index config, per-request ef_search,
+ann-benchmarks adapters) + `590310b` (pyc hygiene) + this wrap commit;
 tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `5f6894b` Q-serve, `404d80c` session note (sdl3 0.8.0
+Recent slices: `3051160` benchmark starter (70th), `7883ca3` Q-serve
+wrap, `5f6894b` Q-serve (69th),
+`404d80c` session note (sdl3 0.8.0
 verification + ann greenlight request), `80d8579` ann porter eval,
 `d42171c` Q-a2a,
 `a7a4d0e` session note (owner directive routing), `69379bc` bus note,
@@ -809,9 +812,29 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   exit. First user-testable artifact; next candidates: a vector-bench
   adapter (ann-benchmarks/VectorDBBench-style client) + the version
   endpoint (S6), the ann swap (greenlight pending), Q-a2b (D5).
+- **Benchmark integration + API completion (70th pass, 2026-10-11):**
+  `GET /version` (`{"name","version","api"}`, public);
+  `POST /collections` accepts `{"index":"hnsw"|"flat","m",
+  "ef_construction","ef_search"}` (calls `engine_set_index`; the kind is
+  echoed); `/search` accepts a per-request `"ef_search"` (new
+  `engine_set_ef_search` in core: validated 1..4096, no rebuild, no
+  manifest write; next select restores the configured beam); `xvectord`
+  now applies the documented `XVECTOR_MAX_*` service limits per request
+  (`service_config_from_env` in `httpd_once`; socket guard 32 MiB).
+  **`bench/adapters/`** (the owner-requested starter): stdlib
+  `xvector_client.py` (urllib; no numpy/requests), ann-benchmarks
+  drop-in `module.py` + `config.yml` (metric map angular->cosine /
+  euclidean / dot; `ef_search` sweep 16..256; 0-based ids; batched
+  upserts sized by `XVECTOR_BATCH`, default 128), and `smoke.py` --
+  **live green on a default-cap server: version -> HNSW create ->
+  400-pt batched upsert -> recall@10 1.000 at ef>=64, 0.940 at ef=8 ->
+  duplicate 409**. Gate `probe_http_server` now 15 checks (version, ef
+  override + rejection, hnsw create/search). F 96 -> 100 (its last item
+  shipped); overall 81.80 -> 82.12 -> 82 %. Next adapter: VectorDBBench
+  client over the same surface.
 - **Production tracker:** `docs/PRODUCTION-READINESS.md` -- weighted
-  scorecard, **82 % today** (F 89 -> 96 with the runnable server);
-  recompute at every wrap.
+  scorecard, **82 % today** (F 96 -> 100 with version/index-config/ef +
+  the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
 
 **Green evidence (compiler v0.64.2 installed 2026-10-09 + stdlib lane
 `d2b18dc` = 0.64.3; latest re-verification = XV-ORBITDB-01 fix pass on
@@ -950,6 +973,12 @@ the current tree):**
   **177/177 x2** + sbom (41 modules, unsafe=0) + **39 probes x2** + bench
   smoke); WSL spot (probe_http_server x2 + probe_http_service) green;
   curl end-to-end user test green incl. clean quit.
+- **Benchmark pass (70th):** Windows battery ALL GATES GREEN (suite
+  **177/177 x2** + sbom (41 modules, unsafe=0) + **39 probes x2** + bench
+  smoke); WSL spot (server 15/15 x2, service 42, limits 27) green;
+  **adapter smoke live-green** against `xvectord` (default caps):
+  recall@10 1.000 at ef>=64 / 0.940 at ef=8, duplicate 409; all adapter
+  Python syntax-checked.
 - All **37 probes x2** green on Windows: `probe_hello`, `probe_bind_semantics`,
   `probe_engine_import`, `probe_vector_store`, `probe_filtered_search`,
   `probe_payload_recovery`, `probe_floatval_roundtrip`, `probe_search_request`,
@@ -1059,7 +1088,12 @@ the lane's **first user-testable artifact** -- `src/api/httpd.xi` +
 quit header), `probe_http_server` (10 checks over real sockets) x2
 Windows + WSL, and a **curl end-to-end user test** (health -> create ->
 upsert -> search returns the correct nearest id -> stats -> clean quit).
-F 89 -> 96, overall -> **82 %**.
+F 89 -> 96, overall -> **82 %**. -> benchmark integration (70th pass):
+`GET /version`, index configuration at create (hnsw/flat + params),
+per-request `ef_search` (no-rebuild beam override), `xvectord` applies
+the `XVECTOR_MAX_*` limits per request; new `bench/adapters/` (stdlib
+HTTP client + ann-benchmarks module/config + live smoke: recall@10 1.000
+at ef>=64, 0.940 at ef=8); **F 96 -> 100, overall 82.12 -> 82 %**.
    Then: the **`xiom.ann` porter flow -- watch CLOSED; `xiom.ann` 0.2.0
    LIVE + verified in the lane home (m0 / headroom 0.2 / `hnsw_new_full`
    present; sha256 `0a243ce4...`); evaluation `docs/XIOM-ANN-EVAL.md`;
@@ -1543,12 +1577,14 @@ dispatch (C-01), local-assign nested writes (C-09), pad_adj_slots + strict
 bounds (C-10), byte parser + file_size guard (C-11/C-12), Str params by
 value (C-13).
 
-NEXT TASK: **Q-serve DONE (69th) -- the lane's first user-testable
-artifact: `xvectord.exe` + `probe_http_server` (10 checks over real
-sockets, x2 Windows + WSL) + the curl end-to-end user test.** Next
-user-facing candidates: the **benchmark adapter** (ann-benchmarks /
-VectorDBBench-style client over the HTTP API) and **S6 `GET /version`**
-(the last F item); plus the standing queue: **Q-a1 + Q-a2a DONE** (SQ8
+NEXT TASK: **Q-serve DONE (69th) + benchmark starter DONE (70th) --
+the lane is user-testable: `xvectord.exe` (runnable server, curl user
+test green), `GET /version`, index config at create, per-request
+`ef_search`, and `bench/adapters/` (ann-benchmarks drop-in + live smoke
+green: recall@10 1.000 at ef>=64). Phase F now 100.** Next: the
+**VectorDBBench client adapter** (same HTTP surface), then the **G-phase
+(concurrency/scale)** and D continuation when the stdlib fsync gate
+clears; plus the standing queue: **Q-a1 + Q-a2a DONE** (SQ8
 module + segment v2 artifact); remaining Q-a2b (read-path wiring; D5),
 the ann swap (greenlight requested, `REL-20261011-1308-xvector`), the
 standing watches (xiom.ann porter flow, replay-loop delegation, gated
