@@ -26,14 +26,15 @@ XVECTOR completed its first adoptions on 2026-10-10 (`xiom.wal` 0.1.0,
 helper subset; see below) and verified file-mode builds against the
 installed packages.
 
-## Packages lane status (2026-10-10) -- wishlist deltas
+## Packages lane status (2026-10-11, 73rd pass) -- wishlist deltas
 
-- HEAD `7ee0058e` (2026-10-10, bindings batch 29 wrap -- `xiom.assimp`
-  0.5.0): **xiom.durable port + WAL reconciliation wrapped earlier**
-  (152/152 x2; modules 597->591) -- the reconciliation confirms `xiom.wal`
-  is the shared WAL vocabulary (`xiom.durable` consumes it via
-  `xiom.toml [dependencies]`), which is what our first adoption verified
-  end-to-end.
+- HEAD `fb73c5c8` (2026-10-11, bindings batch 52 -- `xiom.sdl3` 0.15.0,
+  eco-v0.1.151); this period: **`xiom.ann` 0.2.0 LIVE + verified by this
+  lane** (`0a243ce4...`), **`xiom.http` 0.1.6 CONSUMED** (native 507),
+  and the earlier `xiom.durable` port + WAL reconciliation (152/152 x2)
+  -- the reconciliation confirms `xiom.wal` is the shared WAL vocabulary
+  (`xiom.durable` consumes it via `xiom.toml [dependencies]`), which is
+  what our first adoption verified end-to-end.
 - **`xiom.wal` 0.1.0 is REGISTRY-LIVE and now ADOPTED by XVECTOR**
   (2026-10-10): installed on Windows + WSL from
   `https://registry.xiom-lang.org` (sha256 `c727fb43...a9ab4` + ed25519

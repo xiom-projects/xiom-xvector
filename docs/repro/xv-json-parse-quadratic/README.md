@@ -29,9 +29,27 @@ The service no longer round-trips bodies through `Str`:
   661 s to 120 s (now HNSW-build-bound, not parser-bound); a 352 KB
   single request handles in ~1.7-2.9 s (strict: ~84 s).
 
-The stdlib fix should make `str_bytes`/`str_slice` linear and the JSON
-token accesses O(1); the lane re-runs both probes + the batteries on the
-fix.
+## FIX VERIFIED in the stdlib wave-111 WIP (2026-10-11, 73rd pass)
+
+The stdlib lane's wave-111 work (uncommitted at verification time on lane
+HEAD `b8eda7d`; `json.xi` sha256 `E69E0275...`, `slice.xi` `874A8F67...`,
+`string.xi` `36D1F4FF...`) makes both probes PASS:
+
+- `probe_strbytes.xi`: 50/100/200/400 KB -> **53/99/204/438 ms** (was
+  116/289/1065/3981 ms); gate met, exit **0**.
+- `probe.xi`: 2.5k/5k/10k/20k numbers -> **79/168/343/755 ms** (was
+  248 ms/1.10 s/4.77 s/17.9 s); exit **0**.
+- Through `xvectord`: the 5k x dim-25 fit improved **120 s -> 57.4 s**
+  (87 pts/s; HNSW-build bound; machine-load sensitive); recall@10
+  0.779/0.960/1.000 at ef 8/32/128 and 58-82 QPS unchanged.
+
+Full batteries on that pin: suite 177/177 x2 + sbom (42 modules,
+unsafe=0) + 40 probes x2 + bench smoke (Windows) + WSL spot -- ALL
+GREEN; working-tree hashes unchanged before/after the runs. The formal
+acceptance completes on the committed wave-111 commit (the lane re-runs
+the probes + batteries and reports on `REL-20261011-1453-xvector` /
+`REL-20261011-1543-xvector`; the WIP signal is on the bus as
+`REL-20261011-1618-xvector`).
 
 ## Symptom (measured)
 

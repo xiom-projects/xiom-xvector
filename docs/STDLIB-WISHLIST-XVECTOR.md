@@ -13,21 +13,35 @@
 
 Needs collected while building the xiom-xvector durable vector store with the
 latest stdlib (`E:\xiom-lang\stdlib`, `/mnt/e/xiom-lang/stdlib` in WSL).
-**Re-checked 2026-10-09 on stdlib lane HEAD `82ac2f3` (release 0.64.3, pinned
-to compiler v0.64.2): every row below is STILL OPEN.** Format:
+**Re-checked 2026-10-11 (73rd pass) on stdlib lane HEAD `b8eda7d` (wave
+110) + the wave-111 WIP working tree (`json.xi`/`slice.xi`/`string.xi`
+modified, uncommitted): the durability/fd/mmap rows below are STILL OPEN;
+the `str_bytes`/`json_parse` quadratic is FIXED in the WIP (both xvector
+repros exit 0 -- see `docs/repro/xv-json-parse-quadratic/`); the
+bounded-depth `json_parse` row is FIXED (wave 102 `5b7bf8f`).** Format:
 `| Need | Evidence | Workaround | Blocks |`.
 
-**Status detail (2026-10-09):**
+**Status detail (2026-10-11):**
 
 - `fsync` / `fdatasync` are still documented stubs (`fs_ffi.xi:238` /
   `:246`); the whole `sync_io` fd path is stubbed too (`write_all`
-  `sync_io.xi:28`, `sync_fd` `:80`, `fsync_dir` `:88`).
+  `sync_io.xi:28`, `sync_fd` `:80`, `fsync_dir` `:88`). Re-checked at
+  `b8eda7d`.
+- The full mmap family is still stubbed (P5 gate): `xiom/os/mmap.xi`
+  (12 documented stubs) + `fs_ffi.mmap`/`munmap`/`msync`/`madvise`/
+  `mlock`, all "not available in the pure stdlib". Re-checked 2026-10-11.
 - There is **no `append_file_bytes`**; only the `Str`-typed `append_file`
   (`io.xi:268`) and the whole-file `write_file_bytes` (`io.xi:918`).
 - `truncate` / `ftruncate` are still stubs (`fs_ffi.xi:151` / `:160`).
 - `f32_bits` / `bits_to_f32` are absent (`float.xi` has only the Float64 pair
   at `:43` / `:52`).
 - `flush_stdout` (`io.xi:906`) is still an empty body.
+- **`slice.str_bytes` / `json_parse` quadratic: FIXED in the wave-111 WIP**
+  (uncommitted on `b8eda7d` at verification: `json.xi` sha256
+  `E69E0275...`, `slice.xi` `874A8F67...`, `string.xi` `36D1F4FF...`; both
+  repro probes exit 0; full xvector batteries green on the pin). The lane
+  keeps the byte-level fast scanner as the canonical hot path regardless
+  (`src/api/json_fast.xi`, `probe_json_fast`).
 - The byte-file APIs XVECTOR depends on work and are byte-exact/CRLF-clean
   since 0.64.2: `write_file_bytes` (`io.xi:918`), `read_file_bytes`
   (`io.xi:946`), `file_size` (`io.xi:977`).
@@ -51,4 +65,4 @@ SHA-256/HMAC (env-free since v0.64.0), `slice.str_bytes`.
 | **`f32_bits(Float32) -> Int` / `bits_to_f32(Int) -> Float32`** -- direct IEEE-754 bitcast for 32-bit floats; today only the Float64 pair exists. | `stdlib\xiom\num\float.xi:43` (`float_bits(Float64)`), `:52` (`bits_to_float(Float64)`); XVECTOR's WAL codec goes `f as Float64` -> `float_bits` -> store, and back on decode (exact, but two conversions per dimension). | `float_bits(v as Float64)` / `bits_to_float(b) as Float32` in `src\payload\payload.xi` `vector_encode`/`vector_decode` -- exact, just indirect. | efficiency only (hot path once fsync lands) |
 | **`truncate`/`ftruncate` on a path/fd** -- needed to truncate a WAL segment after a checkpoint, and to repair a torn tail in place. | `stdlib\xiom\os\fs_ffi.xi:151` (`truncate`), `:160` (`ftruncate`) -- documented stubs. | none; XVECTOR recovery skips torn records instead of repairing the file (`wal_load` returns the longest valid prefix); `xiom.wal` heals by temp+rename truncate. | WAL checkpoint/compaction file lifecycle (Phase 2/5) |
 | **Durable `io.flush_stdout`** (PULSE row; XVECTOR adds itself as requester): redirected long-running process logs are lost on abnormal exit because `flush_stdout` is an empty body. | `stdlib\xiom\io\io.xi:906` (`flush_stdout` empty; comment says stdio is line-buffered -- false for redirected output). XVECTOR probe runners capture output to files; evidence can be lost on crash/abort. | write evidence to files explicitly (scripts), or keep runs short. | observability of long-running servers/probes |
-| **Bounded-depth `json_parse` (recursion guard)** -- `xiom.serialize.json.json_parse` recurses per nesting level; a ~60 KB run of `[` (well under typical body limits) overflows the process stack: **access violation 0xC0000005, exit -1073741819** (found by `probe_http_fuzz`, M-S4). Balanced nesting is fine to ~4 k depth; unbalanced 60 k depth crashes before any error path. | `stdlib\xiom\serialize\json.xi` (`json_parse`); repro: the `probe_http_fuzz` `t-unbalanced` case (pre-guard the probe died at that mark). | XVECTOR pre-scans request bodies with `json_depth_ok(body, 64)` at the HTTP edge (`src\api\http_service.xi`) and rejects deeper payloads with 400 before the parser sees them; the stdlib should add an internal depth cap returning `Err`. | DoS-safety of any service parsing untrusted JSON |
+| **Bounded-depth `json_parse` (recursion guard)** -- `xiom.serialize.json.json_parse` recurses per nesting level; a ~60 KB run of `[` (well under typical body limits) overflows the process stack: **access violation 0xC0000005, exit -1073741819** (found by `probe_http_fuzz`, M-S4). Balanced nesting is fine to ~4 k depth; unbalanced 60 k depth crashes before any error path. **FIXED 2026-10-10 (wave 102 `5b7bf8f`); bus item -7 verified + closed.** | `stdlib\xiom\serialize\json.xi` (`json_parse`); repro: the `probe_http_fuzz` `t-unbalanced` case (pre-guard the probe died at that mark). | XVECTOR pre-scans request bodies with `json_depth_ok(body, 64)` at the HTTP edge (`src\api\http_service.xi`) and rejects deeper payloads with 400 before the parser sees them; the stdlib should add an internal depth cap returning `Err`. | DoS-safety of any service parsing untrusted JSON |

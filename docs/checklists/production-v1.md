@@ -122,6 +122,13 @@ needed) -> signed commit. Red build = rejection.
   5k fit 661 s -> 120 s. Root cause `str_bytes` quadratic pinned
   (`probe_strbytes.xi`); stdlib fix queued (wave-111 top candidate) --
   re-run probes + batteries when it lands
+- [x] Re-verification pass **(done 2026-10-11, 73rd pass)**: `xiom.http`
+  0.1.6 re-sync (native 507; tripwire re-synced, 6 checks) + stdlib
+  wave-111 WIP acceptance -- both `docs/repro/xv-json-parse-quadratic`
+  probes exit 0 (400 KB `str_bytes` 438 ms; 20k parse 755 ms), 5k fit
+  120 s -> 57.4 s; full batteries green on the pins (suite 177/177 x2 +
+  sbom + 40 probes x2 + bench smoke, Windows) + WSL spot; bus -2002 /
+  -1206 / -1550-xvector-9 / -1835 verified+closed
 
 ## M-O -- Observability & operability
 
