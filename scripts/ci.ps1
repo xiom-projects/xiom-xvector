@@ -40,6 +40,7 @@ $probes = @(
   "probe_pagination",
   "probe_delete_filter",
   "probe_index_admin",
+  "probe_memory_estimate",
   "probe_reference_oracle",
   "probe_http_service",
   "probe_service_limits",

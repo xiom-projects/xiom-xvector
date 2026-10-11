@@ -129,6 +129,49 @@ pub fn hnsw_level_of(g: &HNSWGraph, pos: Int) -> Int {
   return g.levels[pos];
 }
 
+// ---- Memory estimate (M-P P2) ----
+//
+// Documented accounting model (XIOM runtime layout, 64-bit): Vec/Str
+// header = 24 B (ptr,len,cap); Int = 8 B; Float32 = 4 B; Bool = 1 B;
+// Vector = Vec[Float32] header + dim Int = 32 B + 4*dim B heap.
+// The adjacency block allocates, PER NODE, all `hnsw_layer_capacity()` (=8)
+// row slots, each uniformly `m0`-strided (`adj_row(pos, layer) =
+// pos*8 + layer`); `deg` carries one Int per row. Allocation is therefore
+// level-independent: `adj` = nodes*8*m0 Ints, `deg` = nodes*8 Ints.
+// Scalar header fields (m, m0, ml, ef_construction, build_ops, entry) are
+// modeled at 56 B. Absolute values are within struct-padding tolerance;
+// deltas are exact.
+pub type HnswMemory = {
+  nodes: Int;
+  rows: Int;
+  adj_slots: Int;
+  bytes: Int;
+}
+
+pub fn hnsw_memory_estimate(g: &HNSWGraph) -> HnswMemory
+  ensures: result.bytes >= 0
+{
+  var n = g.ids.len();
+  var rows = n * hnsw_layer_capacity();
+  var slots = rows * g.m0;
+  var vec_bytes: Int = 24; // Vec[Vector] header
+  var i: Int = 0;
+  while i < n {
+    vec_bytes = vec_bytes + 32 + 4 * g.vectors[i].dimension;
+    i = i + 1;
+  }
+  var bytes: Int = 56;                    // scalar header fields
+  bytes = bytes + 24 + n * 8;             // ids
+  bytes = bytes + vec_bytes;              // vectors (struct + data heap)
+  bytes = bytes + 24 + n * 8;             // levels
+  bytes = bytes + 24 + n * 1;             // deleted
+  bytes = bytes + 24 + n * 8;             // id_keys
+  bytes = bytes + 24 + n * 8;             // id_vals
+  bytes = bytes + 24 + rows * 8;          // deg
+  bytes = bytes + 24 + slots * 8;         // adj
+  return HnswMemory{ nodes: n, rows: rows, adj_slots: slots, bytes: bytes };
+}
+
 // Sorted id -> position map (binary search; ids are unique). Insert a new
 // (id, pos) pair; returns false when the id already exists.
 fn id_map_insert_raw(g: &mut HNSWGraph, id: Int, pos: Int) -> Bool {

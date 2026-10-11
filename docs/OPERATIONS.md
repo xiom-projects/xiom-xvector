@@ -111,3 +111,34 @@ record; without it, recovery falls back to the in-WAL manifests.
 | 429 bursts | `rate_limiter` capacity/refill or a misbehaving client; counters show `xvector_rate_limited` |
 | Slow tail | `xvector_latency_ms_p99`, `slow:true` log lines, `selection` of Hnsw `ef` params |
 | Battery red | rerun `scripts/ci.ps1`; per-probe logs in `out/ci_<probe>.log`; crash forensics in `out/fuzz_mark.txt` |
+
+## 8. Memory budget (M-P P2)
+
+The engine exposes a documented accounting estimate per collection:
+`GET /stats?collection={n}` carries `mem_store`, `mem_graph`,
+`mem_payloads`, `mem_total` (per-collection) and `mem_wal`
+(engine-wide, the shared log; **not** part of `mem_total`). Model
+constants live in `hnsw_memory_estimate` (`src/index/hnsw.xi`); deltas
+are exact, absolutes are within struct-padding tolerance (gate:
+`probe_memory_estimate`).
+
+Sizing rules of thumb (model-derived, 64-bit):
+
+- **HNSW adjacency dominates**: all `hnsw_layer_capacity()` (=8) row
+  slots are allocated per node, each `m0` Ints wide -> `adj` alone is
+  `64 * m0` bytes/point (2 KiB/point at the generous default
+  m0 = 2m, m = 16). Vector data is stored twice (flat store + graph
+  copy): `56 + 8*dim` bytes/point across both.
+- 5k x dim-25 HNSW (m = 16): ~10.9 MiB graph + ~0.76 MiB store
+  (~2.3 KiB/point); the WAL estimate grows with the un-checkpointed
+  record buffer (64 B/record + 8 B/word payload).
+- Budget check: estimate `mem_total` for the largest collection, add
+  `mem_wal`, and keep 2-3x headroom for the WAL buffer before a
+  checkpoint. Re-check after bulk loads.
+- **Seal/compact thresholds**: `compact_index` reclaims tombstoned
+  graph nodes; the estimate makes the loss visible (`mem_graph` vs the
+  live-node model). Recommended trigger: tombstones > 25% of nodes
+  (`/stats` `tombstones`/`nodes`) or `mem_graph` > 1.5x the live-node
+  model; seal a segment (`seal_segment`) before compaction when a
+  durable copy is wanted. Compaction cost is a full HNSW rebuild, so
+  batch it (admin path), not per-delete.

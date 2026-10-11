@@ -30,6 +30,25 @@ pub fn index_new(dim: Int) -> VectorIndex
   };
 }
 
+// Memory accounting estimate (model constants: see the
+// `hnsw_memory_estimate` header). ids/id_keys/id_vals are Vec[Int];
+// vectors is Vec[Vector] (each 32 B struct + 4*dim B data heap).
+pub fn index_memory_estimate(idx: &VectorIndex) -> Int
+  ensures: result >= 0
+{
+  var n = idx.vectors.len();
+  var bytes: Int = 24 + n * 8;  // ids
+  bytes = bytes + 24 + n * 8;   // id_keys
+  bytes = bytes + 24 + n * 8;   // id_vals
+  var vec_bytes: Int = 24;      // Vec[Vector] header
+  var i: Int = 0;
+  while i < n {
+    vec_bytes = vec_bytes + 32 + 4 * idx.vectors[i].dimension;
+    i = i + 1;
+  }
+  return bytes + vec_bytes;
+}
+
 // ---- Sorted id -> slot map (binary search; ids are unique) ----
 fn idmap_find(idx: &VectorIndex, id: Int) -> Int {
   var lo: Int = 0;

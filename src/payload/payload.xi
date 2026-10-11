@@ -290,6 +290,42 @@ pub fn payload_store_len(s: &PayloadStore) -> Int {
   return s.entries.len();
 }
 
+// Memory accounting estimate (model constants: see the
+// `hnsw_memory_estimate` header). Per entry: PayloadEntry = id (8 B) +
+// Payload header (24 B) + fields heap; PayloadField = Str header (24 B) +
+// enum slot (32 B) + key bytes + value heap (TextVal: + len B; the
+// numeric/bool variants are inline). Index arrays count one slot per row
+// (Str rows = 24 B header; their bytes are either aliased with the
+// payload text or bounded by it, so they are not double-counted).
+pub fn payload_store_memory_estimate(s: &PayloadStore) -> Int
+  ensures: result >= 0
+{
+  var bytes: Int = 24; // entries Vec header
+  var i: Int = 0;
+  while i < s.entries.len() {
+    var p = s.entries[i].payload;
+    bytes = bytes + 8 + 24 + 24; // entry + Payload header + fields vec header
+    var f: Int = 0;
+    while f < p.fields.len() {
+      var k = p.fields[f].key;
+      bytes = bytes + 56 + k.len();
+      var fv = p.fields[f].value;
+      match fv {
+        TextVal(t) => { bytes = bytes + t.len(); }
+        _ => {}
+      }
+      f = f + 1;
+    }
+    i = i + 1;
+  }
+  bytes = bytes + (24 + s.index_field.len() * 24); // field names (Str slots)
+  bytes = bytes + (24 + s.index_kind.len() * 8);
+  bytes = bytes + (24 + s.index_num.len() * 8);
+  bytes = bytes + (24 + s.index_text.len() * 24);
+  bytes = bytes + (24 + s.index_id.len() * 8);
+  return bytes;
+}
+
 // ============================================================================
 // Sorted key index (Phase 3 refinement)
 // ============================================================================
