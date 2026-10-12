@@ -1261,20 +1261,27 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-**77th-pass state:** the v0.64.4 archive pass is DONE (C-15 + phantom
-imports verified fixed and closed on the bus; C-13/C-14 + thread gate
-re-tested, still red; 19-probe repro sweep + full batteries green both
-platforms; re-pinned in §0). NEXT SLICES (fresh-session queue per
-`docs/G-PHASE-PLAN.md` §6): **P3 SIMD seam / P4 IVF-PQ prototype** (M-P),
-the **sharding harness story** (G v1), the **post-gate G slices** (gated --
-the thread gate is still red; runtime-side compiler fix pending,
-`REL-20261012-1402-xvector`), **Q-a2b** at D5 (stdlib fsync still stubs),
-and the **ann swap** on owner greenlight (`REL-20261011-1308-xvector`).
-Standing watches: the compiler runtime thread fix; stdlib fsync/mmap; the
-`xiom.ann` swap greenlight; the rc.1 public-release greenlight
-(`docs/OWNER-HANDOFF.md` ready). **Reference-port queue (owner guidance
-2026-10-12):** FAISS PQ -> P4 IVF-PQ prototype; FAISS visited-set
-pruning -> P-b (M-P); DiskANN layout/merge -> D5/D6/P5; sqlite-vec
+**78th-pass state (2026-10-12 night): PIVOT IN PROGRESS -- D5 is
+unblocked.** The stdlib wave-115 durable-IO first drop landed (commit
+`c65acb5`, 20:46Z) and is **verified in-lane** on compiler v0.64.4 + the
+stdlib checkout: `fsync`/`fdatasync`/`sync_fd`/`fsync_dir` + `write_all` +
+`append_file_bytes` all green (smoke `out/xv_durable_io_smoke.xi`; bus
+`-2`/`-3`/`-4` verified + closed 2026-10-12). Caveat recorded:
+released-archive consumers see the runtime symbols after the next
+revendoring compiler pin; the lane builds against the checkout, so D5
+proceeds. **Active slice: D5** (`docs/PRODUCTION-PLAN.md` M-D5) --
+append-only delta WAL segment with fsync-on-ack, `xiom.wal`-format
+migration per `docs/XIOM-WAL-ADOPTION.md` §Migration (the whole-file
+checkpoint becomes the compaction output; segment rotation replaces
+truncate while `-5` is still stubbed), a file-level child-kill harness
+(every acknowledged record survives), gates + batteries on Windows + WSL.
+Then D6 (retention/snapshots) as the follow-on. Standing watches: the
+compiler runtime thread fix (v0.64.5 themed batches); stdlib truncate
+(`-5`, still acked) + the runtime-revendoring pin; mmap (acked, queued
+after durable IO); the `xiom.ann` swap + rc.1 public-release greenlights.
+**Reference-port queue (owner guidance 2026-10-12):** FAISS PQ -> P4
+IVF-PQ prototype; FAISS visited-set pruning -> P-b (M-P); DiskANN
+layout/merge -> D5/D6/P5 (feeds the D5/D6 design directly); sqlite-vec
 two-tier rescore -> Q-a2b (D5) -- port mechanics, probe-gate each,
 attribute the source, relay platform blockers the moment they bite.
 
