@@ -1575,7 +1575,13 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   `f32_bits`/`bits_to_f32`; `flush_stdout` still a no-op** (see
   `docs/STDLIB-WISHLIST-XVECTOR.md`). `io.rename` exists -- atomic
   temp+rename checkpoint hardening is available today (used by M-D1).
-  Byte-exact file writes / CRLF-clean reads since 0.64.2.
+  Byte-exact file writes / CRLF-clean reads since 0.64.2. **mmap ask
+  ACKED 2026-10-12 (`REL-20261012-1945-xvector-2`, after the production
+  relay):** queued in the runtime bundle after the durable-IO P1+P2/P3
+  core (real file/anonymous mappings + unmap/msync/madvise; probe locks
+  the Err->Ok transition); consumers see it at the next compiler pin that
+  re-vendors stdlib/runtime (until then the runtime on v0.64.4 keeps the
+  stubs).
 - **compiler:** **v0.64.4 installed lane-local** (2026-10-12; tag `v0.64.4`
   on `df493530`, release run `38256358845` green, assets sha256-verified;
   batches m254-m275). Archive re-verification: **C-15 + phantom imports
@@ -1590,7 +1596,14 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   unfixed): **XVC-C-13** (`&Str` parameters unknown to the checker -> i64
   fallback, silent wrong values; Addendum 9) **and XVC-C-14** (same-named
   struct types shadow field layouts; Addendum 10). Compiler-lane HEAD
-  `91860f11` (v0.64.4 release docs; tag pinned).
+  `29e35ef8` (v0.64.5 continuation; tag pinned). **v0.64.5 plan (2026-10-12,
+  `docs/SESSION-HANDOFF.md` in the compiler repo):** triage T1-T3 + eight
+  themed batches; fixes already on main: m276 `0268c7d9` (env-unwrap veto,
+  T1) and m277 `29e35ef8` (cast-call raw fn code, T2); **our asks are IN
+  the batch queue -- thread/spawn runtime (`-1627`/`-1402-xvector` +
+  engine `-2053`), resolver/checker (`-1709-xvector` = C-14, XVC-C-13)**;
+  no v0.64.5 tag/archive yet -- the next re-verification set applies at
+  that archive (thread gate first).
 - **packages:** lane HEAD `674dea9d` (2026-10-12: stage-promotion policy
   per owner; live working tree with in-flight edits -- this lane consumes
   the registry into its own homes, not their checkout). Earlier era:
@@ -1646,7 +1659,7 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 82 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed** |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed**; **doorbell 20:08Z: stdlib ACKED the mmap ask (runtime bundle, after durable-IO P1-P3); compiler v0.64.5 plan carries our thread items + C-13/C-14 in themed batches (m276/m277 on main; no tag yet)** |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
