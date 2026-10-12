@@ -1410,7 +1410,13 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   visited-set pruning -> P-b (M-P); DiskANN sector layout + merge ->
   D5/D6/P5; sqlite-vec two-tier rescore -> Q-a2b read path. First relay
   of this pass: `REL-20261012-1417-xvector` (accelerator-mirror gate MET;
-  M-P3 kernel-surface ask to bindings).
+  M-P3 kernel-surface ask to bindings) -- answered by bindings
+  (`REL-20261012-1500-bindings-2`, acked+fixed 2026-10-12): ABI = flat
+  contiguous f32 ptr+len in, caller-owned out-ptr, per-call batch kernels
+  (dot/l2/cosine), SIMD-width query; **no kernels package/timeline yet**
+  (their SDK100/RHI wave first) and the hard gates stay compiler-side
+  (vector codegen + thread runtime `-1402`). The M-P3 seam will target
+  that ABI (no handle/arena dependence).
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
