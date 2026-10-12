@@ -8,7 +8,7 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Last updated:** 2026-10-11 (72 continuation passes: bootstrap -> Phase 2
+**Last updated:** 2026-10-12 (73 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
 SearchRequest wire + with_payload hydration [XVC-C-08 found] -> sorted
@@ -2067,4 +2067,72 @@ is linear since wave 113 -- byte bodies remain the design); suite x2 +
 WSL spot before any wrap; check free memory before trusting reds; bench
 loops hard-capped; the bindings/packages/engine workspaces are read-only
 for this lane.
+```
+
+## 11. PASTE PROMPT for the next XVECTOR session (refreshed 2026-10-12T13:25; section 10 stays the detailed work order)
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first: the
+operative work order is section 10 (the v0.64.4 archive re-verification
+set) with this refresh. Consumer lane: never edit E:\xiom-lang\stdlib,
+E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo stays PRIVATE; no
+pushes except the private xiom-relays bus. Identity "Lefteris Notas
+<lefterisnotas@gmail.com>"; conventional commits, DCO -s.
+
+State at 2026-10-12T13:25: HEAD 8627c69 + the handoff commit; clean
+tree; tag v1.0.0-rc.1 on 530b041. The lane has been QUIET since the
+76th wrap (the successor session dropped after writing section 10).
+Lane pins: stdlib f501b65 on a996f7b (wave 113; fsync/mmap still Err
+stubs), packages fb73c5c8 (xiom.ann 0.2.0 live+verified; sdl3 0.15.0),
+compiler v0.64.3 installed lane-local (Windows out\toolchain, WSL
+~/.xvector-toolchain; NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom
+-- shared-home wipe incident REL-20261010-1835-xvector). Installed
+batteries were green at the 76th wrap: suite 177/177 x2 + sbom (42
+modules, unsafe=0) + 41 probes x2 + bench smoke (Windows) + WSL spots.
+
+THE ONE PENDING TRIGGER -- the v0.64.4 archive: the compiler lane pushed
+the pin (df493530, stdlib-v0.64.4 3df0843; m254-m275, Gate A green,
+e2e 2480/0) but its handoff records "owner tag command; release run
+pending", and ls-remote showed NO v0.64.4 tag as of 2026-10-12T00:00.
+
+Do this, in order:
+1) Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch
+   origin main; git -C E:\xiom-lang\xiom-relays merge --ff-only
+   origin/main (bare pull hits a multi-branch quirk); python
+   tools/relay.py view --lane xvector; process items (ack/fix with refs;
+   never edit another lane's item; push only xvector items). Bus state at
+   refresh: nothing open for xvector (orbitdb/ops closed; stdlib
+   str-family fixed awaiting its reporter; bindings/batch-plan acked;
+   compiler wave item open to all). Arm your own 2-4h doorbell check.
+2) Check the archive: git -C E:\xiom-lang\xiom log --oneline -3; git -C
+   E:\xiom-lang\xiom tag -l "v0.64.4*".
+   - PRESENT -> execute section 10 exactly: install lane-local (Windows
+     out\toolchain, WSL ~/.xvector-toolchain), run the re-verification
+     set -- C-15 repro (docs\repro\xv-f32-slot-literal-write; expect
+     exit 0, then close REL-20261011-1134-xvector), phantom-import
+     controls (expect exactly one clear unresolved-import error, then
+     close REL-20261010-2124-xvector), C-13 (docs\repro\xv-str-ref-param)
+     + C-14 (docs\repro\xv-counter-type-shadow) bundles, the thread gate
+     (docs\repro\xv-thread-abi\probe.xi; expect exit 0 -- flips the G
+     phase per docs/G-PHASE-PLAN.md; witness REL-20261011-1627-xvector);
+     drop the explicit `as Float32` workaround in probe_quantization if
+     green; set the v0.64.3 release-check rows (and create a v0.64.4
+     check file if the compiler lane has not); then FULL batteries both
+     platforms (suite x2 + sbom + all probes x2 + bench smoke, Windows;
+     WSL spot) before re-pinning; commit signed.
+   - ABSENT -> do NOT invent a substitute slice; keep the bus watch,
+     report state and stand by. The remaining queue (P3 SIMD seam /
+     P4 IVF-PQ prototype, the sharding harness story, post-gate G slices,
+     Q-a2b at D5, the ann swap on owner greenlight) are fresh-session
+     slices for after the archive work.
+
+Standing owner items: the v0.64.4 tag command + release run (compiler
+lane's pending owner action -- our trigger); the rc.1 public-release
+greenlight (docs/OWNER-HANDOFF.md ready); the ann-swap greenlight
+(REL-20261011-1308-xvector). Discipline: struct literals list every
+field; locals initialized; Str by value (XVC-C-13); json.json_*
+qualified; suite x2 + WSL spot before any wrap; check free memory before
+trusting reds; bench loops hard-capped; toolchain/package homes are
+lane-local on purpose.
 ```
