@@ -1272,7 +1272,11 @@ the thread gate is still red; runtime-side compiler fix pending,
 and the **ann swap** on owner greenlight (`REL-20261011-1308-xvector`).
 Standing watches: the compiler runtime thread fix; stdlib fsync/mmap; the
 `xiom.ann` swap greenlight; the rc.1 public-release greenlight
-(`docs/OWNER-HANDOFF.md` ready).
+(`docs/OWNER-HANDOFF.md` ready). **Reference-port queue (owner guidance
+2026-10-12):** FAISS PQ -> P4 IVF-PQ prototype; FAISS visited-set
+pruning -> P-b (M-P); DiskANN layout/merge -> D5/D6/P5; sqlite-vec
+two-tier rescore -> Q-a2b (D5) -- port mechanics, probe-gate each,
+attribute the source, relay platform blockers the moment they bite.
 
 1. **ALL SLICES DONE + v1.0.0-rc.1 PREPARED + five registry surfaces
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
@@ -1396,7 +1400,17 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   (trained ranges, truncation codec, query tables, two-tier rescore) +
   `probe_quantization` (17 checks) + suite Section 16 (6 checks);
   Q-a2 (segment/read-path wiring) queued behind D5; XVC-C-15 filed
-  during the slice).**
+   during the slice).**
+- **Owner guidance (2026-10-12):** prefer porting battle-tested mechanics
+  from the MIT reference repos over first-principles design -- translate
+  patterns/kernels into our own modules (study rule above: re-implemented
+  under our license, probe-gated, source noted) and relay any platform
+  blocker (compiler/stdlib/packages/bindings) upstream immediately.
+  Queued ports: FAISS PQ codebook/training -> P4 IVF-PQ prototype; FAISS
+  visited-set pruning -> P-b (M-P); DiskANN sector layout + merge ->
+  D5/D6/P5; sqlite-vec two-tier rescore -> Q-a2b read path. First relay
+  of this pass: `REL-20261012-1417-xvector` (accelerator-mirror gate MET;
+  M-P3 kernel-surface ask to bindings).
 
 - **Coordination bus (2026-10-10, owner rollout): at session start and
   before finishing any task, pull `E:\xiom-lang\xiom-relays`
