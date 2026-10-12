@@ -1286,8 +1286,10 @@ signed commits, docs updated).
 - Gates: `probe_wal_segment` 38/38 + kill matrix wired into BOTH CI
   batteries (42 probes now); regression probes green; `truncate_fd`
   verified in-lane (stdlib wave 117).
-- Bus: `-2`/`-3`/`-4` (durability trio) verified + closed; `-5`'s fd path
-  landed (verify when stdlib transitions their item).
+- Bus: `-2`/`-3`/`-4` (durability trio) verified + closed; **`-5`
+  (truncate) verified + closed too** -- fd (`truncate_fd`, 10 -> 4) and
+  path (`io.truncate_file`, 4 -> 2) halves both green in-lane; D6
+  retention unblocked.
 NEXT: **D6** (retention via `truncate_fd` -- now unblocked; snapshots/
 export-import; policy triggers), the multi-segment read path (P2), then
 M-P (P3 seam / P4 PQ) and the standing queues. Standing watches: the
@@ -2293,7 +2295,7 @@ installed lane-local (Windows out\toolchain, WSL ~/.xvector-toolchain;
 NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom); stdlib 260bb44 (wave
 117; the tree the batteries ran on; mmap queued); packages 674dea9d
 (xiom.ann 0.2.0 live + verified; swap owner-gated). Batteries green at
-the 78th wrap: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 42
+the 78th wrap: suite 177/177 x2 + sbom (43 modules, unsafe=0) + 42
 probes x2 + bench smoke + kill matrix (Windows) + WSL suite x2 + spots +
 kill matrix.
 
