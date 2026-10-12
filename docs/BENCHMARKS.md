@@ -171,6 +171,20 @@ re-pinned to a linearity bound, 20x-ratio + 3 s net; Windows
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.
-- Dataset shape: synthetic LCG is built in; real-data importers
-  (fvecs/JSONL/CSV) and the HTTP service protocol arrive with M-S/M-G
-  follow-ups (`docs/PRODUCTION-PLAN.md` §5).
+- The live HTTP server (`out\xvectord.exe`) + drop-in adapters for
+  ann-benchmarks (`bench/adapters/ann_benchmarks/`) and VectorDBBench
+  (`bench/adapters/vectordbbench/`). Both live smokes re-ran green on the
+  v0.64.4 / stdlib `cd281b7` pin (2026-10-12): `smoke.py` 7/7 (recall@10
+  0.940 at ef=8, 1.000 at ef>=64), `smoke_db.py` 11/11 (insert 400/400;
+  recall 1.000 at ef=64, 0.930 at ef=8, 1.000 at ef=128; metadata/filter
+  cases fail loudly by design -- those routes are not exposed yet).
+- Dataset shape: synthetic LCG is built in; the adapters accept external
+  datasets over HTTP (ann-benchmarks/VectorDBBench supply their own
+  hdf5/parquet). In-repo real-data importers (fvecs/JSONL/CSV) remain a
+  follow-up; `xvectord` default caps are small -- raise
+  `XVECTOR_MAX_REQUEST_BYTES` / `XVECTOR_MAX_BATCH` for benchmark runs.
+- Scale expectation (honest): ingest is single-threaded and
+  HNSW-build-bound (~98 points/s at dim 25 on this host); queries run
+  53-82 QPS at dim-25. Standard 1M-row external datasets are runnable but
+  will take hours to build; results reflect the SIMD-less baseline until
+  M-P3 lands.

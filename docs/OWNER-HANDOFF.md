@@ -34,12 +34,18 @@ repository stays private; nothing below happens until the owner greenlights.
 5. **Publish the release:** push the branch + the `v1.0.0-rc.1` tag (or a
    final `v1.0.0` after any last review), publish the release notes, and
    attach `docs/sbom-v1.0.0-rc.1.json`.
-6. **Benchmark protocol (PULSE-style):** drive the DB through
-   `docs/BENCHMARKS.md` -- `scripts/bench.ps1 -Mode quick|medium`
-   (hard-capped loops; watch free memory). The PULSE prototype can consume
-   the facade directly (`docs/PULSE-INTEGRATION.md`); the HTTP byte
-   pipeline is consumable via an in-process adapter until the stdlib
-   socket proof lands.
+6. **Benchmark protocol (PULSE-style):** two paths, both ready today:
+   (a) in-repo deterministic harness -- `scripts/bench.ps1 -Mode quick|medium`
+   (hard-capped loops; watch free memory) -> `out/bench_report.json`
+   (`docs/BENCHMARKS.md`); (b) external suites over the live server --
+   `out\xvectord.exe` speaks HTTP/1.1 on a real socket (stdlib `xiom.net`),
+   with drop-in adapters for ann-benchmarks (`bench/adapters/ann_benchmarks/`)
+   and VectorDBBench (`bench/adapters/vectordbbench/`); both live smokes
+   are green on the current pin (re-run 2026-10-12: recall@10 1.000 at
+   ef>=64; insert 400/400). Run with raised caps
+   (`XVECTOR_MAX_REQUEST_BYTES=33554432`, `XVECTOR_MAX_BATCH=1000`) and read
+   the honest notes in `bench/adapters/README.md` (single-threaded server;
+   no fsync-grade durability claims yet; metadata/filter routes not exposed).
 7. **Feedback loop:** file compiler/stdlib findings back through
    `docs/RELAY-COMPILER.md` / `docs/STDLIB-WISHLIST-XVECTOR.md` (they are
    written for the sibling lanes).
