@@ -27,7 +27,7 @@ packages/xiom-vector/
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,filter_plan,topk_heap,search_service,pagination}.xi
-    |-- durability/{wal,recovery,write_ahead_events,wal_file,manifest_file}.xi
+    |-- durability/{wal,recovery,write_ahead_events,wal_file,wal_segment,manifest_file}.xi
     `-- api/vector_api.xi
 ```
 
@@ -276,6 +276,28 @@ put/overwrite/remove.
   field (any value), in index row order (Exists candidates).
 NOTE (compiler XVC-C-06): Float32 enum payloads can read as 0 in affected
 builds; lane gates avoid FloatVal assertions until fixed.
+
+## Delta WAL segment (M-D5, `durability.wal_segment`)
+Append-only delta between whole-file checkpoints; `xiom.wal` codec v1
+framing (`lsn|op|key|value|timestamp[|p0,p1,...]`, LF written, CRLF
+accepted). API: `segment_render`/`segment_line` (byte-linear render),
+`segment_heal` (create; append the missing trailing newline so a torn
+line stays its own skipped line), `segment_parse_into` /
+`segment_last_lsn` (line-tolerant replay: malformed lines are skipped,
+but a VALID line with a non-continuous LSN stops the parse -- a gap is
+corruption, never silently skipped), `segment_merge_into` (merge into a
+checkpoint writer: LSN <= checkpoint skipped, next must be +1),
+`segment_append_sync` (one rendered buffer per commit:
+`open_append -> write_all -> fsync -> close`; fsync before ack),
+`segment_reset` (rotate after a successful checkpoint persist).
+Engine: `engine_enable_durable(eng, seg_path)`,
+`engine_wal_commit` (no-op until enabled; on IO failure the frontier
+does NOT advance and the segment is marked for heal so the next commit
+retries every pending record), `engine_synced_lsn`,
+`engine_open_durable(ckpt, seg, manifest, dim, metric)` (load ->
+merge -> recover -> enable). Gate: `probe_wal_segment` (38 checks);
+crash harness: `tests/harness/kill_writer|kill_check` +
+`scripts/kill_matrix.ps1|.sh`.
 
 ## `xiom.vector.payload` engine integration
 `engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`

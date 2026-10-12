@@ -157,11 +157,11 @@ green both platforms; verdicts + closures filed on the bus.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `390c7a4` (v0.64.4 archive
-re-verification: C-15 + phantom imports fixed, workaround dropped, stale
-imports repaired) + this 77th-wrap commit; tag
-`v1.0.0-rc.1` still on `530b041`.
-Recent slices: `390c7a4` v0.64.4 archive re-verification (77th),
+**Repo:** private, no pushes; clean tree. HEAD `5a9b8fd` (xvectord durable
+mode) + this 78th-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: `5a9b8fd` xvectord durable mode + `6bf292d` kill harness +
+`11eb1cd` D5 delta segment/engine (78th), `390c7a4` v0.64.4 archive
+re-verification (77th),
 `6da4c32` wave-113 re-verification (76th wrap),
 `fcd2f64` P2 memory estimate (75th), `200cbc7` G-plan P1, `45e6f5b`
 wave-111 closure, `bc53759` thread gate (G groundwork), `95699e9`
@@ -191,7 +191,7 @@ commits, DCO `git commit -s`.
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.4 installed lane-local** on Windows (`out\toolchain`) + WSL (`~/.xvector-toolchain`); released 2026-10-12 (tag `v0.64.4` on `df493530`, run 38256358845, assets sha256-verified); lane HEAD `91860f11` (release docs); **C-15 + phantom-import fixes verified; C-13/C-14 re-tested unchanged (still open); thread gate still AVs (runtime-side fix pending)** | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `cd281b7` (2026-10-12, docs block 124 -- v0.64.4 release check; the tree used by this pass's batteries: str-family closed at `a996f7b`, metro revert `4e8b696`, v0.64.4 pin `3df0843`; re-verified 2026-10-12 through the full battery + repros); **fsync/fdatasync/fsync_dir + the whole mmap family still Err stubs** (re-checked 2026-10-12) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
+| stdlib | lane HEAD `260bb44` (2026-10-13, wave 117 -- durability P5 pairs: `append_line_sync`, tail checks, `remove_dir`, **`truncate_fd` real** (fd path; `fs_ffi.truncate`/`ftruncate` wrappers still stubbed); the tree this pass's batteries run on; wave 115 durable IO was verified in-lane 2026-10-12); **fsync + fd/append + fd-truncate done; mmap family still Err stubs** (queued upstream) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`) |
 | packages | lane HEAD `674dea9d` (2026-10-12, stage-promotion policy; live working tree with in-flight edits -- lane consumes the registry, not this checkout); **`xiom.ann` 0.2.0 LIVE + verified** (swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` LIVE + swapped | `E:\xiom-packages\packages` |
 | xvector | `390c7a4` + this 77th-wrap commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
@@ -992,6 +992,14 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
 lane `cd281b7`; latest re-verification = the v0.64.4 archive pass on the
 current tree):**
 
+- **D5 durability delta (78th pass, 2026-10-12):** `probe_wal_segment`
+  **38/38**; **kill matrix 6/6 Windows** (acked 99-213 per run) + **6/6
+  WSL** (acked 25-36), missing=0 both platforms; durable server home
+  restart-verified (smoke 7/7 + 400 points recall@10 1.000); regression
+  probes `vector_store`/`kill_recovery`/`payload_recovery`/
+  `delete_filter`/`batch_ops`/`collections` green; stdlib wave-115
+  durability smoke all green + wave-117 `truncate_fd` verified in-lane
+  (10 -> 4 bytes).
 - **v0.64.4 archive pass (77th, 2026-10-12):** Windows `scripts\ci.ps1` ->
   `ci: ALL GATES GREEN` (suite **177/177 x2** + sbom **42 modules, unsafe=0,
   compiler v0.64.4** + **41 probes x2** + bench smoke; exit 0). WSL: suite
@@ -1261,29 +1269,35 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-**78th-pass state (2026-10-12 night): PIVOT IN PROGRESS -- D5 is
-unblocked.** The stdlib wave-115 durable-IO first drop landed (commit
-`c65acb5`, 20:46Z) and is **verified in-lane** on compiler v0.64.4 + the
-stdlib checkout: `fsync`/`fdatasync`/`sync_fd`/`fsync_dir` + `write_all` +
-`append_file_bytes` all green (smoke `out/xv_durable_io_smoke.xi`; bus
-`-2`/`-3`/`-4` verified + closed 2026-10-12). Caveat recorded:
-released-archive consumers see the runtime symbols after the next
-revendoring compiler pin; the lane builds against the checkout, so D5
-proceeds. **Active slice: D5** (`docs/PRODUCTION-PLAN.md` M-D5) --
-append-only delta WAL segment with fsync-on-ack, `xiom.wal`-format
-migration per `docs/XIOM-WAL-ADOPTION.md` §Migration (the whole-file
-checkpoint becomes the compaction output; segment rotation replaces
-truncate while `-5` is still stubbed), a file-level child-kill harness
-(every acknowledged record survives), gates + batteries on Windows + WSL.
-Then D6 (retention/snapshots) as the follow-on. Standing watches: the
-compiler runtime thread fix (v0.64.5 themed batches); stdlib truncate
-(`-5`, still acked) + the runtime-revendoring pin; mmap (acked, queued
-after durable IO); the `xiom.ann` swap + rc.1 public-release greenlights.
+**78th-pass wrap (2026-10-12 night): D5 DURABILITY DELTA DONE.**
+- `durability.wal_segment.xi`: append-only delta in `xiom.wal` codec v1
+  framing; byte-linear renderer; tolerant line replay with LSN-gap stop;
+  heal-on-open; checkpoint-deduped merge; rotation.
+- Engine: `enable_durable` / `wal_commit` (fsync BEFORE the ack; on
+  failure the frontier holds and the next commit retries -- no lost ack) /
+  `open_durable`; upsert/delete split into apply/commit halves so batch
+  ops fsync once per call.
+- **Kill matrix: 6/6 Windows + 6/6 WSL** (`scripts/kill_matrix.ps1|.sh`;
+  child writer + fsynced ack ledger killed mid-stream; every acknowledged
+  record recovered, missing=0).
+- **Durable server home** `XVECTORD_WAL`: smoke 7/7 on the durable server,
+  clean quit -> checkpoint + segment rotation, restart -> 400 points,
+  recall@10 1.000.
+- Gates: `probe_wal_segment` 38/38 + kill matrix wired into BOTH CI
+  batteries (42 probes now); regression probes green; `truncate_fd`
+  verified in-lane (stdlib wave 117).
+- Bus: `-2`/`-3`/`-4` (durability trio) verified + closed; `-5`'s fd path
+  landed (verify when stdlib transitions their item).
+NEXT: **D6** (retention via `truncate_fd` -- now unblocked; snapshots/
+export-import; policy triggers), the multi-segment read path (P2), then
+M-P (P3 seam / P4 PQ) and the standing queues. Standing watches: the
+compiler runtime thread fix (v0.64.5 themed batches); stdlib mmap
+(queued upstream); the `xiom.ann` swap + rc.1 public-release greenlights.
 **Reference-port queue (owner guidance 2026-10-12):** FAISS PQ -> P4
 IVF-PQ prototype; FAISS visited-set pruning -> P-b (M-P); DiskANN
-layout/merge -> D5/D6/P5 (feeds the D5/D6 design directly); sqlite-vec
-two-tier rescore -> Q-a2b (D5) -- port mechanics, probe-gate each,
-attribute the source, relay platform blockers the moment they bite.
+layout/merge -> D6/P5 (feeds the retention/snapshot design); sqlite-vec
+two-tier rescore -> Q-a2b -- port mechanics, probe-gate each, attribute
+the source, relay platform blockers the moment they bite.
 
 1. **ALL SLICES DONE + v1.0.0-rc.1 PREPARED + five registry surfaces
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
@@ -2265,18 +2279,23 @@ E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the
 private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-State at 2026-10-12T14:10: HEAD 390c7a4 + the 77th-wrap commit; clean
-tree; tag v1.0.0-rc.1 on 530b041. The v0.64.4 archive pass is DONE:
-C-15 + phantom imports verified fixed (bus -1134/-2124 closed); C-13
+State at 2026-10-12T23:59: HEAD 5a9b8fd + the 78th-wrap commit; clean
+tree; tag v1.0.0-rc.1 on 530b041. The v0.64.4 archive pass is DONE
+(C-15 + phantom imports verified fixed, bus -1134/-2124 closed; C-13
 (Win 167 / WSL 63) and C-14 (ll:850) re-tested unchanged; the thread
-gate still AVs (0xC0000005/SIGSEGV; runtime-side fix pending --
-REL-20261012-1402-xvector). Lane pins: compiler v0.64.4 installed
-lane-local (Windows out\toolchain, WSL ~/.xvector-toolchain; NEVER
-%LOCALAPPDATA%\xiom* or ~/.local/share/xiom); stdlib cd281b7 (the tree
-the batteries ran on; fsync/mmap still Err stubs); packages 674dea9d
+gate still AVs -- runtime-side fix pending, REL-20261012-1402-xvector).
+**D5 durability delta is DONE (78th pass): fsync-on-ack delta segment,
+kill matrix 6/6 Windows + 6/6 WSL, durable server home XVECTORD_WAL
+(restart-verified); board 85 %.** NEXT: D6 retention/snapshots
+(truncate_fd landed in stdlib wave 117), multi-segment read path (P2),
+then M-P (P3/P4) and the standing queues. Lane pins: compiler v0.64.4
+installed lane-local (Windows out\toolchain, WSL ~/.xvector-toolchain;
+NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom); stdlib 260bb44 (wave
+117; the tree the batteries ran on; mmap queued); packages 674dea9d
 (xiom.ann 0.2.0 live + verified; swap owner-gated). Batteries green at
-the 77th wrap: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 41
-probes x2 + bench smoke (Windows) + WSL suite x2 + spots.
+the 78th wrap: suite 177/177 x2 + sbom (42 modules, unsafe=0) + 42
+probes x2 + bench smoke + kill matrix (Windows) + WSL suite x2 + spots +
+kill matrix.
 
 Work the queue (docs/G-PHASE-PLAN.md section 6): P3 SIMD seam / P4 IVF-PQ
 prototype (M-P), the sharding harness story (G v1), post-gate G slices
