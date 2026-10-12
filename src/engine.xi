@@ -133,6 +133,29 @@ pub fn open_engine(w: &WalWriter, path: Str, dim: Int, metric: DistanceMetric) -
   return engine_recover_file(w, path, dim, metric);
 }
 
+// ---- Durability (M-D5) ----
+
+// Enable durable mode: every later mutation is appended to `seg_path`
+// (xiom.wal codec v1 delta segment) and fsynced BEFORE its ack (WAL-before-
+// ack). The whole-file checkpoint stays the compaction output; call
+// `checkpoint_wal` + `rotate_durable_segment` on a clean shutdown.
+pub fn enable_durability(eng: &mut VectorEngine, seg_path: Str) -> Result[Bool, CoreError] {
+  return engine_enable_durable(eng, seg_path);
+}
+
+// The fsync'd frontier (highest LSN committed to the segment; 0 when
+// durability is not enabled).
+pub fn durable_frontier(eng: &VectorEngine) -> Int {
+  return engine_synced_lsn(eng);
+}
+
+// Open a durable engine from checkpoint + delta segment + manifest (M-D5):
+// merge, recover, and enable durable mode in one call. `manifest_path` may
+// be "".
+pub fn open_durable(ckpt_path: Str, seg_path: Str, manifest_path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine {
+  return engine_open_durable(ckpt_path, seg_path, manifest_path, dim, metric);
+}
+
 // ---- Multi-collection registry (M-D3) ----
 
 // Create a named collection (empty) and make it active. Rejects invalid or

@@ -24,6 +24,8 @@ use xiom.vector.query.search_request;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
 use xiom.vector.durability.wal;
+use xiom.vector.durability.wal_file;
+use xiom.vector.durability.wal_segment;
 use xiom.vector.durability.write_ahead_events;
 use xiom.vector.durability.manifest_file;
 use xiom.vector.segment.segment_file;
@@ -48,6 +50,9 @@ pub type VectorEngine = {
   dimension: Int;
   created: Bool;
   wal: WalWriter;
+  wal_seg_path: Str;
+  wal_seg_frontier: Int;
+  wal_seg_needs_heal: Bool;
   upserts: Counter;
   deletes: Counter;
   next_collection: Int;
@@ -88,6 +93,9 @@ pub fn engine_new() -> VectorEngine {
     dimension: 0,
     created: false,
     wal: wal_writer_new(),
+    wal_seg_path: "",
+    wal_seg_frontier: 0,
+    wal_seg_needs_heal: false,
     // Stat counters ride the xiom.metrics package (adoption 2026-10-10;
     // see docs/XIOM-METRICS-ADOPTION.md). The shim Counter was retired so
     // the program carries a single Counter type (XVC-C-14 layout shadow).
@@ -348,6 +356,10 @@ pub fn engine_create_named(eng: &mut VectorEngine, name: Str, dim: Int, metric: 
   };
   eng.collections.push(e);
   load_active(eng, eng.collections.len() - 1);
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
   return Ok(collection_id(cid));
 }
 
@@ -397,6 +409,10 @@ pub fn engine_drop(eng: &mut VectorEngine, name: Str) -> Result[Bool, CoreError]
     }
   } elif idx < eng.active_idx {
     eng.active_idx = eng.active_idx - 1;
+  }
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
   }
   return Ok(true);
 }
@@ -466,6 +482,10 @@ pub fn engine_restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool,
     apply_index(&mut eng, ss.kind, params);
   }
   engine_checkpoint_from(eng, eng.wal.next_lsn);
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
   return Ok(true);
 }
 
@@ -760,6 +780,23 @@ pub fn engine_rebuild_index(eng: &mut VectorEngine) -> Result[IndexStats, CoreEr
 pub fn engine_upsert(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError]
   requires: eng.created
 {
+  var ok: Bool = false;
+  match engine_upsert_apply(eng, point, vec) {
+    Ok(b) => { ok = b; }
+    Err(e) => { return Err(e); }
+  }
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  return Ok(ok);
+}
+
+// In-memory apply half of upsert (no durability commit): the batch path
+// loops this and commits ONCE per API call.
+fn engine_upsert_apply(eng: &mut VectorEngine, point: Int, vec: Vector) -> Result[Bool, CoreError]
+  requires: eng.created
+{
   if vec.dimension != eng.dimension {
     return Err(CoreError.InvalidInput("dimension mismatch"));
   }
@@ -806,6 +843,23 @@ pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Searc
 pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
   requires: eng.created
 {
+  var ok: Bool = false;
+  match engine_delete_apply(eng, point) {
+    Ok(b) => { ok = b; }
+    Err(e) => { return Err(e); }
+  }
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  return Ok(ok);
+}
+
+// In-memory apply half of delete (no durability commit); the batch path
+// loops this and commits ONCE per API call.
+fn engine_delete_apply(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
+  requires: eng.created
+{
   log_delete(&mut eng.wal, eng.active_cid, point);
   var ok = index_remove(&mut eng.store, point);
   if eng.index_kind == AnnIndexKind.Hnsw {
@@ -839,11 +893,15 @@ pub fn engine_upsert_many(eng: &mut VectorEngine, ids: &Vec[Int], vecs: &Vec[Vec
   }
   i = 0;
   while i < ids.len() {
-    match engine_upsert(eng, ids[i], vecs[i]) {
+    match engine_upsert_apply(eng, ids[i], vecs[i]) {
       Ok(_) => {}
       Err(e) => { return Err(e); }
     }
     i = i + 1;
+  }
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
   }
   return Ok(ids.len());
 }
@@ -860,11 +918,15 @@ pub fn engine_delete_many(eng: &mut VectorEngine, ids: &Vec[Int]) -> Result[Int,
   var removed: Int = 0;
   var i: Int = 0;
   while i < ids.len() {
-    match engine_delete(eng, ids[i]) {
+    match engine_delete_apply(eng, ids[i]) {
       Ok(ok) => { if ok { removed = removed + 1; } }
       Err(e) => { return Err(e); }
     }
     i = i + 1;
+  }
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
   }
   return Ok(removed);
 }
@@ -961,6 +1023,10 @@ pub fn engine_set_payload(eng: &mut VectorEngine, point: Int, payload: Payload) 
       var words = payload_encode(&payload);
       log_payload_set(&mut eng.wal, eng.active_cid, point, words);
       payload_store_put(&mut eng.payloads, point, payload);
+      match engine_wal_commit(eng) {
+        Ok(_) => {}
+        Err(e) => { return Err(e); }
+      }
       return Ok(true);
     }
     None => { return Ok(false); }
@@ -1183,6 +1249,59 @@ pub fn engine_size(eng: &VectorEngine) -> Int {
 
 pub fn engine_durable_lsn(eng: &VectorEngine) -> Int {
   return wal_writer_current_lsn(&eng.wal);
+}
+
+// Fsync'd frontier (M-D5): the highest LSN committed to the durable delta
+// segment and fsynced. 0 when durability is not enabled -- the in-memory log
+// carries no durability claim. Advanced only after segment_append_sync Ok.
+pub fn engine_synced_lsn(eng: &VectorEngine) -> Int {
+  return eng.wal_seg_frontier;
+}
+
+// Enable durable mode (M-D5): heal (or create) the delta segment at
+// `seg_path`, adopt its frontier (never below the in-memory log's current
+// LSN), and commit every subsequent mutation before its ack. Idempotent.
+// Framing is xiom.wal codec v1 (durability.wal_segment).
+pub fn engine_enable_durable(eng: &mut VectorEngine, seg_path: Str) -> Result[Bool, CoreError] {
+  if seg_path.len() == 0 { return Err(CoreError.InvalidInput("empty segment path")); }
+  if !segment_heal(seg_path) { return Err(CoreError.IOFailure("segment heal failed")); }
+  var file_last = segment_last_lsn(seg_path);
+  var cur = wal_writer_current_lsn(&eng.wal);
+  var f = file_last;
+  if cur > f { f = cur; }
+  eng.wal_seg_path = seg_path;
+  eng.wal_seg_frontier = f;
+  eng.wal_seg_needs_heal = false;
+  return Ok(true);
+}
+
+// Commit pending records (LSN > frontier) to the segment and fsync BEFORE
+// the caller acknowledges. No-op (Ok(true)) when durability is not enabled.
+// On failure the frontier does NOT advance: the next commit retries every
+// pending record, and the segment is marked for heal (a failed write may
+// have left a torn tail).
+pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
+  if eng.wal_seg_path.len() == 0 { return Ok(true); }
+  if eng.wal_seg_needs_heal {
+    if !segment_heal(eng.wal_seg_path) {
+      return Err(CoreError.IOFailure("segment heal failed"));
+    }
+    eng.wal_seg_needs_heal = false;
+  }
+  var cur = wal_writer_current_lsn(&eng.wal);
+  if cur <= eng.wal_seg_frontier { return Ok(true); }
+  let r = segment_append_sync(eng.wal_seg_path, &eng.wal, eng.wal_seg_frontier);
+  match r {
+    Ok(_n) => {
+      eng.wal_seg_frontier = cur;
+      let _f = wal_writer_flush(&mut eng.wal);
+      return Ok(true);
+    }
+    Err(e) => {
+      eng.wal_seg_needs_heal = true;
+      return Err(CoreError.IOFailure(e));
+    }
+  }
 }
 
 // ---- Multi-collection recovery (D3) ----
@@ -1441,4 +1560,23 @@ pub fn engine_recover_file(w: &WalWriter, path: Str, dim: Int, metric: DistanceM
 {
   var reg = manifest_load(path);
   return engine_recover_registry(w, dim, metric, &reg);
+}
+
+// Open a DURABLE engine (M-D5) from its whole-file checkpoint + delta
+// segment: load the checkpoint, merge the segment delta (checkpoint-deduped,
+// prefix-exact), recover, then enable durable mode on the same segment so
+// every later mutation commits + fsyncs before its ack. `manifest_path` may
+// be "" (the in-WAL manifests govern). Missing files degrade to an empty
+// engine exactly like engine_recover_file.
+pub fn engine_open_durable(ckpt_path: Str, seg_path: Str, manifest_path: Str, dim: Int, metric: DistanceMetric) -> VectorEngine
+  requires: dim > 0
+{
+  var w = wal_load(ckpt_path);
+  let _added = segment_merge_into(seg_path, &mut w);
+  var eng = engine_recover_file(&w, manifest_path, dim, metric);
+  match engine_enable_durable(&mut eng, seg_path) {
+    Ok(_) => {}
+    Err(_) => {}
+  }
+  return eng;
 }
