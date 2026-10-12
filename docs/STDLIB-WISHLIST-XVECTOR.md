@@ -25,23 +25,31 @@ fixed at **wave 113 (`a996f7b`)** -- the str-family is fully closed and
 re-verified at that HEAD (2026-10-11).** Format:
 `| Need | Evidence | Workaround | Blocks |`.
 
-**Status detail (2026-10-11):**
+**Status detail (2026-10-12, wave 115 `c65acb5`):** the durability trio
+**LANDED and is verified in-lane** (compiler v0.64.4 + stdlib checkout):
+`fsync`/`fdatasync` (`fs_ffi`), `sync_fd`/`fsync_dir` (`sync_io`),
+`write_all` (`sync_io`, exact partial-count loop), `io.append_file_bytes`
+-- all green in `out/xv_durable_io_smoke.xi` (Windows); bus
+`REL-20261010-1550-xvector-2/-3/-4` **verified + closed**. Caveat: new
+runtime symbols reach released-archive consumers at the next compiler pin
+that re-vendors stdlib/runtime; the lane builds against the checkout.
+`truncate`/`ftruncate` (`-5`) is still `acked` (segment rotation covers D5
+until it lands). The mmap family is queued in the runtime bundle after the
+durable-IO core (`REL-20261012-1945-xvector-2` acked).
 
-- `fsync` / `fdatasync` are still documented stubs (`fs_ffi.xi:238` /
-  `:246`); the whole `sync_io` fd path is stubbed too (`write_all`
-  `sync_io.xi:28`, `sync_fd` `:80`, `fsync_dir` `:88`). Re-checked at
-  `b8eda7d`.
-- The full mmap family is still stubbed (P5 gate): `xiom/os/mmap.xi`
+- **History (2026-10-11, pre-wave-115; superseded by the 2026-10-12 block
+  above):** fsync/fdatasync + the whole `sync_io` fd path were documented
+  stubs; there was no `append_file_bytes`; `truncate`/`ftruncate` stubs.
+- The mmap family is still stubbed (P5 gate): `xiom/os/mmap.xi`
   (12 documented stubs) + `fs_ffi.mmap`/`munmap`/`msync`/`madvise`/
-  `mlock`, all "not available in the pure stdlib". Re-checked 2026-10-11;
-  **filed as `REL-20261012-1945-xvector-2` (2026-10-12; re-checked
-  `cd281b7`: `mmap_anonymous` Err).**
-- There is **no `append_file_bytes`**; only the `Str`-typed `append_file`
-  (`io.xi:268`) and the whole-file `write_file_bytes` (`io.xi:918`).
-- `truncate` / `ftruncate` are still stubs (`fs_ffi.xi:151` / `:160`).
+  `mlock`, all "not available in the pure stdlib". Re-checked 2026-10-12 on
+  `cd281b7` (`mmap_anonymous` Err); **queued as
+  `REL-20261012-1945-xvector-2` (acked; runtime bundle, after durable IO).**
+- `truncate` / `ftruncate` are still stubs (`fs_ffi.xi`); bus `-5` acked.
+  (D5 uses segment rotation; truncate-based retention stays D6-gated.)
 - `f32_bits` / `bits_to_f32` are absent (`float.xi` has only the Float64 pair
-  at `:43` / `:52`).
-- `flush_stdout` (`io.xi:906`) is still an empty body.
+  at `:43` / `:52`); bus `-6` acked (compiler bitcast dependency).
+- `flush_stdout` (`io.xi:906`) is still an empty body; bus `-8` acked.
 - **`slice.str_bytes` / `json_parse` quadratic: FIXED + verified on
   stdlib main `9a2b5ab` (wave 111)** (`json.xi` sha256 `E69E0275...`,
   `slice.xi` `874A8F67...`, `string.xi` `36D1F4FF...`; both repro probes
