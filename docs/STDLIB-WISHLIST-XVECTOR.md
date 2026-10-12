@@ -8,8 +8,9 @@
 > --kind wishlist`): fsync/fdatasync = **REL-20261010-1550-xvector-2**, fd
 > write path = **-3**, append_file_bytes = **-4**, truncate/ftruncate =
 > **-5**, f32_bits = **-6**, bounded-depth json_parse = **-7**,
-> flush_stdout = **-8**. This file keeps the closed history; new rows go
-> to the bus.
+> flush_stdout = **-8**; **mmap family = REL-20261012-1945-xvector-2**
+> (2026-10-12, owner-requested production relay). This file keeps the
+> closed history; new rows go to the bus.
 
 Needs collected while building the xiom-xvector durable vector store with the
 latest stdlib (`E:\xiom-lang\stdlib`, `/mnt/e/xiom-lang/stdlib` in WSL).
@@ -32,7 +33,9 @@ re-verified at that HEAD (2026-10-11).** Format:
   `b8eda7d`.
 - The full mmap family is still stubbed (P5 gate): `xiom/os/mmap.xi`
   (12 documented stubs) + `fs_ffi.mmap`/`munmap`/`msync`/`madvise`/
-  `mlock`, all "not available in the pure stdlib". Re-checked 2026-10-11.
+  `mlock`, all "not available in the pure stdlib". Re-checked 2026-10-11;
+  **filed as `REL-20261012-1945-xvector-2` (2026-10-12; re-checked
+  `cd281b7`: `mmap_anonymous` Err).**
 - There is **no `append_file_bytes`**; only the `Str`-typed `append_file`
   (`io.xi:268`) and the whole-file `write_file_bytes` (`io.xi:918`).
 - `truncate` / `ftruncate` are still stubs (`fs_ffi.xi:151` / `:160`).
