@@ -21,9 +21,12 @@ use xiom.string.slice;
 use xiom.os.env;
 use xiom.net;
 use xiom.net.socket;
+use xiom.vectors;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.api.http_service;
+use xiom.vector.durability.wal_file;
+use xiom.vector.durability.wal_segment;
 
 // Socket-side guard so a hostile peer cannot grow the buffer forever
 // (generous for benchmark fits; the service's own max_request_bytes --
@@ -154,7 +157,31 @@ pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
 }
 
 pub fn httpd_serve(bind: Str, port: Int) -> Int {
+  // Durable home (M-D5, opt-in): XVECTORD_WAL=<checkpoint path> enables
+  // fsync-on-ack via the delta segment <path>.seg; XVECTORD_MANIFEST is
+  // optional. Without XVECTORD_WAL the server runs in-memory (no durability
+  // claim) -- exactly the benchmark/server default before D5.
   var eng = engine_new();
+  var wal_path: Str = "";
+  var seg_path: Str = "";
+  let vw = env.var_opt("XVECTORD_WAL");
+  match vw {
+    Some(p) => {
+      if p.len() > 0 {
+        wal_path = p;
+        seg_path = p + ".seg";
+        var manifest = "";
+        let vm = env.var_opt("XVECTORD_MANIFEST");
+        match vm {
+          Some(m) => { if m.len() > 0 { manifest = m; } }
+          None => {}
+        }
+        eng = open_durable(wal_path, seg_path, manifest, 1, DistanceMetric.Euclidean);
+        io.println("xvectord: durable home " + wal_path + " (segment " + seg_path + ")");
+      }
+    }
+    None => {}
+  }
   let sr = socket.socket_tcp();
   if sr.is_err {
     io.println("xvectord: socket create failed");
@@ -195,6 +222,19 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
     }
   }
   socket.socket_close(fd);
+  if wal_path.len() > 0 {
+    // Clean shutdown: whole-file checkpoint (compaction output) + segment
+    // rotation. A crash before this point loses nothing acknowledged: the
+    // segment carries every fsynced record.
+    let ck = http_service_shutdown(&eng, wal_path);
+    let _rot = segment_reset(seg_path);
+    if ck {
+      io.println("xvectord: checkpoint persisted; segment rotated");
+    } else {
+      io.println("xvectord: WARNING checkpoint persist failed (segment intact)");
+    }
+    io.flush_stdout();
+  }
   return 0;
 }
 
