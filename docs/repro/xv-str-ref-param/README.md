@@ -1,8 +1,9 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-Status: **OPEN on compiler v0.64.2** (found 2026-10-09, M-D2 slice; relayed
-via `docs/RELAY-COMPILER.md` Addendum 9).
+Status: **OPEN -- re-tested unchanged on v0.64.3 (Win 71 / WSL 127) and
+v0.64.4 (2026-10-12: Win 167 / WSL 63; expect 65)** (found 2026-10-09, M-D2
+slice; relayed via `docs/RELAY-COMPILER.md` Addendum 9).
 
 # XVC-C-13 repro: `&Str` parameters are unknown to the type checker (i64 fallback)
 

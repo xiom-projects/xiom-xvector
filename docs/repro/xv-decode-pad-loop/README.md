@@ -9,6 +9,11 @@ in `probe.xi` no longer segfaults; decode returns cleanly, exit 0). Found
 The lane keeps the `pad_adj_slots` function boundary and the strict-decode
 bounds (the bounds are strictness, not a workaround).
 
+**Maintenance 2026-10-12 (v0.64.4):** the probe's imports were refreshed to
+`use xiom.vectors;` -- the pre-swap `xiom.vector.types.*` paths died in the
+60th-pass package swap, and v0.64.4 makes unresolved imports hard errors
+(m266). Re-run on v0.64.4: exit 0.
+
 ## Summary
 
 The deterministic fuzz probe (`tests/probes/probe_fuzz_codecs.xi`) crashed

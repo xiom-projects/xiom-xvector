@@ -309,3 +309,38 @@ Re-run recipe:
 .\scripts\build.ps1 docs\repro\xv-f32-slot-literal-write\probe.xi -Name repro_f32_slot_literal
 .\out\repro_f32_slot_literal.exe   # v0.64.3: exit 3
 ```
+
+---
+
+**Addendum 12 (2026-10-12): v0.64.4 archive re-verification -- C-15 FIXED;
+phantom imports FIXED; C-13/C-14 unchanged; thread gate still red.**
+
+v0.64.4 (tag `df493530`, release run 38256358845, assets sha256-verified)
+installed lane-local on Windows + WSL. Results:
+
+- **XVC-C-15 (m271 `f69b542e`): VERIFIED FIXED.** The repro exits 0 on
+  Windows + WSL (all six shapes narrow; was exit 3); the lane dropped its
+  `as Float32` workaround and `probe_quantization` stays green (23 checks
+  x2; the constant-dim assertion is now the unguarded regression line).
+- **Phantom imports (m266/m267 `0b1c6374`, item
+  `REL-20261010-2124-xvector`): VERIFIED FIXED.** Both controls fail at the
+  import with exactly ONE clear `error[T001]: unresolved import '<path>'`
+  (exit 1, no binary). The hard error immediately caught stale pre-swap
+  imports in this repo (bench harness + repro evidence copies; repaired in
+  `390c7a4`) -- exactly the silent-root-cause class the item asked to
+  expose.
+- **XVC-C-13: still red** (Win `first_byte('A')=167` / WSL `63`; the
+  `unknown type '&Str'` warning unchanged). **XVC-C-14: still red** (clang
+  store mismatch at `xiominput.ll:850` unchanged, Windows + WSL).
+- **Thread gate (`REL-20261011-1627-xvector`): still red** -- the real-spawn
+  probe compiles (m263-m265 fixed the marshal half) but still AVs at the
+  worker entrypoint (Windows `0xC0000005` / WSL SIGSEGV; last mark
+  `M2: spawn returned`); evidence re-filed as `REL-20261012-1402-xvector`.
+- Batteries: ALL GATES GREEN both platforms (suite 177/177 x2 + sbom 42
+  modules unsafe=0 + 41 probes x2 + bench smoke, Windows; WSL suite 177/177
+  x2 + quantization/codec/memory probes x2 + strbytes repro); the 19-probe
+  repro sweep is green except the two known reds (`ctrap` exits 1 = fixed
+  symptom).
+
+Verdicts filed on `release-checks/compiler-compiler-v0.64.3` (XVECTOR
+verdicts block); C-15 and the phantom item are verified + closed on the bus.

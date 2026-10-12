@@ -38,12 +38,16 @@ a float vector slot.
 ```
 
 Pre-fix status (v0.64.3, Windows **and WSL**, identical): exit **3** --
-shapes A, B, E corrupt; controls C, F, G green. Post-fix expectation:
-exit **0**.
+shapes A, B, E corrupt; controls C, F, G green. **Post-fix (v0.64.4,
+m271 `f69b542e`, 2026-10-12): exit 0 on Windows + WSL -- all six shapes
+narrow.**
 
-## Workaround in the lane
+## Workaround in the lane (retired)
 
 Explicit narrow on literal writes (`c[1] = 7.0 as Float32;`) or write from
 a typed variable. The lane's own store paths write computed Float32 values
-(no literal index stores), so `probe_quantization` is the only affected
-call site, fixed with the cast; keep this repro as the regression gate.
+(no literal index stores), so `probe_quantization` was the only affected
+call site and carried the cast until v0.64.4. **The cast was dropped
+2026-10-12** after the fix verified (23 checks green x2; the
+constant-dimension assertion is now the unguarded regression line). Keep
+this repro as the regression gate.

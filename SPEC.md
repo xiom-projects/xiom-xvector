@@ -52,14 +52,15 @@ Implemented: `DistanceMetric` + the three distances + `vector_distance` (metric_
 - `metric_code(m) -> Int` / `metric_from_code(c)` -- stable on-disk codes
   (1 = Cosine, 2 = DotProduct, 3 = Euclidean), shared by the WAL collection
   manifest and the manifest file (D2). `Str` parameters are always by value
-  (`&Str` mislowers on v0.64.2/v0.64.3 -- XVC-C-13).
+  (`&Str` mislowers on v0.64.2..v0.64.4 -- XVC-C-13).
 - `metric_name(m) -> Str`.
 - Reference oracle (M-G1, `tests/probes/probe_reference_oracle.xi`): an
   INDEPENDENT Float64 oracle (its own loops over the raw Float32 storage,
   `math.sqrt` in Float64, no `vector_distance` calls) cross-checks all
   three kernels pairwise (780 seeded pairs each; per-build deviation
   reports -- cosine ~1.7e-7, dot ~9.8e-7, euclidean ~5.1e-7 on v0.64.2
-  (unchanged on v0.64.3),
+  (unchanged on v0.64.3 and v0.64.4; the oracle probe re-ran x2 green in
+  the v0.64.4 archive batteries),
   bit-identical Windows/WSL), the metric axioms (exact symmetry,
   self-distance `l2==0` / `cosine~0` / `dot==-|v|^2`, euclidean triangle
   inequality, cosine bounds `[0,2]` + exact x2 scale invariance,

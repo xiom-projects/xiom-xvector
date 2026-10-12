@@ -3,6 +3,13 @@
 
 
 Status: **FIXED in v0.64.1** (2026-10-08 re-test): Windows 3/3 and WSL 9/9 fresh builds exact, including --sequential.
+
+**Maintenance 2026-10-12 (v0.64.4):** the probe and the six diagnostic
+copies had their imports refreshed to `use xiom.vectors;` -- the pre-swap
+`xiom.vector.types.*` paths died in the 60th-pass package swap, and v0.64.4
+makes unresolved imports hard errors (m266). Re-run on v0.64.4:
+`probe_failing.xi` exits 0.
+
 # XVC-C-05 repro: Float32 ops lowered as integer bit-pattern arithmetic
 
 Compiler: **v0.64.0**. In `probe_failing.xi` (imports `xiom.vector.engine` via
