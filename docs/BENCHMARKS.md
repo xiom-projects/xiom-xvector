@@ -45,6 +45,10 @@ honesty rule from `docs/PRODUCTION-PLAN.md` §5).
 
 ## Baseline (2026-10-11, post-P-a refresh)
 
+> **Archive note (2026-10-12):** the bench smoke (quick) re-ran green on the
+> v0.64.4 lane-local toolchain (77th pass); the full baseline numbers below
+> remain the 2026-10-11 v0.64.3 measurement (no re-baseline this pass).
+
 - **Host:** DESKTOP-0OJEN1F -- AMD Ryzen 9 3950X (16C/32T), 128 GB RAM,
   Windows 11 Pro 26200. WSL2 (kernel 6.6.87.2-microsoft-standard-WSL2) for
   the Linux spot.

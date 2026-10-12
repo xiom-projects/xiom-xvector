@@ -48,19 +48,19 @@ repository stays private; nothing below happens until the owner greenlights.
 
 | Gate | Primitive | Unblocks |
 |---|---|---|
-| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | still stubs at stdlib `5468469` | D5 delta append log, D6 retention, fsync-grade durability (M2 exit) |
-| stdlib `xiom.net` server proof (C-PULSE-02) | pending | binding the HTTP pipeline to a real socket; TLS/proxy deployment |
-| stdlib `mmap` | pending | P5 memory-mapped reads |
-| packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated (2026-10-10; `xiom.vectors` is the lane's own code, byte-exact carve) | the `xiom.vectors` atomic internals swap awaits owner greenlight (`REL-...-xvector-12`); `xiom.ann` porter flow next |
-| compiler archive > v0.64.3 | **v0.64.3 re-pinned 2026-10-10** (lane-local; full re-test done -- 12 repro bundles; XVC-C-13/C-14 remain open, release-check verdicts filed on the bus) | repeat the re-test procedure at the next archive (repro bundles first, then suite + probes + bench, then re-pin) |
+| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | still stubs at stdlib `cd281b7` (re-checked 2026-10-12; wave 113 str-family is fixed + verified) | D5 delta append log, D6 retention, fsync-grade durability (M2 exit) |
+| stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
+| stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
+| packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
+| compiler archive > v0.64.3 | **v0.64.4 re-pinned 2026-10-12** (lane-local both platforms; assets sha256-verified; re-verification set + 19-probe repro sweep + full batteries green; XVC-C-15 + phantom imports verified fixed; XVC-C-13/C-14 + thread gate remain open/red, verdicts on the bus) | repeat the re-test procedure at the next archive (repro bundles first, then suite + probes + bench, then re-pin) |
 
 ## 4. Evidence index
 
 | Claim | Artifact |
 |---|---|
 | Everything above | `SESSION.md` (STATE + green evidence + relay rows) |
-| Gates | `scripts/ci.ps1` / `ci.sh` (suite x2 + sbom + 32 probes x2 + bench smoke) |
-| Correctness | `tests/test_conformance.xi` (171), `tests/probes/*.xi` (32) |
+| Gates | `scripts/ci.ps1` / `ci.sh` (suite x2 + sbom + 41 probes x2 + bench smoke) |
+| Correctness | `tests/test_conformance.xi` (177), `tests/probes/*.xi` (41) |
 | Crash safety | `probe_kill_recovery`, `probe_wal_file`, `probe_manifest_file`, `probe_segment_file` |
 | Fidelity | `probe_reference_oracle`, `probe_hnsw_recall`, `probe_hnsw_codec`, `probe_fuzz_codecs` |
 | Service | `probe_http_service`, `probe_service_limits`, `probe_service_auth`, `probe_http_fuzz`, `probe_metrics` |

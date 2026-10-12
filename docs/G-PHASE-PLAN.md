@@ -8,15 +8,18 @@ reader model, consistency notes"; `docs/PRODUCTION-PLAN.md`). Gates:
 nothing here ships without its slice gates; the runtime thread gate is
 RED today (`docs/repro/xv-thread-abi`).
 
-## 1. Runtime reality (as of 2026-10-11, compiler v0.64.3)
+## 1. Runtime reality (as of 2026-10-12, compiler v0.64.4)
 
 - The engine + service are single-threaded by design (one accept loop,
   one active collection per call, WAL-before-ack).
 - `xiom.thread`: compile-side GREEN, runtime RED -- `spawn[T]` returns,
   then AVs at the worker entrypoint (Windows `0xC0000005` / WSL
-  SIGSEGV; last forensic mark `M2: spawn returned`). Acceptance pinned
-  (`docs/repro/xv-thread-abi`; bus `REL-20261011-1627-xvector`); re-run
-  at the next compiler archive (fn-ABI batch m263-m265 expected).
+  SIGSEGV; last forensic mark `M2: spawn returned`). Re-run on v0.64.4
+  (2026-10-12): **still red, unchanged** -- the fn-value ABI batch
+  (m263-m265) fixed the marshal half but the runtime entrypoint needs its
+  own fix; evidence re-filed (`REL-20261012-1402-xvector`; witness
+  `REL-20261011-1627-xvector`). Acceptance pinned (`docs/repro/xv-thread-abi`);
+  re-run at the next archive.
 - `xiom.sync` (mutex/condvar/channel/barrier/rwlock/atomics) is
   XIOM-implemented; cross-thread usefulness is untestable until the
   thread gate is green (same-thread smokes prove little). The sibling

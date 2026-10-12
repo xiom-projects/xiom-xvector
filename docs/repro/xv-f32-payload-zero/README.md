@@ -3,6 +3,12 @@
 
 
 Status: **FIXED in v0.64.1** (2026-10-08 re-test): tests/probes/probe_floatval_roundtrip.xi green 3/3 Windows + 2/2 WSL (re-verified on v0.64.2).
+
+**Maintenance 2026-10-12 (v0.64.4):** the evidence copies had their imports
+refreshed to `use xiom.vectors;` -- the pre-swap `xiom.vector.types.*` paths
+died in the 60th-pass package swap, and v0.64.4 makes unresolved imports hard
+errors (m266). Re-run on v0.64.4: `evidence_bind_shapes.xi` and
+`evidence_engine_filter_probe.xi` both exit 0.
 # XVC-C-06 repro: Float32 enum payloads read as 0 in some builds
 
 Compiler: **v0.64.0** (Windows; WSL reported the same family via XVC-C-05).

@@ -10,12 +10,11 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-11, 73rd pass (v1.0.0-rc.1 candidate; runnable HTTP
-  server `xvectord` + benchmark adapters; **re-verification era: the
-  stdlib wave-111 `strnlen` fix is verified on the WIP (both repros exit
-  0; 5k fit 87 pts/s), `xiom.http` 0.1.6 re-synced (native 507), full
-  batteries green on the wave-110/WIP pins Windows + WSL**; lane-local
-  toolchain isolation)
+- **As of:** 2026-10-12, 77th pass (v1.0.0-rc.1 candidate; runnable HTTP
+  server `xvectord` + benchmark adapters; **v0.64.4 archive re-verified:
+  XVC-C-15 + phantom imports fixed and verified, C-13/C-14 + the thread
+  gate re-tested still red; full batteries green both platforms**;
+  lane-local toolchain isolation)
 - **Overall:** **82 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1085,6 +1084,24 @@ extraction with the packages lane.
   dim=25; seal/compact triggers). P2's estimate+thresholds half is
   done; budget-cap enforcement stays advisory in the ops docs. No
   scored-phase change (82 %).
+- **2026-10-12 (v0.64.4 archive re-verification, 77th pass):** compiler
+  v0.64.4 released (tag `df493530`, run `38256358845`; assets
+  sha256-verified) and installed lane-local both platforms. Re-verification
+  set: **XVC-C-15 VERIFIED FIXED** (repro exit 0, all six shapes; the
+  `as Float32` workaround dropped from `probe_quantization` -- 23 checks
+  green x2); **phantom imports VERIFIED FIXED** (each control gives exactly
+  one clear `unresolved import` error, exit 1 -- the new hard error caught
+  stale pre-swap imports in the bench harness + repro evidence copies,
+  repaired in `390c7a4`); **C-13** (Win 167 / WSL 63) and **C-14**
+  (clang/opt mismatch at `xiominput.ll:850`) re-tested unchanged;
+  **thread gate still AVs** (0xC0000005 / SIGSEGV; runtime-side fix
+  pending). 19-probe repro sweep + full batteries ALL GATES GREEN both
+  platforms (Windows suite 177/177 x2 + sbom 42 modules unsafe=0 + 41
+  probes x2 + bench smoke; WSL suite 177/177 x2 + quantization/codec/
+  memory probes x2 + strbytes repro). Bus: `-1134`/`-2124` verified +
+  closed; thread-gate evidence re-filed (`REL-20261012-1402-xvector`).
+  G stays 25 (runtime gate still red, blocker sharpened); no score
+  change (82 %).
 
 ## Update rule
 

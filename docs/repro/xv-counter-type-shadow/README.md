@@ -1,8 +1,10 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-Status: **OPEN on compiler v0.64.2** (found 2026-10-10, xiom.metrics
-adoption slice; relayed via `docs/RELAY-COMPILER.md` Addendum 10).
+Status: **OPEN -- re-tested unchanged on v0.64.3 and v0.64.4** (2026-10-12:
+clang/opt store mismatch at `xiominput.ll:850`, Windows + WSL) (found
+2026-10-10, xiom.metrics adoption slice; relayed via
+`docs/RELAY-COMPILER.md` Addendum 10).
 
 # XVC-C-14 repro: two same-named struct types across modules -- one layout takes over the other
 

@@ -1,7 +1,7 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-# xiom.thread real-spawn gate -- compiles green, AVs at the runtime entrypoint (v0.64.3)
+# xiom.thread real-spawn gate -- compiles green, AVs at the runtime entrypoint (v0.64.3 + v0.64.4 re-run)
 
 Found 2026-10-11 (G-phase groundwork pass) by the xvector lane while
 probing the threading primitives for the concurrency phase.
@@ -30,6 +30,15 @@ the G phase.
 - The pure-math variant (`probe.xi`, no marks) crashes identically
   (stdout buffering hides it; the marks variant proves the stages).
 
+## Re-run on v0.64.4 (2026-10-12)
+
+Unchanged: the probe builds green on Windows + WSL, and the run still AVs
+at the same point -- Windows exit `-1073741819` (0xC0000005), WSL SIGSEGV;
+the marks variant's last surviving mark is still `M2: spawn returned`. The
+fn-value ABI batch (m263-m265) fixed the marshal half (verified via the
+bindings probes) but the runtime entrypoint needs its own fix. Evidence
+re-filed as `REL-20261012-1402-xvector`; the G phase stays gated.
+
 ## Acceptance (exit 0)
 
 - 3 workers return exact distinct sums through `JoinHandle.join`;
@@ -39,11 +48,11 @@ the G phase.
 
 ## Re-run trigger
 
-The next compiler archive install. The in-flight fn-value ABI batch
-(m263-m265 / `fde5548e`, "fn-typed values survive every marshal (f as
-Int = address, re-pass to extern...)") is the expected unblocker for the
-marshal half; the runtime thread entrypoint may need a runtime-side fix
-in the same release. On green: promote `probe.xi` into `tests/probes/` +
+The next compiler archive install (v0.64.4 re-run 2026-10-12: still red --
+see above; the runtime entrypoint needs a runtime-side fix). The in-flight
+fn-value ABI batch (m263-m265 / `fde5548e`, "fn-typed values survive every
+marshal (f as Int = address, re-pass to extern...)") covered the marshal
+half; on green: promote `probe.xi` into `tests/probes/` +
 both batteries and flip the lane's G-phase plan from gated to
 actionable (it also gates the stdlib's `xiom.thread.spawn` simulation
 flip).
