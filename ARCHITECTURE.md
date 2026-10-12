@@ -124,6 +124,7 @@ src/
 |   |-- wal.xi            WalOpKind/WalRecord/WalWriter + append/resume  [EXTRACTED]
 |   |-- recovery.xi       recover_state/store + checkpoint compaction    [EXTRACTED]
 |   |-- wal_file.xi       whole-file persist/load (torn-tail safe)       [NEW 2026-10-09]
+|   |-- wal_segment.xi    D5 delta segment: codec v1 append + fsync-on-ack + merge [NEW 2026-10-12]
 |   |-- manifest_file.xi  collection registry persist/load (temp+rename) [NEW 2026-10-09]
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |

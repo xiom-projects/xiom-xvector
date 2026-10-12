@@ -10,12 +10,12 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-12, 77th pass (v1.0.0-rc.1 candidate; runnable HTTP
-  server `xvectord` + benchmark adapters; **v0.64.4 archive re-verified:
-  XVC-C-15 + phantom imports fixed and verified, C-13/C-14 + the thread
-  gate re-tested still red; full batteries green both platforms**;
-  lane-local toolchain isolation)
-- **Overall:** **82 %** (weighted; see method)
+- **As of:** 2026-10-12, 78th pass (v1.0.0-rc.1 candidate; runnable HTTP
+  server `xvectord` + benchmark adapters; **D5 durability delta landed:
+  fsync-on-ack segment + file-level kill matrix 6/6 both platforms +
+  durable server home; v0.64.4 archive re-verified**; lane-local toolchain
+  isolation)
+- **Overall:** **85 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -32,7 +32,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 74 | buildable | stdlib fsync/append gap, delta log, multi-segment read path, file-level kill test, retention |
+| D | Persistence & durability | 20 | 88 | release-grade | multi-segment read path, WAL retention/pruning (D6), power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
@@ -40,8 +40,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x74 + 0.08x100 +
-0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **82.12 -> 82 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x88 + 0.08x100 +
+0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **84.92 -> 85 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -105,7 +105,7 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 73 %
+### D. Persistence & durability -- 88 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
@@ -135,11 +135,24 @@ whole-file atomic persist; torn-tail-safe complete-record prefix load;
 lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/
 `restore_segment` with cid/dim/metric validation and WAL re-checkpoint
 via shared `engine_checkpoint_from`; gate `probe_segment_file`,
-38 checks).
-Remaining (in order): stdlib fsync/fd-write/append-bytes (blocker doc:
-`docs/STDLIB-WISHLIST-XVECTOR.md`), delta append log, multi-segment
-collection read path, file-level crash-kill test, WAL
-retention/pruning policy.
+38 checks), and **the D5 durability delta** (`durability.wal_segment`:
+append-only delta segment in `xiom.wal` codec v1 framing -- byte-linear
+renderer, tolerant line replay with LSN-gap stop, newline heal-on-open,
+checkpoint-deduped merge, rotation; `engine_enable_durable` /
+`engine_wal_commit` fsync BEFORE every ack (WAL-before-ack with a real
+fd path); `open_durable` merges checkpoint + segment; the whole-file
+checkpoint stays the compaction output; gate `probe_wal_segment`,
+38 checks), and **the file-level kill matrix** (child writer with an
+fsynced ack ledger, killed mid-stream; every acknowledged record verified
+present after recovery -- 6/6 iterations Windows + 6/6 WSL via
+`scripts/kill_matrix.ps1|.sh`), and the **durable server home**
+(`xvectord` with `XVECTORD_WAL`: fsync-on-ack serving, checkpoint +
+segment rotation on clean quit; restart-verified: 400 points, recall
+1.000).
+Remaining (in order): multi-segment collection read path (P2
+thresholds), WAL retention/pruning policy (D6; truncate-gated), snapshot/
+export-import (D6), and power-loss fault injection (OS-level; process-kill
+durability is proven today, `OPERATIONS.md` states the boundary).
 
 ### E. Metadata & filtering -- 100 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
@@ -1102,6 +1115,20 @@ extraction with the packages lane.
   closed; thread-gate evidence re-filed (`REL-20261012-1402-xvector`).
   G stays 25 (runtime gate still red, blocker sharpened); no score
   change (82 %).
+- **2026-10-12 night (D5 durability delta, 78th pass):** the stdlib
+  wave-115 durable-IO drop unblocked D5, and it landed the same night:
+  append-only delta segment (`durability.wal_segment`, codec v1 framing,
+  byte-linear renderer, tolerant replay with LSN-gap stop, heal-on-open,
+  rotation), engine fsync-on-ack (`enable_durable` / `wal_commit` /
+  `open_durable`; batch ops commit once per call), the file-level kill
+  matrix (child writer + fsynced ack ledger, killed mid-stream:
+  **6/6 iterations Windows + 6/6 WSL, zero acknowledged records lost**),
+  and the durable server home (`XVECTORD_WAL`: fsync-on-ack serving,
+  checkpoint + rotate on quit; restart-verified 400 points, recall
+  1.000). Gates: `probe_wal_segment` 38 checks + kill matrix, both wired
+  into the CI batteries (42 probes now). **D 74 -> 88; overall 82 % ->
+  85 %.** Remaining in D: multi-segment read path, retention/snapshots
+  (D6), power-loss fault injection.
 
 ## Update rule
 

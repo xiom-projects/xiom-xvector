@@ -4,24 +4,27 @@
 # Operations runbook -- xiom-xvector (M-O / O3)
 
 How to run, monitor, back up, and recover the database. Commands are the
-lane's scripts; all paths are relative to the repo root. The HTTP surface
-is the in-repo byte pipeline (`api.http_service`); binding a real socket is
-gated on the stdlib `xiom.net` proof (C-PULSE-02), so "service mode" below
-describes the request/response contract the adapter will carry.
+lane's scripts; all paths are relative to the repo root. The runnable
+server (`out/xvectord.exe`, `api.httpd`) serves HTTP/1.1 on the stdlib
+`xiom.net` socket layer and carries the `api.http_service` byte pipeline;
+the embedded surface is `xiom.vector.engine`.
 
 ## 1. Start / stop
 
 | Mode | How | Notes |
 |---|---|---|
 | Embedded | link `xiom.vector.engine`; `create_collection` -> `upsert`/`search` | trusted caller; auth off |
-| Service (byte pipeline) | `http_service_handle_state(eng, raw, state)` per request | state = `ServiceState` (config/auth/rate/metrics/log) |
-| Service (socket, pending) | stdlib `xiom.net` adapter feeding the same handle | C-PULSE-02 gated |
+| Embedded + durable | `open_durable(ckpt, ckpt+".seg", manifest, dim, metric)` | fsync-on-ack; checkpoint + rotate on shutdown |
+| Service (socket) | `out/xvectord.exe [--bind 127.0.0.1] [--port 7707]` | HTTP/1.1; auth/limits/metrics; quit: header `X-Xvector-Quit: 1` |
+| Service + durable | `XVECTORD_WAL=home/xvector.ckpt [XVECTORD_MANIFEST=home/xvector.manifest] out/xvectord.exe` | every mutating request fsyncs before its response; clean quit persists the checkpoint and rotates the segment |
 
-Shutdown: **always** call `http_service_shutdown(eng, wal_path)` (embedded)
+Shutdown (embedded): **always** call `http_service_shutdown(eng, wal_path)`
 for a drain + whole-file WAL checkpoint; it returns `false` on an
-unwritable path (treat as an alert, keep the old checkpoint). A hard kill
-is safe for data at the WAL-model level (prefix recovery), but the fsync
-gap means the last writes can be lost on machine crash (see §5).
+unwritable path (treat as an alert, keep the old checkpoint). In durable
+mode a hard kill is safe for every **acknowledged** write: records are
+appended to the delta segment and fsynced before the ack (WAL-before-ack),
+verified by the file-level kill matrix (`scripts/kill_matrix.ps1|.sh`).
+The boundary that remains is power-loss fault injection (see §5).
 
 ## 2. Configuration reference
 
@@ -80,19 +83,27 @@ record; without it, recovery falls back to the in-WAL manifests.
 
 | Domain | Behavior today | Mitigation / status |
 |---|---|---|
-| Process kill (no drain) | WAL-model prefix recovery; acknowledged-but-unpersisted writes may be lost | run the drain+checkpoint on SIGTERM in the adapter |
-| Machine crash / power loss | **fsync gap**: `wal_persist` is atomic but not fsync'd (stdlib stub) | documented; D5/D6 gated on the stdlib fsync chain |
-| Torn checkpoint / segment / manifest | prefix load keeps all complete records; malformed tail ignored | `probe_wal_file`, `probe_manifest_file`, `probe_segment_file` |
+| Process kill (no drain) | **durable mode: every acknowledged write survives** (fsync-on-ack delta segment; kill matrix 6/6 Windows + 6/6 WSL); in-memory mode: prefix recovery only | set `XVECTORD_WAL` / `open_durable`; `scripts/kill_matrix.ps1|.sh` |
+| Machine crash / power loss | **fsync-on-ack flushes acknowledged bytes to stable storage**, but power-loss safety is not fault-injected in CI (process-kill durability is what the matrix proves) | OS-level fault injection is future work; `docs/PRODUCTION-READINESS.md` D-phase states the boundary |
+| Torn checkpoint / segment / manifest | prefix/line-safe load keeps all complete records; malformed lines skipped (segment), torn tails healed | `probe_wal_file`, `probe_manifest_file`, `probe_segment_file`, `probe_wal_segment` |
 | Deep-nested JSON body | rejected 400 by `json_depth_ok` (64) before the parser | stdlib `json_parse` depth cap filed in the wishlist |
 | Oversized / abusive requests | 413/400/405 by limits; fuzz gate green | `probe_service_limits`, `probe_http_fuzz` |
 | Brute force / key guessing | 401/403 with constant-time compare; token bucket 429 | `probe_service_auth` |
 | Disk full / unwritable path | persist returns false; old file intact | alert on `false`; never leave a rebuilt binary from a red build |
-| Compiler/stdlib regression | full batteries (suite x2 + sbom + 31 probes x2 + bench smoke) on Windows + WSL | `scripts/ci.ps1` / `ci.sh`; red build = rejection |
+| Compiler/stdlib regression | full batteries (suite x2 + sbom + 42 probes x2 + bench smoke + kill matrix) on Windows + WSL | `scripts/ci.ps1` / `ci.sh`; red build = rejection |
 
 ## 6. Upgrade / migration notes
 
-- On-disk format versions: WAL magic `xvector-wal 1` (ManifestUpdate v1/v2/v3
-  families), manifest `xvector-manifest 1`, segment `xvector-segment 1`.
+- On-disk format versions: checkpoint/WAL magic `xvector-wal 1`
+  (ManifestUpdate v1/v2/v3 families), manifest `xvector-manifest 1`,
+  sealed segment `xvector-segment 1`, and the **D5 delta segment**
+  (`<ckpt>.seg`, `xiom.wal` codec v1 lines
+  `lsn|op|key|value|timestamp[|p0,p1,...]`; append-only, fsync-on-ack,
+  line-tolerant replay with LSN-gap stop, heal-on-open, checkpoint-deduped
+  merge; rotated empty after every clean checkpoint). The
+  checkpoint file remains a `xvector-wal 1` whole-file compaction output,
+  so pre-D5 readers keep working; a delta segment is ignored by pre-D5
+  readers (old process = old behavior, no silent misread).
   Loaders accept older records (v1 WAL manifests migrate to the `default`
   collection) and reject unknown headers as invalid rather than guessing.
 - Compiler/toolchain pins live in `SESSION.md` + `out/sbom.json`; re-run
@@ -105,7 +116,7 @@ record; without it, recovery falls back to the in-WAL manifests.
 
 | Symptom | Check |
 |---|---|
-| Reopen shows fewer points than expected | last writes not drained? check `xvector_lsn` before shutdown; `wal_load` returns a prefix by design |
+| Reopen shows fewer points than expected | durable mode: the `.seg` beside your checkpoint missing/stale? recovery = checkpoint + segment merge; in-memory mode: last writes not drained -- check `xvector_lsn` before shutdown (`wal_load` returns a prefix by design) |
 | 401 on every call | `XVECTOR_API_KEYS` set? key scope vs route (read vs write vs admin) |
 | 413/400 on valid-looking payloads | `max_request_bytes` / `max_batch` / `max_top_k` / `max_dim` env overrides |
 | 429 bursts | `rate_limiter` capacity/refill or a misbehaving client; counters show `xvector_rate_limited` |

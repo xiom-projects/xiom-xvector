@@ -55,6 +55,7 @@ $probes = @(
   "probe_http_server",
   "probe_json_fast",
   "probe_quantization",
+  "probe_wal_segment",
   "probe_batch_ops"
 )
 
@@ -84,9 +85,16 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "ci: BENCH FAILED (see out/ci_bench_smoke.log)"
 }
 
+Write-Host "ci: kill matrix (durability delta, 4 iterations)"
+& "$PSScriptRoot/kill_matrix.ps1" -Iters 4 *> "out/ci_kill_matrix.log"
+if ($LASTEXITCODE -ne 0) {
+  $failures = $failures + 1
+  Write-Host "ci: KILL MATRIX FAILED (see out/ci_kill_matrix.log)"
+}
+
 if ($failures -ne 0) {
   Write-Host "ci: FAILED ($failures gate(s) red)"
   exit 1
 }
-Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + sbom + $($probes.Count) probes x$ProbeRuns + bench smoke)"
+Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + sbom + $($probes.Count) probes x$ProbeRuns + bench smoke + kill matrix)"
 exit 0

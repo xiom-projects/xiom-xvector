@@ -52,6 +52,7 @@ probe_package_vectors
 probe_http_server
 probe_json_fast
 probe_quantization
+probe_wal_segment
 probe_batch_ops
 )
 
@@ -83,9 +84,15 @@ if ! bash scripts/bench.sh quick > "out/ci_bench_smoke.log" 2>&1; then
   echo "ci: BENCH FAILED (see out/ci_bench_smoke.log)"
 fi
 
+echo "ci: kill matrix (durability delta, 4 iterations)"
+if ! bash scripts/kill_matrix.sh 4 > "out/ci_kill_matrix.log" 2>&1; then
+  failures=$((failures + 1))
+  echo "ci: KILL MATRIX FAILED (see out/ci_kill_matrix.log)"
+fi
+
 if [ "$failures" -ne 0 ]; then
   echo "ci: FAILED ($failures gate(s) red)"
   exit 1
 fi
-echo "ci: ALL GATES GREEN (suite x2 + sbom + ${#probes[@]} probes x2 + bench smoke)"
+echo "ci: ALL GATES GREEN (suite x2 + sbom + ${#probes[@]} probes x2 + bench smoke + kill matrix)"
 exit 0

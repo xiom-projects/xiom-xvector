@@ -99,8 +99,8 @@ fan-out + merge.
 | Payloads | typed + `with_payload` hydration + updates/deletes | done |
 | Batch / pagination | batch upsert/search, offset/after paging | Q2/Q3 |
 | Delete-by-filter | selective delete with WAL + index upkeep | Q4 |
-| Durability | WAL + atomic checkpoints + manifest + segments; fsync delta when stdlib lands | M-D |
-| Crash tests | automated kill-matrix (prefix-exact + fsync path) | M-D5 |
+| Durability | WAL + atomic checkpoints + manifest + segments; **fsync-on-ack delta segment (D5, done 2026-10-12)** | M-D | 
+| Crash tests | **file-level kill matrix (D5 done: 6/6 Windows + 6/6 WSL)** + prefix-exact model recovery (`probe_kill_recovery`) | M-D5 |
 | Server | HTTP JSON + auth + limits + graceful shutdown | M-S |
 | Observability | metrics + health + structured logs | M-O |
 | Backup | snapshot/export-import | M-D6 |
@@ -158,10 +158,20 @@ Goal: a kill never costs an acknowledged write on the available path.
   `seal_segment`/`restore_segment` (WAL re-checkpoint after restore). Gate
   `probe_segment_file` (38 checks). Multi-segment read path + thresholds
   stay with D5/D6 (P2 owns tuning).
-- **D5 WAL delta + fsync + file-level kill test** *(gated: stdlib fsync /
-  append-bytes)* -- append-only delta with `fsync` on commit; harness that
-  spawns a child writer, kills it mid-append, and proves recovery has every
-  acknowledged record; runs on Windows + WSL.
+- **D5 WAL delta + fsync + file-level kill test -- DONE 2026-10-12** --
+  append-only delta segment (`durability.wal_segment`, `xiom.wal` codec v1
+  framing, fsync-on-ack through the stdlib wave-115 primitives) + engine
+  `enable_durable`/`wal_commit`/`open_durable`; the whole-file checkpoint
+  stays the compaction output with segment rotation on clean shutdown. The
+  sibling kill harness (`tests/harness/kill_writer|kill_check` +
+  `scripts/kill_matrix.ps1|.sh`) kills a child writer mid-stream and proves
+  every acknowledged record survives -- **6/6 iterations on Windows + 6/6 on
+  WSL**; the live server flow (`XVECTORD_WAL`, checkpoint + rotate on quit)
+  restart-verified (400 pts, recall 1.000). Gates: `probe_wal_segment`
+  (38 checks) wired into both CI batteries. **D6 (retention/snapshots)
+  follows; truncate-based retention stays stdlib-gated (`-5` acked).**
+  Honesty: this is process-kill durability (fsynced bytes survive a killed
+  process); power-loss safety still needs OS-level fault injection.
 - **D6 retention + snapshots** -- checkpoint policy (compact + swap;
   truncate when stdlib lands), export/import snapshot format, restore drill.
   Probe `probe_snapshot`.
