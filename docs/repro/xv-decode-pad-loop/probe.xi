@@ -5,8 +5,7 @@
 module probe_decode_pad_loop
 
 use xiom.vector.index.hnsw;
-use xiom.vector.types.dense_vector;
-use xiom.vector.types.metric;
+use xiom.vectors;
 use xiom.io;
 
 fn main() -> Int {

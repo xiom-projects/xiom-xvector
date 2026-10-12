@@ -234,9 +234,10 @@ fn main() -> Int {
       c.push((d as Float32) * 0.5);
       d = d + 1;
     }
-    c[1] = 7.0 as Float32; // XVC-C-15 workaround: literal stores into
-    // Vec[Float32] slots skip narrowing (raw low bits); an explicit
-    // `as Float32` (or a variable) stores correctly.
+    c[1] = 7.0; // C-15 regression line: literal stores into Vec[Float32]
+    // slots must narrow (fixed on compiler v0.64.4, m271; repro
+    // docs/repro/xv-f32-slot-literal-write). The constant-dim assert
+    // below fails if this stores raw bits again.
     const_vs.push(vec_from_coords(&c));
     i = i + 1;
   }
