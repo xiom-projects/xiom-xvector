@@ -178,6 +178,22 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
         }
         eng = open_durable(wal_path, seg_path, manifest, 1, DistanceMetric.Euclidean);
         io.println("xvectord: durable home " + wal_path + " (segment " + seg_path + ")");
+        // Auto-checkpoint policy (M-D6): a compact+swap every N commits
+        // bounds recovery time and the checkpoint size. 0 / absent = off
+        // (clean quit still swaps).
+        var every: Int = 0;
+        let ve = env.var_opt("XVECTORD_CHECKPOINT_EVERY");
+        match ve {
+          Some(v) => {
+            var e2: Int = 0;
+            if parse_port(v, &mut e2) { every = e2; }
+          }
+          None => {}
+        }
+        if every > 0 {
+          let _pol = engine_set_checkpoint_policy(&mut eng, every);
+          io.println("xvectord: auto-checkpoint every " + convert.int_to_string(every) + " commits");
+        }
       }
     }
     None => {}
@@ -223,15 +239,23 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
   }
   socket.socket_close(fd);
   if wal_path.len() > 0 {
-    // Clean shutdown: whole-file checkpoint (compaction output) + segment
-    // rotation. A crash before this point loses nothing acknowledged: the
-    // segment carries every fsynced record.
-    let ck = http_service_shutdown(&eng, wal_path);
-    let _rot = segment_reset(seg_path);
-    if ck {
-      io.println("xvectord: checkpoint persisted; segment rotated");
-    } else {
-      io.println("xvectord: WARNING checkpoint persist failed (segment intact)");
+    // Clean shutdown (M-D6): a full compact+swap (bounded checkpoint,
+    // crash-safe ordering, segment rotation). On failure fall back to the
+    // plain whole-file persist; the delta segment stays intact either way.
+    match engine_checkpoint_swap(&mut eng) {
+      Ok(lsn) => {
+        io.println("xvectord: checkpoint swap committed (frontier "
+          + convert.int_to_string(lsn) + "); segment rotated");
+      }
+      Err(_) => {
+        let ck = http_service_shutdown(&eng, wal_path);
+        let _rot = segment_reset(seg_path);
+        if ck {
+          io.println("xvectord: checkpoint persisted (swap unavailable); segment rotated");
+        } else {
+          io.println("xvectord: WARNING checkpoint persist failed (segment intact)");
+        }
+      }
     }
     io.flush_stdout();
   }
