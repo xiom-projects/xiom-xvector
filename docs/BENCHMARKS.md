@@ -168,6 +168,29 @@ re-pinned to a linearity bound, 20x-ratio + 3 s net; Windows
 43/87/174/379 ms); batteries ALL GREEN on the committed pin; bus
 `-1453`/`-1543` verified + closed.
 
+## External harness triage (2026-10-13)
+
+- `E:\repos\db-benchmarks` (**AGPL-3.0**; already cloned in the study area,
+  91.5 MB): a full-text/OLAP database benchmark framework (PHP 8 + Docker +
+  cgroups-v2 + dstat/sensors; installed engines: ClickHouse, Elasticsearch,
+  Manticore, Meilisearch, MySQL, Percona, Postgres, Quickwit, Typesense).
+  Its only vector suite (`tests/hn_small_vector`: 1.1M HN comment
+  embeddings, 256-dim) is **Manticore-specific** -- the queries are
+  Manticore SQL `knn(comment_embedding, k, '<text>'|'<vector>')` with a
+  text-embedding path, and the framework is built around dedicated Linux
+  cold-run pipelines (OS cache purges, per-query restarts).
+  **Not adopted for xvector:** AGPL rules out code adaptation into this
+  repo, vector coverage is single-engine, and the infra target is a
+  dedicated Linux box. Study-only; do not copy code from it.
+- The vector-relevant harnesses the lane runs are
+  `bench/adapters/ann_benchmarks` (recall/QPS curves, still the standard
+  for ANN comparisons) and `bench/adapters/vectordbbench` (Zilliz's
+  cross-DB leaderboard client; its own tooling ships clients for the
+  market engines). The honest head-to-head path: run the SAME generated
+  dataset + queries through VectorDBBench against a competitor, or add a
+  competitor client beside our adapter for a direct two-engine comparison
+  on one machine.
+
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.
