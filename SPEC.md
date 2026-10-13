@@ -327,6 +327,70 @@ crash harness: `tests/harness/kill_writer|kill_check` +
   metric) -> Result[VectorEngine, Str]` (meta-gated `engine_open_durable`).
 - Gate: `probe_snapshot` (27 checks; measured 4000-point reload: 10 ms).
 
+## Multi-segment collection read path (M-D7, design 2026-10-13)
+
+Today `seal_segment`/`restore_segment` are copy-out/import snapshots: a
+sealed file is written from the active collection (which is left untouched)
+and restore imports a file back as active state; sealed files are never
+queried. The multi-segment read path makes sealed segments first-class
+query sources **additively** (the existing APIs and their probes keep their
+exact semantics):
+
+- **Registry**: each collection entry carries `sealed: Vec[SealedEntry]`
+  (`seg_id`, `path`, `points`, `head_lsn`, `has_sq`) plus `tombstones:
+  Vec[Int]` (ids deleted that live only in sealed files). Both are mirrored
+  in the engine's top-level active fields and copied by
+  `sync_active`/`load_active`.
+- **Roll** (`engine_roll_segment(eng, path)`): write the active collection
+  as a sealed file (same codec; SQ section when armed), register the entry,
+  KEEP the just-written `SealedSegment` in the runtime cache
+  (`sealed_cache: Vec[{cid, seg_id, ss}]` -- no file re-read on queries),
+  clear the active store/graph/payloads, append a `SegmentSeal` WAL record
+  (`value = cid`, words = sealed-entry codec) and commit (fsync-before-ack
+  in durable mode). Roll moves data; `seal_segment` remains copy-out.
+- **WAL words**: `sealed_words(seg_id, points, head_lsn, has_sq, path)`
+  = `[1, seg_id, points, head_lsn, has_sq, path_len, byte...]`. Two
+  records carry them: `SegmentSeal` (original roll: register + CLEAR the
+  cid's active state on replay -- replay-order reproduction) and
+  `SnapshotMarker` (checkpoint attach: register only; `checkpoint_from`
+  emits active inserts, tombstone deletes, `ManifestUpdate`s, then attach
+  markers per sealed entry; `words[0] = 2` marks a compaction REPLACE --
+  drop the cid's existing entries, attach the new one).
+- **Tombstones**: `engine_delete` on an id absent from the active store
+  records a tombstone (and the usual Delete WAL record); replay adds
+  tombstones for deletes that miss the active store (unconditionally --
+  harmless for absent ids, order-independent). `checkpoint_from` re-emits
+  Delete records for tombstones so they survive compaction.
+- **Union rules** (every query variant): candidates = active store/graph
+  + every cached sealed segment of the active cid. A candidate whose id is
+  in the active store wins (active is newer); a candidate in tombstones is
+  dropped; otherwise the sealed copy (vectors + payloads) is used. Merge:
+  distance ascending, id ascending tie-break.
+- **Knn exactness (Flat)**: each source contributes `k + tombstones.len()`
+  candidates (clamped to source size): at most `tombstones.len()` prefix
+  entries can be dead, so the live prefix always contains >= k -- the
+  global top-k is exact. HNSW sources contribute via their own ef-search
+  (recall semantics unchanged). `search`, `search_filtered`,
+  `search_request` (and therefore batch/many) route through the union;
+  `range`/`page`/`after` union over all live candidates (O(active+sealed)
+  per call, same scan class as today). Two-tier SQ rescore for sealed
+  scans is deferred to Q-a2b (raw vectors are used today).
+- **Recovery**: after replay, every registry entry's file is loaded into
+  the cache (missing/unreadable file -> entry skipped, `sealed_missing`
+  counter++); a restart therefore keeps every sealed source queryable.
+  `open_durable` inherits this through the shared recovery path.
+- **Compaction** (`engine_compact_sealed(eng, path)`): roll the active
+  remainder, then merge every sealed entry of the cid (tombstones applied,
+  active-wins) into ONE new segment at `path`; registry swaps to the new
+  entry (WAL `SnapshotMarker` replace), tombstones clear, old files are
+  left on disk (caller cleans). Gate: bit-exact equivalence with the
+  pre-compaction union.
+- **Policy (P2 tuning; opt-in)**: `engine_set_seal_policy(eng, every,
+  dir)` + `XVECTORD_SEAL_EVERY`/`XVECTORD_SEAL_DIR` (dir must exist; off
+  by default). After each commit reaching `every` active points the engine
+  rolls. Honesty: no mmap -- sealed data is a full in-RAM copy once
+  loaded; the multi-segment probe records cold-roll vs warm-query cost.
+
 ## `xiom.vector.payload` engine integration
 `engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`
 (WAL-before-ack: the encoded record is appended before the store is touched;
