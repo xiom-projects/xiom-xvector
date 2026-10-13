@@ -53,6 +53,9 @@ pub type VectorEngine = {
   wal_seg_path: Str;
   wal_seg_frontier: Int;
   wal_seg_needs_heal: Bool;
+  wal_ckpt_path: Str;
+  ckpt_every: Int;
+  commits_since_ckpt: Int;
   upserts: Counter;
   deletes: Counter;
   next_collection: Int;
@@ -96,6 +99,9 @@ pub fn engine_new() -> VectorEngine {
     wal_seg_path: "",
     wal_seg_frontier: 0,
     wal_seg_needs_heal: false,
+    wal_ckpt_path: "",
+    ckpt_every: 0,
+    commits_since_ckpt: 0,
     // Stat counters ride the xiom.metrics package (adoption 2026-10-10;
     // see docs/XIOM-METRICS-ADOPTION.md). The shim Counter was retired so
     // the program carries a single Counter type (XVC-C-14 layout shadow).
@@ -1295,6 +1301,16 @@ pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
     Ok(_n) => {
       eng.wal_seg_frontier = cur;
       let _f = wal_writer_flush(&mut eng.wal);
+      eng.commits_since_ckpt = eng.commits_since_ckpt + 1;
+      if eng.ckpt_every > 0 && eng.commits_since_ckpt >= eng.ckpt_every {
+        // Checkpoint policy (M-D6): the write is already durable, so a swap
+        // failure never fails the ack -- the counter stays above the
+        // threshold and the next commit retries the swap.
+        match engine_checkpoint_swap(eng) {
+          Ok(_) => {}
+          Err(_) => {}
+        }
+      }
       return Ok(true);
     }
     Err(e) => {
@@ -1302,6 +1318,61 @@ pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
       return Err(CoreError.IOFailure(e));
     }
   }
+}
+
+// Set the checkpoint path used by engine_checkpoint_swap (embedders with a
+// durable segment but no engine_open_durable came path).
+pub fn engine_set_checkpoint_path(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError] {
+  if path.len() == 0 { return Err(CoreError.InvalidInput("empty checkpoint path")); }
+  eng.wal_ckpt_path = path;
+  return Ok(true);
+}
+
+// Auto-checkpoint policy: run a checkpoint swap every `every` successful
+// commits (0 disables). Requires durable mode + a checkpoint path.
+pub fn engine_set_checkpoint_policy(eng: &mut VectorEngine, every: Int) -> Result[Bool, CoreError] {
+  if every < 0 { return Err(CoreError.InvalidInput("negative checkpoint interval")); }
+  eng.ckpt_every = every;
+  return Ok(true);
+}
+
+pub fn engine_checkpoint_countdown(eng: &VectorEngine) -> Int {
+  return eng.commits_since_ckpt;
+}
+
+// Compact the in-memory log to the live state (no persistence): used by
+// snapshots on non-durable engines and by callers that manage persistence
+// themselves. Rebases LSNs to the current next_lsn; returns the rebased
+// current LSN.
+pub fn engine_compact_log(eng: &mut VectorEngine) -> Int {
+  engine_checkpoint_from(eng, eng.wal.next_lsn);
+  return wal_writer_current_lsn(&eng.wal);
+}
+
+// Compact + durable swap (M-D6): rebase the in-memory log to the live state
+// (engine_checkpoint_from), swap a crash-safe checkpoint
+// (wal_persist_sync: write tmp -> fsync tmp -> rename -> dir fsync), and
+// ONLY THEN reset the delta segment and advance the durable frontier. On any
+// failure the segment keeps every acknowledged record (its merge dedupes
+// against the checkpoint, so retries are safe). Returns the new durable
+// frontier (LSN).
+pub fn engine_checkpoint_swap(eng: &mut VectorEngine) -> Result[Int, CoreError] {
+  if eng.wal_seg_path.len() == 0 || eng.wal_ckpt_path.len() == 0 {
+    return Err(CoreError.InvalidInput("durable mode is not enabled"));
+  }
+  engine_checkpoint_from(eng, eng.wal.next_lsn);
+  var cur = wal_writer_current_lsn(&eng.wal);
+  if !wal_persist_sync(&eng.wal, eng.wal_ckpt_path) {
+    return Err(CoreError.IOFailure("checkpoint persist failed"));
+  }
+  if !segment_reset(eng.wal_seg_path) {
+    return Err(CoreError.IOFailure("segment reset failed"));
+  }
+  eng.wal_seg_frontier = cur;
+  eng.wal_seg_needs_heal = false;
+  eng.commits_since_ckpt = 0;
+  let _f = wal_writer_flush(&mut eng.wal);
+  return Ok(cur);
 }
 
 // ---- Multi-collection recovery (D3) ----
@@ -1578,5 +1649,6 @@ pub fn engine_open_durable(ckpt_path: Str, seg_path: Str, manifest_path: Str, di
     Ok(_) => {}
     Err(_) => {}
   }
+  eng.wal_ckpt_path = ckpt_path;
   return eng;
 }

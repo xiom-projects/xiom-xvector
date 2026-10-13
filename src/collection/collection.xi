@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 module xiom.vector.collection.collection
+// LEGACY local type wrappers (pre-`xiom.vectors` swap). DO NOT IMPORT from
+// new code: this module re-declares same-named types (AnnParams,
+// AnnIndexKind, CollectionId, SegmentId) that collide with the canonical
+// ones (xiom.vector.index.ann_index / xiom.vector.core.shim /
+// the xiom.vectors package) -- the XVC-C-14 short-name layout-shadow trap.
+// Importing anything under the xiom.vector.collection prefix was observed
+// to break engine.core type resolution on v0.64.4 (probe_snapshot build,
+// 2026-10-13). Kept for reference until the porter flow retires it.
 // Local type wrappers -- mirrors xiom.core.ids and xiom.vector.index.ann_index.
 pub type CollectionId = { value: Int; }
 pub type SegmentId = { value: Int; }

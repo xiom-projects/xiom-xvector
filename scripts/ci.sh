@@ -53,6 +53,7 @@ probe_http_server
 probe_json_fast
 probe_quantization
 probe_wal_segment
+probe_snapshot
 probe_batch_ops
 )
 

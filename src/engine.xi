@@ -156,6 +156,31 @@ pub fn open_durable(ckpt_path: Str, seg_path: Str, manifest_path: Str, dim: Int,
   return engine_open_durable(ckpt_path, seg_path, manifest_path, dim, metric);
 }
 
+// ---- Durability (M-D6) ----
+
+// Compact + durable checkpoint swap (bounded recovery): rebase the log to
+// the live state, swap a crash-safe checkpoint (fsync before rename before
+// segment reset), return the new durable frontier (LSN).
+pub fn checkpoint_swap(eng: &mut VectorEngine) -> Result[Int, CoreError] {
+  return engine_checkpoint_swap(eng);
+}
+
+// Auto-checkpoint policy: swap every `every` successful commits (0 = off).
+pub fn set_checkpoint_policy(eng: &mut VectorEngine, every: Int) -> Result[Bool, CoreError] {
+  return engine_set_checkpoint_policy(eng, every);
+}
+
+// Checkpoint path for embedders that enable durability without
+// open_durable (needed by checkpoint_swap).
+pub fn set_checkpoint_path(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError] {
+  return engine_set_checkpoint_path(eng, path);
+}
+
+// Commits since the last checkpoint swap (0 after a swap).
+pub fn checkpoint_countdown(eng: &VectorEngine) -> Int {
+  return engine_checkpoint_countdown(eng);
+}
+
 // ---- Multi-collection registry (M-D3) ----
 
 // Create a named collection (empty) and make it active. Rejects invalid or

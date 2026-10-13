@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 module xiom.vector.collection.validator
+// LEGACY module: the canonical DistanceMetric lives in the `xiom.vectors`
+// package (src/vectors.xi). DO NOT IMPORT from new code -- importing this
+// module (or any xiom.vector.collection.* sibling) loads the collection
+// family into the catalog and trips the XVC-C-14 same-name trap against
+// ann_index/shim types (observed on v0.64.4, probe_snapshot build
+// 2026-10-13). Kept for reference until the porter flow retires it.
 // Local types -- mirrors core types absorbed into engine.
 
 pub enum VectorError {
