@@ -12,6 +12,8 @@ module xiom.vector.engine.core
 
 use xiom.metrics;
 use xiom.vector.core.shim;
+use xiom.io;
+use xiom.convert;
 use xiom.string.slice;
 use xiom.vectors;
 use xiom.vector.storage.vector_store;
@@ -64,6 +66,15 @@ pub type VectorEngine = {
   active_idx: Int;
   active_cid: Int;
   active_name: Str;
+  // M-D7 mirrors of the active collection's sealed registry + tombstones,
+  // the runtime segment cache, and the opt-in roll policy/state.
+  sealed: Vec[SealedEntry];
+  tombstones: Vec[Int];
+  sealed_cache: Vec[SealedCacheEntry];
+  sealed_next_id: Int;
+  seal_every: Int;
+  seal_dir: Str;
+  sealed_missing: Int;
 }
 
 // One named collection's full state (registry entry). The active collection
@@ -78,12 +89,167 @@ pub type CollectionEntry = {
   ann: AnnParams;
   dimension: Int;
   metric: DistanceMetric;
+  sealed: Vec[SealedEntry];
+  tombstones: Vec[Int];
 }
 
 // The registry names list (struct wrapper, the SearchHits discipline:
 // Result-free Vec[Str] payloads stay behind a named shape).
 pub type CollectionList = {
   names: Vec[Str];
+}
+
+// M-D7: one registered sealed segment. Registry metadata only (data lives in
+// the file and, once loaded, in the engine's sealed cache).
+pub type SealedEntry = {
+  seg_id: Int;
+  points: Int;
+  head_lsn: Int;
+  has_sq: Bool;
+  path: Str;
+}
+
+// M-D7 runtime cache entry: a loaded sealed segment (full in-RAM copy; no
+// mmap). `cid` scopes it to its collection.
+pub type SealedCacheEntry = {
+  cid: Int;
+  seg_id: Int;
+  ss: SealedSegment;
+}
+
+// M-D7 recovery accumulators (cid-tagged, because replay spans collections).
+pub type SealedReg = {
+  cid: Int;
+  entry: SealedEntry;
+}
+
+pub type TombReg = {
+  cid: Int;
+  id: Int;
+}
+
+pub type ParsedSealed = {
+  valid: Bool;
+  kind: Int;
+  entry: SealedEntry;
+}
+
+// M-D7 sealed-entry words: [kind, seg_id, points, head_lsn, has_sq,
+// path_len, bytes...]. kind 1 = attach (roll/checkpoint); kind 2 = REPLACE
+// the cid's existing entries (compaction).
+fn sealed_words(kind: Int, seg_id: Int, points: Int, head_lsn: Int, has_sq: Bool, path: Str) -> Vec[Int] {
+  var w = Vec[Int].new();
+  w.push(kind);
+  w.push(seg_id);
+  w.push(points);
+  w.push(head_lsn);
+  if has_sq { w.push(1); } else { w.push(0); }
+  var nb = slice.str_bytes(path);
+  w.push(nb.len());
+  var i: Int = 0;
+  while i < nb.len() {
+    w.push(nb[i] as Int);
+    i = i + 1;
+  }
+  return w;
+}
+
+fn parse_sealed_words(words: &Vec[Int]) -> ParsedSealed {
+  var bad = SealedEntry{ seg_id: 0, points: 0, head_lsn: 0, has_sq: false, path: "" };
+  if words.len() < 7 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  var kind: Int = words[0];
+  if kind != 1 && kind != 2 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  var seg_id: Int = words[1];
+  var points: Int = words[2];
+  var head: Int = words[3];
+  var hs: Int = words[4];
+  var nlen: Int = words[5];
+  if seg_id < 1 || points < 0 || head < 0 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  if hs != 0 && hs != 1 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  if nlen < 1 || nlen > 512 || words.len() != 6 + nlen { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  var nb = Vec[UInt8].new();
+  var i: Int = 0;
+  while i < nlen {
+    var b: Int = words[6 + i];
+    if b < 1 || b > 255 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+    nb.push(b as UInt8);
+    i = i + 1;
+  }
+  var path = Str::from_utf8(&nb);
+  if path.len() == 0 { return ParsedSealed{ valid: false, kind: 0, entry: bad }; }
+  return ParsedSealed{
+    valid: true,
+    kind: kind,
+    entry: SealedEntry{ seg_id: seg_id, points: points, head_lsn: head, has_sq: hs == 1, path: path },
+  };
+}
+
+fn sealed_acc_add(acc: &mut Vec[SealedReg], cid: Int, e: SealedEntry) {
+  acc.push(SealedReg{ cid: cid, entry: e });
+}
+
+// kind-2 semantics: drop the cid's existing entries, then attach. Functional
+// (returns a rebuilt Vec) because in-place Vec truncation is not available.
+fn sealed_acc_replaced(acc: &Vec[SealedReg], cid: Int, e: SealedEntry) -> Vec[SealedReg] {
+  var keep = Vec[SealedReg].new();
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid != cid { keep.push(acc[i]); }
+    i = i + 1;
+  }
+  keep.push(SealedReg{ cid: cid, entry: e });
+  return keep;
+}
+
+fn sealed_for_cid(acc: &Vec[SealedReg], cid: Int) -> Vec[SealedEntry] {
+  var out = Vec[SealedEntry].new();
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid == cid { out.push(acc[i].entry); }
+    i = i + 1;
+  }
+  return out;
+}
+
+fn tomb_add(acc: &mut Vec[TombReg], cid: Int, id: Int) {
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid == cid && acc[i].id == id { return; }
+    i = i + 1;
+  }
+  acc.push(TombReg{ cid: cid, id: id });
+}
+
+fn tombstones_for_cid(acc: &Vec[TombReg], cid: Int) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid == cid { out.push(acc[i].id); }
+    i = i + 1;
+  }
+  return out;
+}
+
+fn tombs_contain(ts: &Vec[Int], id: Int) -> Bool {
+  var i: Int = 0;
+  while i < ts.len() {
+    if ts[i] == id { return true; }
+    i = i + 1;
+  }
+  return false;
+}
+
+// Resurrection: a re-upsert clears the id's tombstone shadow (invariant:
+// tombstones and the active store are disjoint at every checkpoint, so the
+// emitted Delete records can never remove a live id on replay).
+fn tombs_without(ts: &Vec[Int], id: Int) -> Vec[Int] {
+  var out = Vec[Int].new();
+  var i: Int = 0;
+  while i < ts.len() {
+    if ts[i] != id { out.push(ts[i]); }
+    i = i + 1;
+  }
+  return out;
 }
 
 pub fn engine_new() -> VectorEngine {
@@ -113,6 +279,13 @@ pub fn engine_new() -> VectorEngine {
     active_idx: -1,
     active_cid: 0,
     active_name: "",
+    sealed: Vec[SealedEntry].new(),
+    tombstones: Vec[Int].new(),
+    sealed_cache: Vec[SealedCacheEntry].new(),
+    sealed_next_id: 1,
+    seal_every: 0,
+    seal_dir: "",
+    sealed_missing: 0,
   };
 }
 
@@ -271,6 +444,8 @@ fn sync_active(eng: &mut VectorEngine) {
   e.ann = eng.ann;
   e.dimension = eng.dimension;
   e.metric = eng.metric;
+  e.sealed = eng.sealed;
+  e.tombstones = eng.tombstones;
   eng.collections[i] = e;
 }
 
@@ -288,6 +463,8 @@ fn load_active(eng: &mut VectorEngine, idx: Int) {
   eng.active_idx = idx;
   eng.active_cid = e.cid;
   eng.active_name = e.name;
+  eng.sealed = e.sealed;
+  eng.tombstones = e.tombstones;
 }
 
 // Forget the live view (dropping the last collection leaves an engine that
@@ -359,6 +536,8 @@ pub fn engine_create_named(eng: &mut VectorEngine, name: Str, dim: Int, metric: 
     ann: params,
     dimension: dim,
     metric: metric,
+    sealed: Vec[SealedEntry].new(),
+    tombstones: Vec[Int].new(),
   };
   eng.collections.push(e);
   load_active(eng, eng.collections.len() - 1);
@@ -492,6 +671,80 @@ pub fn engine_restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool,
     Ok(_) => {}
     Err(e) => { return Err(e); }
   }
+  return Ok(true);
+}
+
+// M-D7 roll: seal the ACTIVE collection's contents into an immutable segment
+// file (same codec; SQ armed when trainable), register the entry, keep the
+// written segment in the runtime cache (queries never re-read the file),
+// clear the active store/graph/payloads (move semantics; configuration
+// kept), and log a SegmentSeal record + commit (fsync-before-ack in durable
+// mode). Returns the assigned segment id. The existing copy-out
+// `seal_segment` API and its probes are untouched.
+pub fn engine_roll_segment(eng: &mut VectorEngine, path: Str) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  if eng.store.ids.len() == 0 {
+    return Err(CoreError.InvalidState("active collection is empty"));
+  }
+  if path.len() == 0 {
+    return Err(CoreError.InvalidInput("empty segment path"));
+  }
+  var seg_id: Int = eng.sealed_next_id;
+  var head: Int = wal_writer_current_lsn(&eng.wal);
+  var ss = sealed_segment_new(seg_id, eng.active_cid, eng.dimension, eng.metric, eng.index_kind, eng.ann);
+  if !sealed_segment_seal(&mut ss) {
+    return Err(CoreError.InvalidState("segment lifecycle transition failed"));
+  }
+  ss.store = eng.store;
+  ss.payloads = eng.payloads;
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    ss.graph = eng.graph;
+    ss.has_graph = true;
+  }
+  let _sq = sealed_segment_enable_sq(&mut ss);
+  if !segment_file_persist(&ss, path) {
+    return Err(CoreError.IOFailure("segment persist failed"));
+  }
+  var points: Int = ss.store.ids.len();
+  var has_sq: Bool = ss.has_sq;
+  eng.sealed.push(SealedEntry{ seg_id: seg_id, points: points, head_lsn: head, has_sq: has_sq, path: path });
+  eng.sealed_cache.push(SealedCacheEntry{ cid: eng.active_cid, seg_id: seg_id, ss: ss });
+  eng.sealed_next_id = eng.sealed_next_id + 1;
+  // Move: clear the active data, keep the configuration.
+  eng.store = index_new(eng.dimension);
+  eng.graph = hnsw_new(eng.ann.m, 4.0);
+  hnsw_set_ef_construction(&mut eng.graph, eng.ann.ef_construction);
+  eng.payloads = payload_store_new();
+  var words = sealed_words(1, seg_id, points, head, has_sq, path);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.SegmentSeal, 0, eng.active_cid, words);
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  return Ok(seg_id);
+}
+
+// M-D7 accessors + opt-in roll policy (P2 tuning).
+pub fn engine_sealed_count(eng: &VectorEngine) -> Int {
+  return eng.sealed.len();
+}
+
+pub fn engine_sealed_missing(eng: &VectorEngine) -> Int {
+  return eng.sealed_missing;
+}
+
+// Auto-roll when the active collection reaches `every` points; the segment
+// files land in `dir` (must exist). 0 disables. Defaults: off/manual.
+pub fn engine_set_seal_policy(eng: &mut VectorEngine, every: Int, dir: Str) -> Result[Bool, CoreError] {
+  if every < 0 { return Err(CoreError.InvalidInput("negative seal interval")); }
+  if every > 0 {
+    if dir.len() == 0 || !io.dir_exists(dir) {
+      return Err(CoreError.InvalidInput("seal dir missing"));
+    }
+  }
+  eng.seal_every = every;
+  eng.seal_dir = dir;
   return Ok(true);
 }
 
@@ -808,6 +1061,9 @@ fn engine_upsert_apply(eng: &mut VectorEngine, point: Int, vec: Vector) -> Resul
   }
   var payload = vector_encode(&vec);
   log_upsert(&mut eng.wal, eng.active_cid, point, payload);
+  if tombs_contain(&eng.tombstones, point) {
+    eng.tombstones = tombs_without(&eng.tombstones, point);
+  }
   if eng.index_kind == AnnIndexKind.Hnsw {
     hnsw_insert_ref(&mut eng.graph, point, &vec, eng.metric);
   }
@@ -872,6 +1128,11 @@ fn engine_delete_apply(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreE
     hnsw_delete(&mut eng.graph, point);
   }
   payload_store_remove(&mut eng.payloads, point);   // no orphan metadata
+  // M-D7: keep the id shadowed in the union (the sealed copy, if any, must
+  // not resurface). Unique-append; checkpoint compaction re-emits these.
+  if !tombs_contain(&eng.tombstones, point) {
+    eng.tombstones.push(point);
+  }
   metric_counter_inc(&mut eng.deletes);
   return Ok(ok);
 }
@@ -1302,6 +1563,17 @@ pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
       eng.wal_seg_frontier = cur;
       let _f = wal_writer_flush(&mut eng.wal);
       eng.commits_since_ckpt = eng.commits_since_ckpt + 1;
+      // M-D7 seal policy: roll the active collection when it reaches the
+      // threshold (opt-in; dir validated at set time). A roll failure never
+      // fails the ack -- the retry happens at the next commit.
+      if eng.seal_every > 0 && eng.seal_dir.len() > 0 && eng.store.ids.len() >= eng.seal_every {
+        var sid = eng.sealed_next_id;
+        var ap = eng.seal_dir + "/sealed-" + convert.int_to_string(eng.active_cid) + "-" + convert.int_to_string(sid) + ".seg";
+        match engine_roll_segment(eng, ap) {
+          Ok(_) => {}
+          Err(_) => {}
+        }
+      }
       if eng.ckpt_every > 0 && eng.commits_since_ckpt >= eng.ckpt_every {
         // Checkpoint policy (M-D6): the write is already durable, so a swap
         // failure never fails the ack -- the counter stays above the
@@ -1512,6 +1784,8 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
     pls.push(payload_store_new());
     mi3 = mi3 + 1;
   }
+  var sealed_acc = Vec[SealedReg].new();
+  var tomb_acc = Vec[TombReg].new();
   var ri: Int = 0;
   while ri < w.records.len() {
     var op = w.records[ri].op;
@@ -1533,12 +1807,49 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
           None => {}
         }
       } elif op == WalOpKind.Delete {
-        index_remove(&mut stores[si], w.records[ri].key);
-        payload_store_remove(&mut pls[si], w.records[ri].key);
+        var dkey = w.records[ri].key;
+        var found = index_get(&stores[si], dkey);
+        var was_there: Bool = false;
+        match found {
+          Some(_) => { was_there = true; }
+          None => {}
+        }
+        index_remove(&mut stores[si], dkey);
+        payload_store_remove(&mut pls[si], dkey);
+        if !was_there {
+          // M-D7: missed the active store -- the id may live in a sealed
+          // segment; the tombstone shadows it in the union.
+          tomb_add(&mut tomb_acc, metas[si].cid, dkey);
+        }
       } elif op == WalOpKind.Update {
         match payload_decode(&w.records[ri].payload) {
           Some(p) => { payload_store_put(&mut pls[si], w.records[ri].key, p); }
           None => {}
+        }
+      } elif op == WalOpKind.SegmentSeal {
+        // M-D7 roll: register the sealed entry AND clear the cid's active
+        // state (the roll moved everything active at that LSN into the file;
+        // replay-order reproduction).
+        if strict {
+          var ps = parse_sealed_words(&w.records[ri].payload);
+          if ps.valid {
+            sealed_acc_add(&mut sealed_acc, metas[si].cid, ps.entry);
+            stores[si] = index_new(metas[si].dim);
+            pls[si] = payload_store_new();
+          }
+        }
+      } elif op == WalOpKind.SnapshotMarker {
+        // M-D7 checkpoint attach (kind 1) / compaction replace (kind 2):
+        // registry-only -- the active state already reflects the roll.
+        if strict {
+          var ps2 = parse_sealed_words(&w.records[ri].payload);
+          if ps2.valid {
+            if ps2.kind == 2 {
+              sealed_acc = sealed_acc_replaced(&sealed_acc, metas[si].cid, ps2.entry);
+            } else {
+              sealed_acc_add(&mut sealed_acc, metas[si].cid, ps2.entry);
+            }
+          }
         }
       }
     }
@@ -1562,6 +1873,8 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
         ann: AnnParams{ m: mk.m, ef_construction: mk.ef_construction, ef_search: mk.ef_search },
         dimension: mk.dim,
         metric: mk.metric,
+        sealed: sealed_for_cid(&sealed_acc, mk.cid),
+        tombstones: tombstones_for_cid(&tomb_acc, mk.cid),
       };
       var params = AnnParams{ m: mk.m, ef_construction: mk.ef_construction, ef_search: mk.ef_search };
       entry_apply_index(&mut e, mk.kind, params);
@@ -1599,6 +1912,13 @@ fn engine_checkpoint_from(eng: &mut VectorEngine, base_lsn: Int) {
       wal_writer_append_payload(&mut out, WalOpKind.Update, ce.payloads.entries[pi].id, ce.cid, payload_encode(&ce.payloads.entries[pi].payload));
       pi = pi + 1;
     }
+    // M-D7 tombstones: re-emitted as Delete records so they survive a
+    // checkpoint compaction (replay re-derives them via the miss rule).
+    var ti: Int = 0;
+    while ti < ce.tombstones.len() {
+      wal_writer_append(&mut out, WalOpKind.Delete, ce.tombstones[ti], ce.cid);
+      ti = ti + 1;
+    }
     c = c + 1;
   }
   var c2: Int = 0;
@@ -1607,6 +1927,21 @@ fn engine_checkpoint_from(eng: &mut VectorEngine, base_lsn: Int) {
     var words2 = manifest_words(ce2.name, ce2.dimension, ce2.metric, ce2.index_kind, ce2.ann);
     wal_writer_append_payload(&mut out, WalOpKind.ManifestUpdate, 0, ce2.cid, words2);
     c2 = c2 + 1;
+  }
+  // M-D7 sealed entries: registry attach markers (replay attaches only --
+  // no active clear; the checkpoint's data phase already excludes sealed
+  // content).
+  var c3: Int = 0;
+  while c3 < eng.collections.len() {
+    var ce3 = eng.collections[c3];
+    var sj: Int = 0;
+    while sj < ce3.sealed.len() {
+      var se3 = ce3.sealed[sj];
+      var sw = sealed_words(1, se3.seg_id, se3.points, se3.head_lsn, se3.has_sq, se3.path);
+      wal_writer_append_payload(&mut out, WalOpKind.SnapshotMarker, 0, ce3.cid, sw);
+      sj = sj + 1;
+    }
+    c3 = c3 + 1;
   }
   eng.wal = out;
 }
