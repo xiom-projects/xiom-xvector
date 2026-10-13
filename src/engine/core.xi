@@ -762,6 +762,17 @@ pub fn engine_sealed_missing(eng: &VectorEngine) -> Int {
   return eng.sealed_missing;
 }
 
+// Cached (loaded) sealed sources of the active collection.
+pub fn engine_sealed_loaded(eng: &VectorEngine) -> Int {
+  var n: Int = 0;
+  var i: Int = 0;
+  while i < eng.sealed_cache.len() {
+    if eng.sealed_cache[i].cid == eng.active_cid { n = n + 1; }
+    i = i + 1;
+  }
+  return n;
+}
+
 // Auto-roll when the active collection reaches `every` points; the segment
 // files land in `dir` (must exist). 0 disables. Defaults: off/manual.
 pub fn engine_set_seal_policy(eng: &mut VectorEngine, every: Int, dir: Str) -> Result[Bool, CoreError] {
@@ -1744,6 +1755,40 @@ pub fn engine_get_payload(eng: &VectorEngine, point: Int) -> Option[Payload] {
   return payload_store_get(&eng.payloads, point);
 }
 
+// M-D7 union hydration: the active payload store is the truth for active
+// ids; sealed-only ids hydrate from their sealed source (first match wins;
+// ids are unique across sources by the union rules).
+fn hydrate_hits_union(eng: &VectorEngine, items: &Vec[SearchResult], with_payload: Bool) -> Vec[SearchHit] {
+  var out = Vec[SearchHit].new();
+  var i: Int = 0;
+  while i < items.len() {
+    var pl = payload_new();
+    var have: Bool = false;
+    if with_payload {
+      match payload_store_get(&eng.payloads, items[i].id) {
+        Some(f) => { pl = f; have = true; }
+        None => {}
+      }
+      if !have {
+        var ci: Int = 0;
+        while ci < eng.sealed_cache.len() {
+          var sc = eng.sealed_cache[ci];
+          if sc.cid == eng.active_cid {
+            match payload_store_get(&sc.ss.payloads, items[i].id) {
+              Some(f2) => { pl = f2; have = true; }
+              None => {}
+            }
+          }
+          ci = ci + 1;
+        }
+      }
+    }
+    out.push(SearchHit{ id: items[i].id, distance: items[i].distance, payload: pl, has_payload: have });
+    i = i + 1;
+  }
+  return out;
+}
+
 // Filtered search on an Hnsw collection: ANN fetch (ef_search wide), keep
 // the matching subset (order preserved), and fall back to the exact flat
 // filtered scan when the ANN pass under-fills -- selective filters stay
@@ -1877,7 +1922,7 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     }
     var rres = engine_search_range(eng, &req.query, req.radius, req.top_k);
     match rres {
-      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits_union(eng, &h.items, req.with_payload) }); }
       Err(e) => { return Err(e); }
     }
   }
@@ -1891,7 +1936,7 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     }
     var cres = engine_search_after(eng, &req.query, req.top_k, req.after_id);
     match cres {
-      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits_union(eng, &h.items, req.with_payload) }); }
       Err(e) => { return Err(e); }
     }
   }
@@ -1901,25 +1946,17 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     }
     var pres = engine_search_page(eng, &req.query, req.top_k, req.offset);
     match pres {
-      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits(&h.items, &eng.payloads, req.with_payload) }); }
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits_union(eng, &h.items, req.with_payload) }); }
       Err(e) => { return Err(e); }
     }
   }
   if search_request_has_filter(req) {
-    if eng.index_kind == AnnIndexKind.Hnsw {
-      var hits0 = hnsw_search_filtered(eng, &req.query, req.top_k, &req.filter[0]);
-      return Ok(HydratedHits{ items: hydrate_hits(&hits0, &eng.payloads, req.with_payload) });
-    }
-    var hits = search_knn_filtered(&eng.store, &eng.payloads, &req.query, req.top_k, eng.metric, &req.filter[0]);
-    return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+    // M-D7: union over active + sealed for every Knn shape.
+    var hits0 = union_knn_filtered(eng, &req.query, req.top_k, &req.filter[0]);
+    return Ok(HydratedHits{ items: hydrate_hits_union(eng, &hits0, req.with_payload) });
   }
-  if eng.index_kind == AnnIndexKind.Hnsw {
-    var nn = hnsw_search(&eng.graph, &req.query, req.top_k, eng.ann.ef_search, eng.metric);
-    var hh = neighbors_to_results(&nn);
-    return Ok(HydratedHits{ items: hydrate_hits(&hh, &eng.payloads, req.with_payload) });
-  }
-  var hits = search_knn(&eng.store, &req.query, req.top_k, eng.metric);
-  return Ok(HydratedHits{ items: hydrate_hits(&hits, &eng.payloads, req.with_payload) });
+  var hh = union_knn(eng, &req.query, req.top_k);
+  return Ok(HydratedHits{ items: hydrate_hits_union(eng, &hh, req.with_payload) });
 }
 
 // Batch request search (M-Q6): validate non-empty, then one dispatch per

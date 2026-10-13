@@ -1375,6 +1375,10 @@ fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
       out = json.json_set(out, "nodes", json.json_number(st.nodes as Float64));
       out = json.json_set(out, "tombstones", json.json_number(st.tombstones as Float64));
       out = json.json_set(out, "lsn", json.json_number(st.wal_lsn as Float64));
+      // M-D7 multi-segment visibility (active-collection perspective).
+      out = json.json_set(out, "sealed_segments", json.json_number(engine_sealed_count(eng) as Float64));
+      out = json.json_set(out, "sealed_loaded", json.json_number(engine_sealed_loaded(eng) as Float64));
+      out = json.json_set(out, "sealed_missing", json.json_number(engine_sealed_missing(eng) as Float64));
       var mem = engine_memory_estimate(eng, st.name);
       match mem {
         Ok(m) => {
