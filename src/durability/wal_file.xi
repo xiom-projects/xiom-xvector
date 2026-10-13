@@ -4,16 +4,18 @@
 module xiom.vector.durability.wal_file
 
 // File-backed WAL using the stdlib's whole-file APIs (write_file_bytes /
-// read_file_bytes / file_exists / rename). The format is text: a header line
-// plus one line per record (lsn op key value timestamp payload_len [w1,w2,..]).
-// Persist is a whole-file CHECKPOINT (rewrite), not append+fsync -- the stdlib
-// fd/fsync/append ops are still stubs -- so a crash can lose records written
-// after the last persist; when the fd/fsync gap lands this path is upgraded to
-// append + fsync. The write is ATOMIC: the checkpoint lands in `<path>.tmp`
-// first and is swapped over the target with io.rename, so a crash at any point
-// leaves either the previous or the new complete file -- never a torn one.
-// Load is torn-tail tolerant: a missing, corrupt, or byte-truncated file
-// yields the longest prefix of COMPLETE valid records (prefix exactness).
+// read_file_bytes / file_exists / rename) plus, since stdlib wave 115/117,
+// the fd fsync + dir-fsync primitives (wal_persist_sync). The format is text:
+// a header line plus one line per record (lsn op key value timestamp
+// payload_len [w1,w2,..]). Persist is a whole-file CHECKPOINT (rewrite); the
+// D5 delta segment (wal_segment) carries append+fsync for live acks, and
+// `wal_persist_sync` (M-D6) makes the checkpoint swap crash-safe
+// (write tmp -> fsync tmp -> rename -> fsync dir). The write is ATOMIC: the
+// checkpoint lands in `<path>.tmp` first and is swapped over the target with
+// io.rename, so a crash at any point leaves either the previous or the new
+// complete file -- never a torn one. Load is torn-tail tolerant: a missing,
+// corrupt, or byte-truncated file yields the longest prefix of COMPLETE
+// valid records (prefix exactness).
 //
 // The loader parses BYTES directly (no Str::from_utf8 / str_split): the
 // original mislowering (XVC-C-11, C-08 family) is fixed in compiler v0.64.2,
@@ -22,6 +24,9 @@ module xiom.vector.durability.wal_file
 
 use xiom.io;
 use xiom.convert;
+use xiom.string.slice;
+use xiom.os.fs_ffi;
+use xiom.os.sync_io;
 use xiom.string.slice;
 use xiom.vector.durability.wal;
 
@@ -95,7 +100,8 @@ pub fn append_bytes(out: &mut Vec[UInt8], s: Str) {
 // before the rename leaves the previous checkpoint untouched; the temp is
 // never part of the readable state. If the rename fails the temp remains and
 // is simply overwritten by the next persist. False on any IO error.
-pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
+// Render the whole checkpoint log as bytes (shared by both persist paths).
+fn wal_render_bytes(w: &WalWriter) -> Vec[UInt8] {
   var out = Vec[UInt8].new();
   append_bytes(&mut out, "xvector-wal 1\n");
   var i: Int = 0;
@@ -120,6 +126,11 @@ pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
     append_bytes(&mut out, line);
     i = i + 1;
   }
+  return out;
+}
+
+pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
+  var out = wal_render_bytes(w);
   var tmp = path + ".tmp";
   var wres = io.write_file_bytes(tmp, &out);
   match wres {
@@ -131,6 +142,61 @@ pub fn wal_persist(w: &WalWriter, path: Str) -> Bool {
     Ok(_) => { return true; }
     Err(_) => { return false; }
   }
+}
+
+// Parent directory of a path ("." when there is no separator). Handles both
+// separators; used for the post-rename directory fsync.
+pub fn path_parent(path: Str) -> Str {
+  var i = path.len() - 1;
+  while i >= 0 {
+    let c = path.byte_at(i);
+    if c == 47u8 || c == 92u8 { return slice.str_slice(path, 0, i); }
+    i = i - 1;
+  }
+  return ".";
+}
+
+// fsync a file through a write-capable fd (no write is performed). True on
+// success; false when the file cannot be opened or the fsync fails.
+pub fn fsync_file(path: Str) -> Bool {
+  var fr = sync_io.open_append(path);
+  var fd: Int = -1;
+  match fr {
+    Ok(f) => { fd = f; }
+    Err(_) => { return false; }
+  }
+  var sr = fs_ffi.fsync(fd);
+  let _c = sync_io.close_fd(fd);
+  match sr {
+    Ok(_) => { return true; }
+    Err(_) => { return false; }
+  }
+}
+
+// Durable checkpoint swap (M-D6): write tmp -> fsync tmp -> rename ->
+// fsync parent dir (best-effort: an Err from fsync_dir, e.g. on a
+// filesystem that does not support directory fds, is ignored -- the
+// content fsync before the rename is the load-bearing step). A crash at
+// any point leaves either the previous checkpoint (still durable) or the
+// new one (content fsynced BEFORE the rename replaced the old), so the
+// D6 swap may reset the delta segment without risking acknowledged
+// records.
+pub fn wal_persist_sync(w: &WalWriter, path: Str) -> Bool {
+  var out = wal_render_bytes(w);
+  var tmp = path + ".tmp";
+  var wres = io.write_file_bytes(tmp, &out);
+  match wres {
+    Ok(_) => {}
+    Err(_) => { return false; }
+  }
+  if !fsync_file(tmp) { return false; }
+  var rres = io.rename(tmp, path);
+  match rres {
+    Ok(_) => {}
+    Err(_) => { return false; }
+  }
+  let _d = sync_io.fsync_dir(path_parent(path));
+  return true;
 }
 
 // Load the longest complete-record prefix (missing / corrupt / truncated
