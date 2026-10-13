@@ -2277,7 +2277,7 @@ trusting reds; bench loops hard-capped; toolchain/package homes are
 lane-local on purpose.
 ```
 
-## 12. PASTE PROMPT for the next XVECTOR session (refreshed 2026-10-12T14:10Z; supersedes 11)
+## 12. PASTE PROMPT for the next XVECTOR session (refreshed 2026-10-13T16:00Z; supersedes 11)
 
 > **NOTE:** section 11 (the archive-gated prompt) is DONE -- the v0.64.4
 > archive landed and the re-verification pass completed (77th pass; C-15 +
