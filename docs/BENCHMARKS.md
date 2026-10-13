@@ -191,6 +191,28 @@ re-pinned to a linearity bound, 20x-ratio + 3 s net; Windows
   competitor client beside our adapter for a direct two-engine comparison
   on one machine.
 
+- **Cloned harnesses in the study area (2026-10-13; partial + sparse
+  checkouts -- code only, results/data excluded):**
+  - `E:\repos\ann-benchmarks` (**MIT**, erikbern/ann-benchmarks, 0.4 MB
+    sparse): the standard ANN recall/QPS harness. Integration: drop
+    `bench/adapters/ann_benchmarks/{module.py,config.yml}` into
+    `ann_benchmarks/algorithms/xvector/`; run on WSL
+    (`python run.py --dataset ... --algorithm xvector --local`).
+  - `E:\repos\VectorDBBench` (**MIT**, zilliztech, 6.4 MB sparse): the
+    cross-DB leaderboard client -- it ships clients for Milvus, Qdrant,
+    Weaviate, pgvector, Chroma, ... under
+    `vectordb_bench/backend/clients/`. Integration: register
+    `bench/adapters/vectordbbench/xvector_db.py` as a client; a
+    head-to-head runs the SAME dataset/query config against our server
+    and a competitor on one machine.
+  - `E:\repos\vector-db-benchmark` (**Apache-2.0**, qdrant, 0.9 MB
+    sparse): engine-driver benchmark (`engine/clients|servers`,
+    `experiments/`, `datasets/`). Study + optional xvector client
+    driver; good config discipline for API-shaped comparisons.
+- NOT cloned: `harsha-simhadri/big-ann-benchmarks` (MIT; ~129 GB upstream
+  tree incl. assets; billion-scale competition reference only) -- clone
+  with the same partial+sparse recipe if a billion-scale story needs it.
+
 ## What the owner's benchmark can use
 
 - Deterministic modes + JSON report (`out/bench_report.json`) today.
