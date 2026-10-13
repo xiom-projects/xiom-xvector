@@ -230,6 +230,26 @@ fn tombstones_for_cid(acc: &Vec[TombReg], cid: Int) -> Vec[Int] {
   return out;
 }
 
+fn tombs_acc_has(acc: &Vec[TombReg], cid: Int, id: Int) -> Bool {
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid == cid && acc[i].id == id { return true; }
+    i = i + 1;
+  }
+  return false;
+}
+
+// Replay symmetry with the live upsert: a resurrection clears its shadow.
+fn tombs_acc_without(acc: &Vec[TombReg], cid: Int, id: Int) -> Vec[TombReg] {
+  var out = Vec[TombReg].new();
+  var i: Int = 0;
+  while i < acc.len() {
+    if acc[i].cid != cid || acc[i].id != id { out.push(acc[i]); }
+    i = i + 1;
+  }
+  return out;
+}
+
 fn tombs_contain(ts: &Vec[Int], id: Int) -> Bool {
   var i: Int = 0;
   while i < ts.len() {
@@ -2285,6 +2305,12 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
           Some(v) => {
             if v.dimension == metas[si].dim {
               index_add(&mut stores[si], w.records[ri].key, v);
+              // M-D7 replay symmetry: a live upsert clears the id's
+              // tombstone shadow, so replay must too (a delete-miss then
+              // upsert must not leave the id live AND tombstoned).
+              if tombs_acc_has(&tomb_acc, metas[si].cid, w.records[ri].key) {
+                tomb_acc = tombs_acc_without(&tomb_acc, metas[si].cid, w.records[ri].key);
+              }
             }
           }
           None => {}

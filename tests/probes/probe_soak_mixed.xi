@@ -322,6 +322,36 @@ fn main() -> Int {
   }
   fails = check(bad_rec == 0, "recovered Hnsw engine: search invariants hold", fails);
   var rec2 = engine_recover(&rec.wal, dim, DistanceMetric.Euclidean);
+  // diag: how many tombstone ids are inside the store / how many Delete
+  // records in the checkpoint log name live ids?
+  var cross: Int = 0;
+  var ti2: Int = 0;
+  while ti2 < rec.tombstones.len() {
+    match index_get(&rec.store, rec.tombstones[ti2]) {
+      Some(_) => { cross = cross + 1; }
+      None => {}
+    }
+    ti2 = ti2 + 1;
+  }
+  var del_live: Int = 0;
+  var wr_i: Int = 0;
+  while wr_i < rec.wal.records.len() {
+    if rec.wal.records[wr_i].op == WalOpKind.Delete {
+      match index_get(&rec.store, rec.wal.records[wr_i].key) {
+        Some(_) => { del_live = del_live + 1; }
+        None => {}
+      }
+    }
+    wr_i = wr_i + 1;
+  }
+  io.println("    diag chained: rec size=" + int_to_str(engine_size(&rec))
+    + " payloads=" + int_to_str(payload_store_len(&rec.payloads))
+    + " wal_records=" + int_to_str(rec.wal.records.len())
+    + " tombstones=" + int_to_str(rec.tombstones.len())
+    + " cross=" + int_to_str(cross)
+    + " del_live=" + int_to_str(del_live)
+    + " | rec2 size=" + int_to_str(engine_size(&rec2))
+    + " payloads=" + int_to_str(payload_store_len(&rec2.payloads)));
   fails = check(engine_size(&rec2) == engine_size(&rec)
     && payload_store_len(&rec2.payloads) == payload_store_len(&rec.payloads),
     "chained recovery: store + payloads preserved", fails);
