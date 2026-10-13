@@ -1618,15 +1618,19 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   (Addendum 8). **Findings `acked` by the compiler lane** (both still
   unfixed): **XVC-C-13** (`&Str` parameters unknown to the checker -> i64
   fallback, silent wrong values; Addendum 9) **and XVC-C-14** (same-named
-  struct types shadow field layouts; Addendum 10). Compiler-lane HEAD
-  `29e35ef8` (v0.64.5 continuation; tag pinned). **v0.64.5 plan (2026-10-12,
-  `docs/SESSION-HANDOFF.md` in the compiler repo):** triage T1-T3 + eight
-  themed batches; fixes already on main: m276 `0268c7d9` (env-unwrap veto,
-  T1) and m277 `29e35ef8` (cast-call raw fn code, T2); **our asks are IN
-  the batch queue -- thread/spawn runtime (`-1627`/`-1402-xvector` +
-  engine `-2053`), resolver/checker (`-1709-xvector` = C-14, XVC-C-13)**;
-  no v0.64.5 tag/archive yet -- the next re-verification set applies at
-  that archive (thread gate first).
+  struct types shadow field layouts; Addendum 10). Compiler-lane local
+  main is AHEAD of origin (`91860f11`): v0.64.5 plan docs + **m276-m281
+  landed** -- T1 env-unwrap veto (m276), T2 cast-call raw fn code (m277),
+  **T3 m278 `484d9f21` same-named types keep module identity** (the
+  C-14 identity mechanic; engine-root AV case), **FFI-pointer batch DONE
+  (m279-m281: `as_ptr`/`as_mut_ptr` inference, unsafe copy-out, raw
+  pointer slot reads / null literal / ptr-arith tails)**. **Next in the
+  themed batches: the thread/spawn runtime (our `-1627`/`-1402-xvector` +
+  engine `-2053`), then resolver/checker (`-1709-xvector` = C-14,
+  XVC-C-13)**; no v0.64.5 tag/archive yet -- the re-verification set
+  applies at that archive (thread gate first; C-14 re-test especially
+  interesting after m278). Re-checked the bus 2026-10-13T14:05Z: nothing
+  new addressed to xvector.
 - **packages:** lane HEAD `674dea9d` (2026-10-12: stage-promotion policy
   per owner; live working tree with in-flight edits -- this lane consumes
   the registry into its own homes, not their checkout). Earlier era:
