@@ -391,6 +391,18 @@ exact semantics):
   rolls. Honesty: no mmap -- sealed data is a full in-RAM copy once
   loaded; the multi-segment probe records cold-roll vs warm-query cost.
 
+Implementation notes (2026-10-13): the request path
+(`engine_search_request`) routes every Knn shape through the union and
+hydrates sealed hits via `hydrate_hits_union` (active payloads first, then
+the source that owns the id); deletes report sealed-only points as deleted
+(`point_in_sealed`) and `delete_by_filter` scans sealed payloads; recovery
+loads every registered source on collection activation with
+`sealed_missing` accounting; policy hooks run for in-memory engines too;
+`/stats` adds `sealed_segments`/`sealed_loaded`/`sealed_missing`. Segment
+file paths are caller-owned: a stale file whose cid+seg_id match would be
+adopted (name your segments per home). Gate: `probe_multisegment`
+(27 checks; warm union query ~0.12 ms over 60 pts).
+
 ## `xiom.vector.payload` engine integration
 `engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`
 (WAL-before-ack: the encoded record is appended before the store is touched;
