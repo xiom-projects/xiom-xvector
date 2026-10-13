@@ -1637,11 +1637,14 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   now unwraps env field 1 (raw code), lock `ffi_fn_env_cast`; cause 2
   (runtime/stdlib): the spawn result buffer lives in the confined block's
   guard arena and is freed before join (UAF), filed as
-  `REL-20261013-1423-compiler` (acked, high) -- our real-spawn acceptance
+  `REL-20261013-1423-compiler` (acked, high) -- **stdlib ADOPTED the proposed hoist (spawn result buffer -> main heap, matching dealloc in join/detach; lands in their next thread wave with the spawn simulation flip; accepted as the blocker for the engine/xvector thread gates)**; our real-spawn acceptance
   re-runs after that fix + the next archive**); m283 contract
   postcondition cycles + nested enum payloads; m284 `&mut local` capture
-  in confined blocks (B-21); candidate-closing docs (m276-m284 map, next
-  m285). **No v0.64.5 tag/archive yet**; still queued in the themed
+  in confined blocks (B-21); **m287 `d4e818d6` adapter closure fields win
+  over same-leaf free fns (1548-stdlib-3); m288 `554489f5` e2e lock for
+  `&mut` parameter field @pre entry snapshots (1548-stdlib-4); next free
+  m289; one attempt reverted for 1548-bindings-4 (module-leaf alias
+  collision, logged in failed_attempts)**. **No v0.64.5 tag/archive yet**; still queued in the themed
   batches: resolver/checker (`-1709-xvector` = C-14, XVC-C-13). Verified
   at the archive: thread gate FIRST (the env half needs no further work),
   then C-14 after m278. Re-checked the bus 2026-10-13T17:05Z: nothing new
