@@ -181,6 +181,38 @@ pub fn checkpoint_countdown(eng: &VectorEngine) -> Int {
   return engine_checkpoint_countdown(eng);
 }
 
+// ---- Multi-segment read path (M-D7) ----
+
+// Roll the active collection's contents into an immutable sealed segment
+// (move semantics: register + cache + clear active; fsync-before-ack in
+// durable mode). Queries immediately see the data through the union.
+// Returns the assigned segment id.
+pub fn roll_segment(eng: &mut VectorEngine, path: Str) -> Result[Int, CoreError] {
+  return engine_roll_segment(eng, path);
+}
+
+// Merge every sealed segment of the active collection + the active
+// remainder into ONE new segment (tombstones applied; bit-exact with the
+// pre-compaction union). Old files remain on disk (caller cleans).
+pub fn compact_sealed(eng: &mut VectorEngine, path: Str) -> Result[Int, CoreError] {
+  return engine_compact_sealed(eng, path);
+}
+
+// Registered sealed sources of the active collection / unreadable count.
+pub fn sealed_count(eng: &VectorEngine) -> Int {
+  return engine_sealed_count(eng);
+}
+
+pub fn sealed_missing(eng: &VectorEngine) -> Int {
+  return engine_sealed_missing(eng);
+}
+
+// Opt-in auto-roll policy (P2 tuning): roll at `every` active points into
+// `dir` (must exist; 0 disables). Off by default.
+pub fn set_seal_policy(eng: &mut VectorEngine, every: Int, dir: Str) -> Result[Bool, CoreError] {
+  return engine_set_seal_policy(eng, every, dir);
+}
+
 // ---- Multi-collection registry (M-D3) ----
 
 // Create a named collection (empty) and make it active. Rejects invalid or

@@ -465,6 +465,34 @@ fn load_active(eng: &mut VectorEngine, idx: Int) {
   eng.active_name = e.name;
   eng.sealed = e.sealed;
   eng.tombstones = e.tombstones;
+  // M-D7: every registered sealed source must be queryable -- load any
+  // not-yet-cached segment now (whole-file read; no mmap). An unreadable
+  // file bumps sealed_missing and stays out of the union (visible in
+  // engine_sealed_missing, never silent).
+  sealed_cache_ensure(eng);
+}
+
+// Load registry sealed entries of the active cid that are not in the cache.
+fn sealed_cache_ensure(eng: &mut VectorEngine) {
+  var i: Int = 0;
+  while i < eng.sealed.len() {
+    var se = eng.sealed[i];
+    var have: Bool = false;
+    var ci: Int = 0;
+    while ci < eng.sealed_cache.len() {
+      if eng.sealed_cache[ci].cid == eng.active_cid && eng.sealed_cache[ci].seg_id == se.seg_id { have = true; }
+      ci = ci + 1;
+    }
+    if !have {
+      var ss = segment_file_load(se.path);
+      if ss.valid {
+        eng.sealed_cache.push(SealedCacheEntry{ cid: eng.active_cid, seg_id: se.seg_id, ss: ss });
+      } else {
+        eng.sealed_missing = eng.sealed_missing + 1;
+      }
+    }
+    i = i + 1;
+  }
 }
 
 // Forget the live view (dropping the last collection leaves an engine that
@@ -746,6 +774,140 @@ pub fn engine_set_seal_policy(eng: &mut VectorEngine, every: Int, dir: Str) -> R
   eng.seal_every = every;
   eng.seal_dir = dir;
   return Ok(true);
+}
+
+// M-D7 cache maintenance: drop every entry of `cid`, push the replacement
+// (functional rebuild -- no in-place Vec truncation).
+fn sealed_cache_replaced(cache: &Vec[SealedCacheEntry], cid: Int, seg_id: Int, ss: SealedSegment) -> Vec[SealedCacheEntry] {
+  var keep = Vec[SealedCacheEntry].new();
+  var i: Int = 0;
+  while i < cache.len() {
+    if cache[i].cid != cid { keep.push(cache[i]); }
+    i = i + 1;
+  }
+  keep.push(SealedCacheEntry{ cid: cid, seg_id: seg_id, ss: ss });
+  return keep;
+}
+
+// M-D7 compaction: merge every sealed entry of the active collection PLUS the
+// active remainder into ONE new segment at `path` (tombstones applied,
+// active-wins), swap the registry (kind-2 replace; tombstones cleared), and
+// leave the old files on disk (caller cleans). Bit-exact with the
+// pre-compaction union. Returns the new segment id.
+pub fn engine_compact_sealed(eng: &mut VectorEngine, path: Str) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  if path.len() == 0 {
+    return Err(CoreError.InvalidInput("empty segment path"));
+  }
+  var live_points: Int = eng.store.ids.len();
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    if eng.sealed_cache[ci].cid == eng.active_cid {
+      live_points = live_points + eng.sealed_cache[ci].ss.store.ids.len();
+    }
+    ci = ci + 1;
+  }
+  if live_points == 0 {
+    return Err(CoreError.InvalidState("nothing to compact"));
+  }
+  // Refuse when a registered sealed source is not loaded: compaction
+  // replaces ALL entries of the cid, so a missing source would silently
+  // drop its data.
+  var cache_count: Int = 0;
+  var cc: Int = 0;
+  while cc < eng.sealed_cache.len() {
+    if eng.sealed_cache[cc].cid == eng.active_cid { cache_count = cache_count + 1; }
+    cc = cc + 1;
+  }
+  if cache_count != eng.sealed.len() {
+    return Err(CoreError.InvalidState("a sealed source is not loaded (refusing to compact)"));
+  }
+  var seg_id: Int = eng.sealed_next_id;
+  var head: Int = wal_writer_current_lsn(&eng.wal);
+  var ss = sealed_segment_new(seg_id, eng.active_cid, eng.dimension, eng.metric, eng.index_kind, eng.ann);
+  if !sealed_segment_seal(&mut ss) {
+    return Err(CoreError.InvalidState("segment lifecycle transition failed"));
+  }
+  // Merge: active first (current truth), then each cached sealed source with
+  // the union rules (skip active/resurrected dupes and tombstones).
+  var merged = index_new(eng.dimension);
+  var merged_pl = payload_store_new();
+  var a: Int = 0;
+  while a < eng.store.ids.len() {
+    var aid = eng.store.ids[a];
+    index_add(&mut merged, aid, eng.store.vectors[a]);
+    a = a + 1;
+  }
+  var pi: Int = 0;
+  while pi < eng.payloads.entries.len() {
+    payload_store_put(&mut merged_pl, eng.payloads.entries[pi].id, eng.payloads.entries[pi].payload);
+    pi = pi + 1;
+  }
+  var cj: Int = 0;
+  while cj < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[cj];
+    if sc.cid == eng.active_cid {
+      var j: Int = 0;
+      while j < sc.ss.store.ids.len() {
+        var id = sc.ss.store.ids[j];
+        var skip: Bool = false;
+        match index_get(&merged, id) {
+          Some(_) => { skip = true; }
+          None => {}
+        }
+        if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
+        if !skip {
+          index_add(&mut merged, id, sc.ss.store.vectors[j]);
+          match payload_store_get(&sc.ss.payloads, id) {
+            Some(pl) => { payload_store_put(&mut merged_pl, id, pl); }
+            None => {}
+          }
+        }
+        j = j + 1;
+      }
+    }
+    cj = cj + 1;
+  }
+  ss.store = merged;
+  ss.payloads = merged_pl;
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var g = hnsw_new(eng.ann.m, 4.0);
+    hnsw_set_ef_construction(&mut g, eng.ann.ef_construction);
+    var gi: Int = 0;
+    while gi < ss.store.ids.len() {
+      var gid = ss.store.ids[gi];
+      hnsw_insert_ref(&mut g, gid, &ss.store.vectors[gi], eng.metric);
+      gi = gi + 1;
+    }
+    ss.graph = g;
+    ss.has_graph = true;
+  }
+  let _sq = sealed_segment_enable_sq(&mut ss);
+  if !segment_file_persist(&ss, path) {
+    return Err(CoreError.IOFailure("segment persist failed"));
+  }
+  var points: Int = ss.store.ids.len();
+  var has_sq: Bool = ss.has_sq;
+  // Registry swap: one entry, tombstones applied and cleared.
+  var fresh = Vec[SealedEntry].new();
+  fresh.push(SealedEntry{ seg_id: seg_id, points: points, head_lsn: head, has_sq: has_sq, path: path });
+  eng.sealed = fresh;
+  eng.sealed_cache = sealed_cache_replaced(&eng.sealed_cache, eng.active_cid, seg_id, ss);
+  // Clear the active remainder; every tombstone has been applied.
+  eng.store = index_new(eng.dimension);
+  eng.graph = hnsw_new(eng.ann.m, 4.0);
+  hnsw_set_ef_construction(&mut eng.graph, eng.ann.ef_construction);
+  eng.payloads = payload_store_new();
+  eng.tombstones = Vec[Int].new();
+  eng.sealed_next_id = eng.sealed_next_id + 1;
+  var words = sealed_words(2, seg_id, points, head, has_sq, path);
+  wal_writer_append_payload(&mut eng.wal, WalOpKind.SnapshotMarker, 0, eng.active_cid, words);
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  return Ok(seg_id);
 }
 
 // Apply an index configuration to the (already created) collection: Hnsw
@@ -1349,6 +1511,24 @@ pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreErr
   return Ok(ok);
 }
 
+// M-D7: does the id exist in any cached sealed source of the active
+// collection? (Deletes must report sealed-only points as deleted -- they are
+// visible through the union until shadowed.)
+fn point_in_sealed(eng: &VectorEngine, id: Int) -> Bool {
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[ci];
+    if sc.cid == eng.active_cid {
+      match index_get(&sc.ss.store, id) {
+        Some(_) => { return true; }
+        None => {}
+      }
+    }
+    ci = ci + 1;
+  }
+  return false;
+}
+
 // In-memory apply half of delete (no durability commit); the batch path
 // loops this and commits ONCE per API call.
 fn engine_delete_apply(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
@@ -1360,8 +1540,11 @@ fn engine_delete_apply(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreE
     hnsw_delete(&mut eng.graph, point);
   }
   payload_store_remove(&mut eng.payloads, point);   // no orphan metadata
-  // M-D7: keep the id shadowed in the union (the sealed copy, if any, must
-  // not resurface). Unique-append; checkpoint compaction re-emits these.
+  // M-D7: a sealed-only point is a real deletion (it leaves the union);
+  // keep the id shadowed. The shadow is unconditional here (a deleted id
+  // that also has a sealed copy must not resurface); a re-upsert clears it,
+  // so tombstones and the active store stay disjoint at checkpoint time.
+  if !ok && point_in_sealed(eng, point) { ok = true; }
   if !tombs_contain(&eng.tombstones, point) {
     eng.tombstones.push(point);
   }
@@ -1459,6 +1642,31 @@ pub fn engine_delete_filter(eng: &mut VectorEngine, filter: &FilterExpr) -> Resu
       }
       i2 = i2 + 1;
     }
+  }
+  // M-D7: sealed-only matches. The sealed payload store is the truth for
+  // ids that live only in sealed files (active ids were covered above; an
+  // id present in active is deleted through its active entry).
+  var cs: Int = 0;
+  while cs < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[cs];
+    if sc.cid == eng.active_cid {
+      var si: Int = 0;
+      while si < sc.ss.payloads.entries.len() {
+        var sid = sc.ss.payloads.entries[si].id;
+        var in_active: Bool = false;
+        match index_get(&eng.store, sid) {
+          Some(_) => { in_active = true; }
+          None => {}
+        }
+        if !in_active && !tombs_contain(&eng.tombstones, sid) {
+          if payload_store_matches(&sc.ss.payloads, sid, filter) {
+            ids.push(sid);
+          }
+        }
+        si = si + 1;
+      }
+    }
+    cs = cs + 1;
   }
   if ids.len() == 0 {
     return Ok(0);
@@ -1777,8 +1985,36 @@ pub fn engine_enable_durable(eng: &mut VectorEngine, seg_path: Str) -> Result[Bo
 // On failure the frontier does NOT advance: the next commit retries every
 // pending record, and the segment is marked for heal (a failed write may
 // have left a torn tail).
+// M-D7 policy hooks, shared by the durable and non-durable commit paths:
+// count the commit, then run the opt-in seal policy (roll at threshold) and
+// the checkpoint policy. A policy failure never fails the ack (the write is
+// already durable when it matters; roll/persist failures retry at the next
+// commit).
+fn engine_policy_hooks(eng: &mut VectorEngine) {
+  eng.commits_since_ckpt = eng.commits_since_ckpt + 1;
+  if eng.seal_every > 0 && eng.seal_dir.len() > 0 && eng.store.ids.len() >= eng.seal_every {
+    var sid = eng.sealed_next_id;
+    var ap = eng.seal_dir + "/sealed-" + convert.int_to_string(eng.active_cid) + "-" + convert.int_to_string(sid) + ".seg";
+    match engine_roll_segment(eng, ap) {
+      Ok(_) => {}
+      Err(_) => {}
+    }
+  }
+  if eng.ckpt_every > 0 && eng.commits_since_ckpt >= eng.ckpt_every {
+    match engine_checkpoint_swap(eng) {
+      Ok(_) => {}
+      Err(_) => {}
+    }
+  }
+}
+
 pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
-  if eng.wal_seg_path.len() == 0 { return Ok(true); }
+  if eng.wal_seg_path.len() == 0 {
+    // No durable segment: still honor the opt-in roll/checkpoint policies
+    // (a roll writes its own files; a checkpoint swap Err is a no-op here).
+    engine_policy_hooks(eng);
+    return Ok(true);
+  }
   if eng.wal_seg_needs_heal {
     if !segment_heal(eng.wal_seg_path) {
       return Err(CoreError.IOFailure("segment heal failed"));
@@ -1792,27 +2028,7 @@ pub fn engine_wal_commit(eng: &mut VectorEngine) -> Result[Bool, CoreError] {
     Ok(_n) => {
       eng.wal_seg_frontier = cur;
       let _f = wal_writer_flush(&mut eng.wal);
-      eng.commits_since_ckpt = eng.commits_since_ckpt + 1;
-      // M-D7 seal policy: roll the active collection when it reaches the
-      // threshold (opt-in; dir validated at set time). A roll failure never
-      // fails the ack -- the retry happens at the next commit.
-      if eng.seal_every > 0 && eng.seal_dir.len() > 0 && eng.store.ids.len() >= eng.seal_every {
-        var sid = eng.sealed_next_id;
-        var ap = eng.seal_dir + "/sealed-" + convert.int_to_string(eng.active_cid) + "-" + convert.int_to_string(sid) + ".seg";
-        match engine_roll_segment(eng, ap) {
-          Ok(_) => {}
-          Err(_) => {}
-        }
-      }
-      if eng.ckpt_every > 0 && eng.commits_since_ckpt >= eng.ckpt_every {
-        // Checkpoint policy (M-D6): the write is already durable, so a swap
-        // failure never fails the ack -- the counter stays above the
-        // threshold and the next commit retries the swap.
-        match engine_checkpoint_swap(eng) {
-          Ok(_) => {}
-          Err(_) => {}
-        }
-      }
+      engine_policy_hooks(eng);
       return Ok(true);
     }
     Err(e) => {

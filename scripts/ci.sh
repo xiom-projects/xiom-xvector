@@ -54,6 +54,7 @@ probe_json_fast
 probe_quantization
 probe_wal_segment
 probe_snapshot
+probe_multisegment
 probe_batch_ops
 )
 
