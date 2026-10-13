@@ -1628,18 +1628,24 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
   unfixed): **XVC-C-13** (`&Str` parameters unknown to the checker -> i64
   fallback, silent wrong values; Addendum 9) **and XVC-C-14** (same-named
   struct types shadow field layouts; Addendum 10). Compiler-lane local
-  main is AHEAD of origin (`91860f11`): v0.64.5 plan docs + **m276-m281
-  landed** -- T1 env-unwrap veto (m276), T2 cast-call raw fn code (m277),
-  **T3 m278 `484d9f21` same-named types keep module identity** (the
-  C-14 identity mechanic; engine-root AV case), **FFI-pointer batch DONE
-  (m279-m281: `as_ptr`/`as_mut_ptr` inference, unsafe copy-out, raw
-  pointer slot reads / null literal / ptr-arith tails)**. **Next in the
-  themed batches: the thread/spawn runtime (our `-1627`/`-1402-xvector` +
-  engine `-2053`), then resolver/checker (`-1709-xvector` = C-14,
-  XVC-C-13)**; no v0.64.5 tag/archive yet -- the re-verification set
-  applies at that archive (thread gate first; C-14 re-test especially
-  interesting after m278). Re-checked the bus 2026-10-13T14:05Z: nothing
-  new addressed to xvector.
+  main is AHEAD of origin (`91860f11`): v0.64.5 candidate -- **m276-m284
+  landed** (T1 env-unwrap m276; T2 cast-call fn code m277; **T3 m278
+  `484d9f21` same-named types keep module identity** = the C-14 identity
+  mechanic; FFI-pointer batch m279-m281; **m282 `d6690868` = the
+  thread/spawn batch: our `-1627`/`-1402-xvector` are `fixed` -- cause 1
+  (compiler): `f as *UInt8` on a fn value passed the closure ENV handle,
+  now unwraps env field 1 (raw code), lock `ffi_fn_env_cast`; cause 2
+  (runtime/stdlib): the spawn result buffer lives in the confined block's
+  guard arena and is freed before join (UAF), filed as
+  `REL-20261013-1423-compiler` (acked, high) -- our real-spawn acceptance
+  re-runs after that fix + the next archive**); m283 contract
+  postcondition cycles + nested enum payloads; m284 `&mut local` capture
+  in confined blocks (B-21); candidate-closing docs (m276-m284 map, next
+  m285). **No v0.64.5 tag/archive yet**; still queued in the themed
+  batches: resolver/checker (`-1709-xvector` = C-14, XVC-C-13). Verified
+  at the archive: thread gate FIRST (the env half needs no further work),
+  then C-14 after m278. Re-checked the bus 2026-10-13T17:05Z: nothing new
+  addressed to xvector; stdlib wave 126 (strnlen batch 2) landed.
 - **packages:** lane HEAD `674dea9d` (2026-10-12: stage-promotion policy
   per owner; live working tree with in-flight edits -- this lane consumes
   the registry into its own homes, not their checkout). Earlier era:
@@ -1695,7 +1701,7 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 82 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed**; **doorbell 20:08Z: stdlib ACKED the mmap ask (runtime bundle, after durable-IO P1-P3); compiler v0.64.5 plan carries our thread items + C-13/C-14 in themed batches (m276/m277 on main; no tag yet)**; **2026-10-13: relayed the window-resize diagnosis to engine (`REL-20261013-1501-xvector`: sdl3 0.18 HAS `sdl3_window_size`/set/resizable + events 518/519; size-readback breakage = compiler B-24/B-20 fixed m281; mini-RHI resize = 0.12.0 tier)** |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed**; **doorbell 20:08Z: stdlib ACKED the mmap ask (runtime bundle, after durable-IO P1-P3); compiler v0.64.5 plan carries our thread items + C-13/C-14 in themed batches (m276/m277 on main; no tag yet)**; **2026-10-13: relayed the window-resize diagnosis to engine (`REL-20261013-1501-xvector`: sdl3 0.18 HAS `sdl3_window_size`/set/resizable + events 518/519; size-readback breakage = compiler B-24/B-20 fixed m281; mini-RHI resize = 0.12.0 tier)**; **doorbell 17:05Z: our thread items `-1627`/`-1402` FIXED by compiler m282 `d6690868` (env-cast cause locked; the guard-arena UAF cause filed upstream as `REL-20261013-1423-compiler`, acked high); v0.64.5 candidate m276-m284, next m285, no tag; stdlib wave 126 (strnlen batch 2) landed; nothing new for xvector** |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
@@ -2298,9 +2304,11 @@ State at 2026-10-13T16:00: HEAD 48fca54 + the 79th-wrap commit; clean
 tree; tag v1.0.0-rc.1 on 530b041. v0.64.4 archive pass DONE (C-15 +
 phantom imports verified fixed, bus -1134/-2124 closed; C-13 (Win 167 /
 WSL 63) and C-14 (ll:850) re-tested unchanged; the thread gate still
-AVs -- runtime-side fix pending, REL-20261012-1402-xvector; **v0.64.5 in
-progress on compiler main: m276-m281 landed (T1-T3 closed; FFI-pointer
-batch done; m278 = the C-14 identity mechanic), thread batch next**).
+AVs -- runtime-side fix pending, REL-20261012-1402-xvector; **v0.64.5
+candidate on compiler main: m276-m284 (m282 = the thread/spawn batch --
+our -1627/-1402 FIXED: env-cast cause locked; the guard-arena UAF cause
+filed to stdlib `REL-20261013-1423-compiler`, acked high); m283/m284;
+next m285; no tag yet**).
 **D5 + D6 are DONE (fsync-on-ack + kill matrix + compact+swap +
 snapshots; board 86 %).** NEXT: the multi-segment collection read path,
 then M-P (P3/P4), Q-a2b, and the standing queues. Lane pins: compiler
