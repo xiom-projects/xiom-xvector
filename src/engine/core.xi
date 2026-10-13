@@ -1084,6 +1084,242 @@ fn neighbors_to_results(items: &Vec[Neighbor]) -> Vec[SearchResult] {
   return out;
 }
 
+// ---- M-D7 union search helpers ----
+// Per-source candidate budget: k + tombstones guarantees >= k live candidates
+// per Flat source (at most `tombstones.len()` prefix entries can be shadowed),
+// so the merged top-k is exact. Distance ties resolve by source order (active
+// first, then sealed-cache order) -- deterministic.
+
+fn union_per_limit(k: Int, tombs: Int) -> Int {
+  return k + tombs;
+}
+
+fn union_sealed_knn(eng: &VectorEngine, q: &Vector, per: Int) -> Vec[SearchResult] {
+  var out = Vec[SearchResult].new();
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[ci];
+    if sc.cid == eng.active_cid {
+      var src = Vec[SearchResult].new();
+      if sc.ss.kind == AnnIndexKind.Hnsw && sc.ss.has_graph {
+        var nb = hnsw_search(&sc.ss.graph, q, per, sc.ss.ef_search, sc.ss.metric);
+        src = neighbors_to_results(&nb);
+      } else {
+        src = search_knn(&sc.ss.store, q, per, sc.ss.metric);
+      }
+      var j: Int = 0;
+      while j < src.len() {
+        var id = src[j].id;
+        var skip: Bool = false;
+        match index_get(&eng.store, id) {
+          Some(_) => { skip = true; }
+          None => {}
+        }
+        if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
+        if !skip {
+          results_push_bounded(&mut out, SearchResult{ id: id, distance: src[j].distance }, per);
+        }
+        j = j + 1;
+      }
+    }
+    ci = ci + 1;
+  }
+  return out;
+}
+
+fn union_sealed_knn_filtered(eng: &VectorEngine, q: &Vector, per: Int, filter: &FilterExpr) -> Vec[SearchResult] {
+  var out = Vec[SearchResult].new();
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[ci];
+    if sc.cid == eng.active_cid {
+      var src = Vec[SearchResult].new();
+      if sc.ss.kind == AnnIndexKind.Hnsw && sc.ss.has_graph {
+        var nb = hnsw_search(&sc.ss.graph, q, per, sc.ss.ef_search, sc.ss.metric);
+        src = filter_results_by_payload(&neighbors_to_results(&nb), &sc.ss.payloads, filter);
+      } else {
+        src = search_knn_filtered(&sc.ss.store, &sc.ss.payloads, q, per, sc.ss.metric, filter);
+      }
+      var j: Int = 0;
+      while j < src.len() {
+        var id = src[j].id;
+        var skip: Bool = false;
+        match index_get(&eng.store, id) {
+          Some(_) => { skip = true; }
+          None => {}
+        }
+        if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
+        if !skip {
+          results_push_bounded(&mut out, SearchResult{ id: id, distance: src[j].distance }, per);
+        }
+        j = j + 1;
+      }
+    }
+    ci = ci + 1;
+  }
+  return out;
+}
+
+fn union_knn(eng: &VectorEngine, q: &Vector, k: Int) -> Vec[SearchResult] {
+  if eng.sealed.len() == 0 {
+    // No registered sealed segments: the historical behavior, bit-exact.
+    if eng.index_kind == AnnIndexKind.Hnsw {
+      return neighbors_to_results(&hnsw_search(&eng.graph, q, k, eng.ann.ef_search, eng.metric));
+    }
+    return search_knn(&eng.store, q, k, eng.metric);
+  }
+  var per = union_per_limit(k, eng.tombstones.len());
+  var results = Vec[SearchResult].new();
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var nb = hnsw_search(&eng.graph, q, per, eng.ann.ef_search, eng.metric);
+    var ar = neighbors_to_results(&nb);
+    var i: Int = 0;
+    while i < ar.len() {
+      results_push_bounded(&mut results, ar[i], k);
+      i = i + 1;
+    }
+  } else {
+    var ar2 = search_knn(&eng.store, q, per, eng.metric);
+    var i: Int = 0;
+    while i < ar2.len() {
+      results_push_bounded(&mut results, ar2[i], k);
+      i = i + 1;
+    }
+  }
+  var sealed = union_sealed_knn(eng, q, per);
+  var j: Int = 0;
+  while j < sealed.len() {
+    results_push_bounded(&mut results, sealed[j], k);
+    j = j + 1;
+  }
+  return results;
+}
+
+fn union_knn_filtered(eng: &VectorEngine, q: &Vector, k: Int, filter: &FilterExpr) -> Vec[SearchResult] {
+  if eng.sealed.len() == 0 {
+    if eng.index_kind == AnnIndexKind.Hnsw {
+      return hnsw_search_filtered(eng, q, k, filter);
+    }
+    return search_knn_filtered(&eng.store, &eng.payloads, q, k, eng.metric, filter);
+  }
+  var per = union_per_limit(k, eng.tombstones.len());
+  var results = Vec[SearchResult].new();
+  if eng.index_kind == AnnIndexKind.Hnsw {
+    var ar = hnsw_search_filtered(eng, q, per, filter);
+    var i: Int = 0;
+    while i < ar.len() {
+      results_push_bounded(&mut results, ar[i], k);
+      i = i + 1;
+    }
+  } else {
+    var ar2 = search_knn_filtered(&eng.store, &eng.payloads, q, per, eng.metric, filter);
+    var i: Int = 0;
+    while i < ar2.len() {
+      results_push_bounded(&mut results, ar2[i], k);
+      i = i + 1;
+    }
+  }
+  var sealed = union_sealed_knn_filtered(eng, q, per, filter);
+  var j: Int = 0;
+  while j < sealed.len() {
+    results_push_bounded(&mut results, sealed[j], k);
+    j = j + 1;
+  }
+  return results;
+}
+
+// Collect EVERY live union candidate (active store + sealed sources, union
+// rules applied) into a bound-limited sorted list. `use_radius` adds the
+// inclusive range predicate. O(active + sealed) per call, the scan class.
+fn union_scan(eng: &VectorEngine, q: &Vector, bound: Int, radius: Float32, use_radius: Bool) -> Vec[SearchResult] {
+  var results = Vec[SearchResult].new();
+  var i: Int = 0;
+  while i < eng.store.ids.len() {
+    var d = vector_distance(&eng.store.vectors[i], q, eng.metric);
+    if !use_radius || d <= radius {
+      results_push_bounded(&mut results, SearchResult{ id: eng.store.ids[i], distance: d }, bound);
+    }
+    i = i + 1;
+  }
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[ci];
+    if sc.cid == eng.active_cid {
+      var j: Int = 0;
+      while j < sc.ss.store.ids.len() {
+        var id = sc.ss.store.ids[j];
+        var skip: Bool = false;
+        match index_get(&eng.store, id) {
+          Some(_) => { skip = true; }
+          None => {}
+        }
+        if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
+        if !skip {
+          var d2 = vector_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          if !use_radius || d2 <= radius {
+            results_push_bounded(&mut results, SearchResult{ id: id, distance: d2 }, bound);
+          }
+        }
+        j = j + 1;
+      }
+    }
+    ci = ci + 1;
+  }
+  return results;
+}
+
+fn union_range(eng: &VectorEngine, q: &Vector, radius: Float32, limit: Int) -> Vec[SearchResult] {
+  return union_scan(eng, q, limit, radius, true);
+}
+
+fn union_page(eng: &VectorEngine, q: &Vector, k: Int, offset: Int) -> Vec[SearchResult] {
+  if eng.sealed.len() == 0 {
+    var sh = search_page_scan(&eng.store, q, k, offset, eng.metric);
+    return sh.items;
+  }
+  var all = union_scan(eng, q, offset + k, 0.0, false);
+  var out = Vec[SearchResult].new();
+  var i: Int = offset;
+  while i < all.len() && out.len() < k {
+    out.push(all[i]);
+    i = i + 1;
+  }
+  return out;
+}
+
+fn union_after(eng: &VectorEngine, q: &Vector, k: Int, after_id: Int) -> Option[SearchHits] {
+  if eng.sealed.len() == 0 {
+    return search_after_scan(&eng.store, q, k, after_id, eng.metric);
+  }
+  var bound: Int = eng.store.ids.len();
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    if eng.sealed_cache[ci].cid == eng.active_cid {
+      bound = bound + eng.sealed_cache[ci].ss.store.ids.len();
+    }
+    ci = ci + 1;
+  }
+  var all = union_scan(eng, q, bound, 0.0, false);
+  var pos: Int = -1;
+  var i: Int = 0;
+  while i < all.len() {
+    if all[i].id == after_id {
+      pos = i;
+      i = all.len();
+    } else {
+      i = i + 1;
+    }
+  }
+  if pos < 0 { return None; }
+  var out = Vec[SearchResult].new();
+  var j: Int = pos + 1;
+  while j < all.len() && out.len() < k {
+    out.push(all[j]);
+    j = j + 1;
+  }
+  return Some(SearchHits{ items: out });
+}
+
 pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError]
   requires: eng.created
   requires: k > 0
@@ -1094,12 +1330,8 @@ pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[Searc
   if !is_valid_top_k(k) {
     return Err(CoreError.InvalidInput("top_k out of range"));
   }
-  if eng.index_kind == AnnIndexKind.Hnsw {
-    var neighbors = hnsw_search(&eng.graph, query, k, eng.ann.ef_search, eng.metric);
-    return Ok(SearchHits{ items: neighbors_to_results(&neighbors) });
-  }
-  var hits = search_knn(&eng.store, query, k, eng.metric);
-  return Ok(SearchHits{ items: hits });
+  // M-D7: union over active + sealed (single-source fast path inside).
+  return Ok(SearchHits{ items: union_knn(eng, query, k) });
 }
 
 pub fn engine_delete(eng: &mut VectorEngine, point: Int) -> Result[Bool, CoreError]
@@ -1340,12 +1572,8 @@ pub fn engine_search_filtered(eng: &VectorEngine, query: &Vector, k: Int, filter
   if !is_valid_top_k(k) {
     return Err(CoreError.InvalidInput("top_k out of range"));
   }
-  if eng.index_kind == AnnIndexKind.Hnsw {
-    var hits = hnsw_search_filtered(eng, query, k, filter);
-    return Ok(SearchHits{ items: hits });
-  }
-  var hits = search_knn_filtered(&eng.store, &eng.payloads, query, k, eng.metric, filter);
-  return Ok(SearchHits{ items: hits });
+  // M-D7: union over active + sealed (single-source fast path inside).
+  return Ok(SearchHits{ items: union_knn_filtered(eng, query, k, filter) });
 }
 
 // Exact range search: points within `radius` (inclusive) on the active
@@ -1364,8 +1592,8 @@ pub fn engine_search_range(eng: &VectorEngine, query: &Vector, radius: Float32, 
   if radius < 0.0 {
     return Err(CoreError.InvalidInput("radius out of range"));
   }
-  var hits = search_range_scan(&eng.store, query, radius, limit, eng.metric);
-  return Ok(SearchHits{ items: hits });
+  // M-D7: union over active + sealed (single-source fast path inside).
+  return Ok(SearchHits{ items: union_range(eng, query, radius, limit) });
 }
 
 // Offset pagination (M-Q3): ranks [offset, offset+k) of the exact total
@@ -1384,7 +1612,8 @@ pub fn engine_search_page(eng: &VectorEngine, query: &Vector, k: Int, offset: In
   if offset < 0 {
     return Err(CoreError.InvalidInput("offset must be >= 0"));
   }
-  return Ok(search_page_scan(&eng.store, query, k, offset, eng.metric));
+  // M-D7: union over active + sealed (single-source fast path inside).
+  return Ok(SearchHits{ items: union_page(eng, query, k, offset) });
 }
 
 // Cursor pagination (M-Q3): the next k ranks strictly after the current
@@ -1400,7 +1629,8 @@ pub fn engine_search_after(eng: &VectorEngine, query: &Vector, k: Int, after_id:
   if !is_valid_top_k(k) {
     return Err(CoreError.InvalidInput("top_k out of range"));
   }
-  var page = search_after_scan(&eng.store, query, k, after_id, eng.metric);
+  // M-D7: union over active + sealed (single-source fast path inside).
+  var page = union_after(eng, query, k, after_id);
   match page {
     Some(h) => { return Ok(h); }
     None => { return Err(CoreError.NotFound); }
