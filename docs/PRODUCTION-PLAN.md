@@ -172,9 +172,22 @@ Goal: a kill never costs an acknowledged write on the available path.
   follows; truncate-based retention stays stdlib-gated (`-5` acked).**
   Honesty: this is process-kill durability (fsynced bytes survive a killed
   process); power-loss safety still needs OS-level fault injection.
-- **D6 retention + snapshots** -- checkpoint policy (compact + swap;
-  truncate when stdlib lands), export/import snapshot format, restore drill.
-  Probe `probe_snapshot`.
+- **D6 retention + snapshots -- DONE 2026-10-13** -- checkpoint compact+swap
+  (`engine_checkpoint_swap`: rebase the log to live state, then
+  `wal_persist_sync` = write tmp -> fsync tmp -> rename -> dir fsync, and
+  ONLY THEN reset the segment + advance the frontier; a failed swap never
+  resets the segment, so acknowledged records are never lost) + the
+  auto-policy hook (`engine_set_checkpoint_policy` /
+  `XVECTORD_CHECKPOINT_EVERY`; clean quit always swaps) + snapshot
+  export/import (`durability.snapshot`: ckpt + manifest + strict
+  `xvector-snapshot 1 <lsn> <collections>` meta; corrupt/missing meta
+  refused; multi-collection bit-exact restore) + the restore drill in
+  OPERATIONS. Gate `probe_snapshot` (27 checks; 4000-point snapshot reload
+  measured at **10 ms**); retention guidance documented (swap interval,
+  snapshot rotation is user-side file rotation). Both batteries green on
+  Windows + WSL. **Remaining in M-D: the multi-segment collection read
+  path; power-loss fault injection (OS-level; process-kill durability is
+  proven).**
 
 Exit: kill-matrix green; recovery time measured; formats versioned and
 documented (SPEC); snapshots restore bit-exact stores.

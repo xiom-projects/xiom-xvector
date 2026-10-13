@@ -10,12 +10,12 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-12, 78th pass (v1.0.0-rc.1 candidate; runnable HTTP
-  server `xvectord` + benchmark adapters; **D5 durability delta landed:
-  fsync-on-ack segment + file-level kill matrix 6/6 both platforms +
-  durable server home; v0.64.4 archive re-verified**; lane-local toolchain
-  isolation)
-- **Overall:** **85 %** (weighted; see method)
+- **As of:** 2026-10-13, 79th pass (v1.0.0-rc.1 candidate; **D6 landed:
+  checkpoint compact+swap (crash-safe fsync ordering) + snapshots
+  (bit-exact multi-collection restore) + auto-checkpoint policy**;
+  D5 kill matrix + fsync-on-ack; v0.64.4 archive re-verified; lane-local
+  toolchain isolation)
+- **Overall:** **86 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -32,7 +32,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 88 | release-grade | multi-segment read path, WAL retention/pruning (D6), power-loss fault injection |
+| D | Persistence & durability | 20 | 93 | release-grade | multi-segment read path, power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
@@ -40,8 +40,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x88 + 0.08x100 +
-0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **84.92 -> 85 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x93 + 0.08x100 +
+0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **85.92 -> 86 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -105,7 +105,7 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 88 %
+### D. Persistence & durability -- 93 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
@@ -148,10 +148,17 @@ present after recovery -- 6/6 iterations Windows + 6/6 WSL via
 `scripts/kill_matrix.ps1|.sh`), and the **durable server home**
 (`xvectord` with `XVECTORD_WAL`: fsync-on-ack serving, checkpoint +
 segment rotation on clean quit; restart-verified: 400 points, recall
-1.000).
+1.000), a measured recovery time for a 4000-point snapshot (10 ms,
+`probe_snapshot` diag), and **the D6 retention/snapshot layer** --
+`engine_checkpoint_swap`
+(rebase to live state -> `wal_persist_sync` with fsync-before-rename
+ordering -> segment reset + frontier advance; a failed swap never resets
+the segment) with the auto-policy hook (`XVECTORD_CHECKPOINT_EVERY`;
+clean quit always swaps), and `durability.snapshot` (ckpt + manifest +
+strict versioned meta; corrupt/missing meta refused; multi-collection
+bit-exact restore + search parity; gate `probe_snapshot`, 27 checks).
 Remaining (in order): multi-segment collection read path (P2
-thresholds), WAL retention/pruning policy (D6; truncate-gated), snapshot/
-export-import (D6), and power-loss fault injection (OS-level; process-kill
+thresholds), and power-loss fault injection (OS-level; process-kill
 durability is proven today, `OPERATIONS.md` states the boundary).
 
 ### E. Metadata & filtering -- 100 %
@@ -1127,8 +1134,22 @@ extraction with the packages lane.
   checkpoint + rotate on quit; restart-verified 400 points, recall
   1.000). Gates: `probe_wal_segment` 38 checks + kill matrix, both wired
   into the CI batteries (42 probes now). **D 74 -> 88; overall 82 % ->
-  85 %.** Remaining in D: multi-segment read path, retention/snapshots
-  (D6), power-loss fault injection.
+  85 %.** Remaining in D (then): multi-segment read path, retention/
+  snapshots (D6), power-loss fault injection.
+- **2026-10-13 (D6 retention + snapshots, 79th pass):** `engine_checkpoint_swap`
+  (compact -> durable fsync-ordered persist -> segment reset -> frontier
+  advance; never resets the segment on failure) + auto-policy
+  (`XVECTORD_CHECKPOINT_EVERY`; clean quit always swaps) + snapshot
+  export/import (strict meta; multi-collection bit-exact restore; corrupt
+  meta refused). Gate `probe_snapshot` 27 checks (swap shrinks churn 451 ->
+  251 records; post-swap crash-recovery bit-exact; policy at N commits with
+  zero loss; 4000-point snapshot reload **10 ms**). Both batteries green
+  (Windows + WSL; suite 177/177 x2 + sbom **44 modules** unsafe=0 + **43
+  probes x2** + bench smoke + kill matrix). **D 88 -> 93; overall 85 % ->
+  86 %.** Note: a latent XVC-C-14 landmine (legacy `xiom.vector.collection.*`
+  wrappers re-declaring AnnParams/AnnIndexKind) was found and annotated --
+  do not import that family until the compiler's m278-class fix is in the
+  pin (v0.64.5).
 
 ## Update rule
 

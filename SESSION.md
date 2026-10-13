@@ -157,9 +157,11 @@ green both platforms; verdicts + closures filed on the bus.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `5a9b8fd` (xvectord durable
-mode) + this 78th-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `5a9b8fd` xvectord durable mode + `6bf292d` kill harness +
+**Repo:** private, no pushes; clean tree. HEAD `48fca54` (xvectord D6
+policy + quit swap) + this 79th-wrap commit; tag `v1.0.0-rc.1` still on
+`530b041`.
+Recent slices: `48fca54` xvectord D6 policy + `401c120` D6 compact+swap +
+snapshots (79th), `5a9b8fd` xvectord durable mode + `6bf292d` kill harness +
 `11eb1cd` D5 delta segment/engine (78th), `390c7a4` v0.64.4 archive
 re-verification (77th),
 `6da4c32` wave-113 re-verification (76th wrap),
@@ -992,6 +994,15 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
 lane `cd281b7`; latest re-verification = the v0.64.4 archive pass on the
 current tree):**
 
+- **D6 retention + snapshots (79th pass, 2026-10-13):** `probe_snapshot`
+  **27/27** (compact+swap churn 451 -> 251 records; post-swap
+  crash-recovery bit-exact; auto-policy at N commits zero-loss;
+  multi-collection bit-exact restore; corrupt meta refused); both
+  batteries ALL GATES GREEN (suite 177/177 x2 + sbom 44 modules unsafe=0
+  + 43 probes x2 + bench smoke + kill matrix; Windows + WSL); live
+  server: policy `every=3` fired auto swaps during the 400-point smoke,
+  quit swap committed (`frontier 1063`), restart 400 pts recall 1.000;
+  **4000-point snapshot reload 10 ms**.
 - **D5 durability delta (78th pass, 2026-10-12):** `probe_wal_segment`
   **38/38**; **kill matrix 6/6 Windows** (acked 99-213 per run) + **6/6
   WSL** (acked 25-36), missing=0 both platforms; durable server home
@@ -1269,37 +1280,35 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-**78th-pass wrap (2026-10-12 night): D5 DURABILITY DELTA DONE.**
-- `durability.wal_segment.xi`: append-only delta in `xiom.wal` codec v1
-  framing; byte-linear renderer; tolerant line replay with LSN-gap stop;
-  heal-on-open; checkpoint-deduped merge; rotation.
-- Engine: `enable_durable` / `wal_commit` (fsync BEFORE the ack; on
-  failure the frontier holds and the next commit retries -- no lost ack) /
-  `open_durable`; upsert/delete split into apply/commit halves so batch
-  ops fsync once per call.
-- **Kill matrix: 6/6 Windows + 6/6 WSL** (`scripts/kill_matrix.ps1|.sh`;
-  child writer + fsynced ack ledger killed mid-stream; every acknowledged
-  record recovered, missing=0).
-- **Durable server home** `XVECTORD_WAL`: smoke 7/7 on the durable server,
-  clean quit -> checkpoint + segment rotation, restart -> 400 points,
-  recall@10 1.000.
-- Gates: `probe_wal_segment` 38/38 + kill matrix wired into BOTH CI
-  batteries (42 probes now); regression probes green; `truncate_fd`
-  verified in-lane (stdlib wave 117).
-- Bus: `-2`/`-3`/`-4` (durability trio) verified + closed; **`-5`
-  (truncate) verified + closed too** -- fd (`truncate_fd`, 10 -> 4) and
-  path (`io.truncate_file`, 4 -> 2) halves both green in-lane; D6
-  retention unblocked.
-NEXT: **D6** (retention via `truncate_fd` -- now unblocked; snapshots/
-export-import; policy triggers), the multi-segment read path (P2), then
-M-P (P3 seam / P4 PQ) and the standing queues. Standing watches: the
-compiler runtime thread fix (v0.64.5 themed batches); stdlib mmap
-(queued upstream); the `xiom.ann` swap + rc.1 public-release greenlights.
+**79th-pass wrap (2026-10-13): D6 RETENTION + SNAPSHOTS DONE -- M-D
+complete except the multi-segment read path.**
+- `wal_persist_sync` (write tmp -> fsync tmp -> rename -> dir fsync
+  best-effort) + `engine_checkpoint_swap` (compact -> durable persist ->
+  segment reset -> frontier advance; a failed swap NEVER resets the
+  segment) + auto-policy (`XVECTORD_CHECKPOINT_EVERY`; clean quit always
+  swaps).
+- `durability.snapshot`: ckpt + manifest + strict meta
+  (`xvector-snapshot 1 <lsn> <cols>`); corrupt/missing meta refused;
+  multi-collection bit-exact restore + search parity.
+- Gates: `probe_snapshot` **27/27** (churn 451 -> 251 records; post-swap
+  crash-recovery bit-exact; policy zero-loss; **4000-pt reload 10 ms**);
+  both batteries green (suite 177/177 x2 + sbom **44 modules** unsafe=0 +
+  **43 probes x2** + bench smoke + kill matrix).
+- Found + annotated a latent XVC-C-14 landmine: the legacy
+  `xiom.vector.collection.*` wrappers re-declare AnnParams/AnnIndexKind
+  and break engine.core resolution if pulled into the same catalog
+  (observed on v0.64.4; the m278-class fix arrives with v0.64.5). DO NOT
+  import them; the canonical DistanceMetric is `xiom.vectors`.
+NEXT: **the multi-segment collection read path** (D4/D6 carry-over; P2
+thresholds own tuning), then M-P (P3 seam / P4 PQ), Q-a2b, and the
+standing queues. Standing watches: the v0.64.5 archive (thread gate +
+C-14 re-test; m276-m281 on compiler main, thread batch next), stdlib mmap
+(queued), the `xiom.ann` swap + rc.1 public-release greenlights.
 **Reference-port queue (owner guidance 2026-10-12):** FAISS PQ -> P4
 IVF-PQ prototype; FAISS visited-set pruning -> P-b (M-P); DiskANN
-layout/merge -> D6/P5 (feeds the retention/snapshot design); sqlite-vec
-two-tier rescore -> Q-a2b -- port mechanics, probe-gate each, attribute
-the source, relay platform blockers the moment they bite.
+layout/merge -> the multi-segment read path / P5 (feeds its design);
+sqlite-vec two-tier rescore -> Q-a2b -- port mechanics, probe-gate each,
+attribute the source, relay platform blockers the moment they bite.
 
 1. **ALL SLICES DONE + v1.0.0-rc.1 PREPARED + five registry surfaces
    live (`xiom.wal`, `xiom.metrics`, `xiom.rate`, `xiom.http` status
@@ -2285,23 +2294,23 @@ E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the
 private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-State at 2026-10-12T23:59: HEAD 5a9b8fd + the 78th-wrap commit; clean
-tree; tag v1.0.0-rc.1 on 530b041. The v0.64.4 archive pass is DONE
-(C-15 + phantom imports verified fixed, bus -1134/-2124 closed; C-13
-(Win 167 / WSL 63) and C-14 (ll:850) re-tested unchanged; the thread
-gate still AVs -- runtime-side fix pending, REL-20261012-1402-xvector).
-**D5 durability delta is DONE (78th pass): fsync-on-ack delta segment,
-kill matrix 6/6 Windows + 6/6 WSL, durable server home XVECTORD_WAL
-(restart-verified); board 85 %.** NEXT: D6 retention/snapshots
-(truncate_fd landed in stdlib wave 117), multi-segment read path (P2),
-then M-P (P3/P4) and the standing queues. Lane pins: compiler v0.64.4
-installed lane-local (Windows out\toolchain, WSL ~/.xvector-toolchain;
-NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom); stdlib 260bb44 (wave
-117; the tree the batteries ran on; mmap queued); packages 674dea9d
-(xiom.ann 0.2.0 live + verified; swap owner-gated). Batteries green at
-the 78th wrap: suite 177/177 x2 + sbom (43 modules, unsafe=0) + 42
-probes x2 + bench smoke + kill matrix (Windows) + WSL suite x2 + spots +
-kill matrix.
+State at 2026-10-13T16:00: HEAD 48fca54 + the 79th-wrap commit; clean
+tree; tag v1.0.0-rc.1 on 530b041. v0.64.4 archive pass DONE (C-15 +
+phantom imports verified fixed, bus -1134/-2124 closed; C-13 (Win 167 /
+WSL 63) and C-14 (ll:850) re-tested unchanged; the thread gate still
+AVs -- runtime-side fix pending, REL-20261012-1402-xvector; **v0.64.5 in
+progress on compiler main: m276-m281 landed (T1-T3 closed; FFI-pointer
+batch done; m278 = the C-14 identity mechanic), thread batch next**).
+**D5 + D6 are DONE (fsync-on-ack + kill matrix + compact+swap +
+snapshots; board 86 %).** NEXT: the multi-segment collection read path,
+then M-P (P3/P4), Q-a2b, and the standing queues. Lane pins: compiler
+v0.64.4 installed lane-local (Windows out\toolchain, WSL
+~/.xvector-toolchain; NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom);
+stdlib 260bb44+ (wave 117; the tree the batteries ran on; mmap queued);
+packages 674dea9d (xiom.ann 0.2.0 live + verified; swap owner-gated).
+Batteries green at the 79th wrap: suite 177/177 x2 + sbom (44 modules,
+unsafe=0) + 43 probes x2 + bench smoke + kill matrix (Windows) + WSL
+suite x2 + spots + kill matrix.
 
 Work the queue (docs/G-PHASE-PLAN.md section 6): P3 SIMD seam / P4 IVF-PQ
 prototype (M-P), the sharding harness story (G v1), post-gate G slices

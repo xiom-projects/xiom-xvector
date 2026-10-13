@@ -54,7 +54,7 @@ repository stays private; nothing below happens until the owner greenlights.
 
 | Gate | Primitive | Unblocks |
 |---|---|---|
-| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | **LANDED** (wave 115, verified in-lane 2026-10-12; `truncate_fd` wave 117) -- **D5 shipped on them** (fsync-on-ack + kill matrix) | **D5 done; D6 retention/snapshots next** |
+| stdlib fsync/fdatasync/`truncate` + fd write path + `append_file_bytes` | **LANDED** (waves 115/117, verified in-lane) -- **D5 + D6 shipped on them** (fsync-on-ack + kill matrix + compact/swap + snapshots) | **M-D remaining: multi-segment read path + power-loss injection** |
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |

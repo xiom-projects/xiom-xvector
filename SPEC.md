@@ -27,7 +27,7 @@ packages/xiom-vector/
     |-- index/{ann_index,flat_index,hnsw}.xi
     |-- distance/{cosine,dot,l2}.xi
     |-- query/{search_request,filter_plan,topk_heap,search_service,pagination}.xi
-    |-- durability/{wal,recovery,write_ahead_events,wal_file,wal_segment,manifest_file}.xi
+    |-- durability/{wal,recovery,write_ahead_events,wal_file,wal_segment,snapshot,manifest_file}.xi
     `-- api/vector_api.xi
 ```
 
@@ -298,6 +298,34 @@ retries every pending record), `engine_synced_lsn`,
 merge -> recover -> enable). Gate: `probe_wal_segment` (38 checks);
 crash harness: `tests/harness/kill_writer|kill_check` +
 `scripts/kill_matrix.ps1|.sh`.
+
+## Checkpoint compact+swap + snapshots (M-D6, `durability.wal_file` / `durability.snapshot`)
+- `wal_persist_sync(w, path) -> Bool`: crash-safe checkpoint swap -- write
+  `<path>.tmp`, fsync it, `io.rename` over the target, then a best-effort
+  directory fsync (`path_parent` handles both separators; `.` when there is
+  none). `wal_persist` (no fsync) stays for non-durable callers.
+- `engine_checkpoint_swap(eng) -> Result[Int, CoreError]` (engine.core):
+  `engine_checkpoint_from` (rebase LSNs to the live state) ->
+  `wal_persist_sync` -> `segment_reset` -> frontier := compacted current
+  LSN, commit counter reset. A failure BEFORE the persist leaves the
+  segment untouched; after a persist failure the swap returns Err with the
+  segment still carrying the delta (nothing acknowledged is lost). Returns
+  the new durable frontier (>= the old one; compaction rebases LSNs -- old
+  LSNs are abandoned, never reused).
+- `engine_set_checkpoint_path` / `engine_set_checkpoint_policy(eng, every)`
+  / `engine_checkpoint_countdown`; `engine_wal_commit` runs a swap when the
+  commit counter reaches `every` (a swap failure is retried on the next
+  commit; the ack already happened). `XVECTORD_CHECKPOINT_EVERY` wires it
+  on the server; a clean quit always swaps.
+- `snapshot_create(eng, dir, name) -> Result[Str, Str]`
+  (durability.snapshot) writes `<dir>/<name>.ckpt` (compacted checkpoint) +
+  `.manifest` + `.meta` (`xvector-snapshot 1 <lsn> <collections>` single
+  line); a durable engine is swapped first, an in-memory engine compacted.
+- `snapshot_valid(base)` / `snapshot_meta_parse` / `snapshot_meta_read`
+  (strict: exactly four space-separated tokens, version 1, non-negative
+  numbers; missing/garbage refused); `snapshot_load(base, seg_out, dim,
+  metric) -> Result[VectorEngine, Str]` (meta-gated `engine_open_durable`).
+- Gate: `probe_snapshot` (27 checks; measured 4000-point reload: 10 ms).
 
 ## `xiom.vector.payload` engine integration
 `engine_set_payload(eng, point, payload) -> Result[Bool, CoreError]`

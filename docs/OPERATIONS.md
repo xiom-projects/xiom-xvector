@@ -33,8 +33,10 @@ The boundary that remains is power-loss fault injection (see §5).
 
 | Source | Key | Notes |
 |---|---|---|
-| env | `XVECTOR_MAX_REQUEST_BYTES`, `XVECTOR_MAX_TOP_K`, `XVECTOR_MAX_BATCH`, `XVECTOR_MAX_DIM` | malformed values ignored |
+| env | `XVECTOR_MAX_REQUEST_BYTES`, `XVECTOR_MAX_TOP_K`, `XVECTOR_MAX_BATCH`, `XVECTOR_MAX_DIM` | limits; malformed values ignored |
 | env | `XVECTOR_API_KEYS="key1:admin,key2:read"` | enables auth; keys 8..128 `[A-Za-z0-9_.-]` |
+| env | `XVECTORD_WAL=<ckpt path>` | durable home (M-D5): fsync-on-ack; `XVECTORD_MANIFEST=<path>` optional |
+| env | `XVECTORD_CHECKPOINT_EVERY=<n>` | auto compact+swap every n commits (M-D6; 0/absent = off; clean quit always swaps) |
 | file | `key=value` lines (`#` comments) via `service_config_load` | unknown keys ignored; malformed line -> `valid=false` |
 | code | `service_config_apply`, `service_auth_add_key`, `rate_limiter_new(capacity, refill_per_sec)` | programmatic control |
 
@@ -64,20 +66,31 @@ Auth is **off** by default (embedded); the socket adapter must enable it
 ## 4. Backup / restore drill (embedded)
 
 ```text
-backup:  http_service_shutdown(eng, "backup/xvector.wal")      # checkpoint
-         engine_manifest_save(eng, "backup/xvector.manifest")   # registry
-         seal_segment(eng, seg_id, "backup/segment-N.seg")      # optional per collection
-restore: wr = wal_load("backup/xvector.wal")
-         eng = open_engine(wr, "backup/xvector.manifest", dim, metric)
-         (per collection: restore_segment(eng, "backup/segment-N.seg") when sealed segments were used)
+checkpoint: http_service_shutdown(eng, "backup/xvector.wal")      # whole-file persist (no compaction)
+            engine_checkpoint_swap(eng)                            # M-D6: compact + fsync-ordered swap + segment rotate
+            engine_manifest_save(eng, "backup/xvector.manifest")   # registry
+            seal_segment(eng, seg_id, "backup/segment-N.seg")      # optional per collection
+snapshot:   snapshot_create(eng, "backup", "nightly")              # M-D6: compacts, then writes
+                                                                   # backup/nightly.{ckpt,manifest,meta}
+restore:    snapshot_load("backup/nightly", "import/xvector.seg", dim, metric)  # meta-gated
+            (or manually: wr = wal_load("backup/xvector.wal")
+             eng = open_engine(wr, "backup/xvector.manifest", dim, metric)
+             per collection: restore_segment(eng, "backup/segment-N.seg") when sealed segments were used)
 verify:  engine_size / search sanity; collection_stats per collection;
-         xvector_lsn gauge monotonic
+         xvector_lsn gauge monotonic; snapshot: engine_list_collections matches source
 ```
 
 All file formats are torn-tail safe (longest-valid-prefix load) and
-atomically written (temp+rename), so a backup interrupted mid-write leaves
-the previous file intact. `engine_manifest_save` is the registry of
-record; without it, recovery falls back to the in-WAL manifests.
+atomically written (temp+rename); the D6 checkpoint and snapshot persists
+additionally fsync the temp BEFORE the rename (`wal_persist_sync`), so a
+crash never leaves the target replaced by non-durable content.
+`engine_manifest_save` is the registry of record; without it, recovery
+falls back to the in-WAL manifests. Retention guidance: set
+`XVECTORD_CHECKPOINT_EVERY` so the checkpoint stays near live-state size
+and recovery stays bounded (measured: 4000 points reload in ~10 ms; a
+128k-commit smoke log would otherwise be replayed in full); snapshots are
+point-in-time files -- rotate them yourself with your backup tooling (no
+in-repo retention/delete policy by design).
 
 ## 5. Failure domains (known, honest)
 
@@ -86,6 +99,8 @@ record; without it, recovery falls back to the in-WAL manifests.
 | Process kill (no drain) | **durable mode: every acknowledged write survives** (fsync-on-ack delta segment; kill matrix 6/6 Windows + 6/6 WSL); in-memory mode: prefix recovery only | set `XVECTORD_WAL` / `open_durable`; `scripts/kill_matrix.ps1|.sh` |
 | Machine crash / power loss | **fsync-on-ack flushes acknowledged bytes to stable storage**, but power-loss safety is not fault-injected in CI (process-kill durability is what the matrix proves) | OS-level fault injection is future work; `docs/PRODUCTION-READINESS.md` D-phase states the boundary |
 | Torn checkpoint / segment / manifest | prefix/line-safe load keeps all complete records; malformed lines skipped (segment), torn tails healed | `probe_wal_file`, `probe_manifest_file`, `probe_segment_file`, `probe_wal_segment` |
+| Checkpoint swap fails (disk full / locked) | the ack is unaffected (already fsynced in the segment); the swap is retried on the next commit and at quit; the segment is never reset | `probe_snapshot` (swap failure ordering), alert on the quit-path warning |
+| Corrupt/missing snapshot meta | `snapshot_load` refuses (meta-gated); the ckpt/manifest are not touched | `snapshot_valid`, `probe_snapshot` |
 | Deep-nested JSON body | rejected 400 by `json_depth_ok` (64) before the parser | stdlib `json_parse` depth cap filed in the wishlist |
 | Oversized / abusive requests | 413/400/405 by limits; fuzz gate green | `probe_service_limits`, `probe_http_fuzz` |
 | Brute force / key guessing | 401/403 with constant-time compare; token bucket 429 | `probe_service_auth` |
@@ -96,7 +111,8 @@ record; without it, recovery falls back to the in-WAL manifests.
 
 - On-disk format versions: checkpoint/WAL magic `xvector-wal 1`
   (ManifestUpdate v1/v2/v3 families), manifest `xvector-manifest 1`,
-  sealed segment `xvector-segment 1`, and the **D5 delta segment**
+  sealed segment `xvector-segment 1`, snapshot meta
+  `xvector-snapshot 1 <lsn> <collections>`, and the **D5 delta segment**
   (`<ckpt>.seg`, `xiom.wal` codec v1 lines
   `lsn|op|key|value|timestamp[|p0,p1,...]`; append-only, fsync-on-ack,
   line-tolerant replay with LSN-gap stop, heal-on-open, checkpoint-deduped
@@ -121,6 +137,7 @@ record; without it, recovery falls back to the in-WAL manifests.
 | 413/400 on valid-looking payloads | `max_request_bytes` / `max_batch` / `max_top_k` / `max_dim` env overrides |
 | 429 bursts | `rate_limiter` capacity/refill or a misbehaving client; counters show `xvector_rate_limited` |
 | Slow tail | `xvector_latency_ms_p99`, `slow:true` log lines, `selection` of Hnsw `ef` params |
+| Checkpoint file keeps growing / slow restart | set `XVECTORD_CHECKPOINT_EVERY` (compact+swap); the swap fires at the next commit threshold or clean quit |
 | Battery red | rerun `scripts/ci.ps1`; per-probe logs in `out/ci_<probe>.log`; crash forensics in `out/fuzz_mark.txt` |
 
 ## 8. Memory budget (M-P P2)
