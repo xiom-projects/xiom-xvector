@@ -10,11 +10,11 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-13, 79th pass (v1.0.0-rc.1 candidate; **D6 landed:
-  checkpoint compact+swap (crash-safe fsync ordering) + snapshots
-  (bit-exact multi-collection restore) + auto-checkpoint policy**;
-  D5 kill matrix + fsync-on-ack; v0.64.4 archive re-verified; lane-local
-  toolchain isolation)
+- **As of:** 2026-10-13, 80th pass (v1.0.0-rc.1 candidate; **D7
+  multi-segment read path landed: roll/union queries over active + sealed,
+  tombstone shadowing, bit-exact compaction, restart-loaded sources, opt-in
+  auto-roll policy**; D5 kill matrix + fsync-on-ack; D6 compact/swap +
+  snapshots; v0.64.4 archive re-verified; lane-local toolchain isolation)
 - **Overall:** **86 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -32,7 +32,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 93 | release-grade | multi-segment read path, power-loss fault injection |
+| D | Persistence & durability | 20 | 95 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
 | G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
@@ -40,8 +40,8 @@ the code merely exists. Blockers are named; blocked work still scores.
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
-**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x93 + 0.08x100 +
-0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **85.92 -> 86 %**.
+**Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x95 + 0.08x100 +
+0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **86.32 -> 86 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -105,7 +105,7 @@ re-link edges for the new vector (recall 200/200 after 60 in-place
 updates); the WSL segfault found while wiring the map (XVC-C-09) is worked
 around and pinned as a repro for the compiler lane.
 
-### D. Persistence & durability -- 93 %
+### D. Persistence & durability -- 95 %
 Done: WAL-before-ack for upserts AND metadata, vector + payload codecs,
 replay, delete/torn-tail handling, compacted checkpoint, chained reopen,
 LSN monotonicity, **in-WAL collection manifest** (dim/metric/index
@@ -156,10 +156,18 @@ ordering -> segment reset + frontier advance; a failed swap never resets
 the segment) with the auto-policy hook (`XVECTORD_CHECKPOINT_EVERY`;
 clean quit always swaps), and `durability.snapshot` (ckpt + manifest +
 strict versioned meta; corrupt/missing meta refused; multi-collection
-bit-exact restore + search parity; gate `probe_snapshot`, 27 checks).
-Remaining (in order): multi-segment collection read path (P2
-thresholds), and power-loss fault injection (OS-level; process-kill
-durability is proven today, `OPERATIONS.md` states the boundary).
+bit-exact restore + search parity; gate `probe_snapshot`, 27 checks), and
+**the D7 multi-segment read path** (`engine_roll_segment` move semantics,
+union queries over active + sealed with tombstone shadowing and active-wins
+duplicates, bit-exact Flat semantics via the `k + tombstones` budget,
+`engine_compact_sealed` with bit-exact merge + restart survival, restart
+loads every registered source with `sealed_missing` accounting, the opt-in
+auto-roll policy `XVECTORD_SEAL_EVERY`/`_DIR`, and the request path +
+union hydration wired end-to-end; gate `probe_multisegment`, 27 checks;
+warm union query over 60 pts ~0.12 ms; honesty: whole-file segment loads,
+SQ two-tier deferred to Q-a2b).
+Remaining: power-loss fault injection (OS-level; process-kill durability is
+proven today, `OPERATIONS.md` states the boundary).
 
 ### E. Metadata & filtering -- 100 %
 Done: typed Eq/Range/In/Exists + combinators + no-payload semantics, engine
@@ -1150,6 +1158,28 @@ extraction with the packages lane.
   wrappers re-declaring AnnParams/AnnIndexKind) was found and annotated --
   do not import that family until the compiler's m278-class fix is in the
   pin (v0.64.5).
+- **2026-10-13 night (D7 multi-segment read path, 80th pass):** sealed
+  segments became first-class query sources. Roll (`engine_roll_segment`)
+  moves the active collection into an immutable segment (register + cache
+  + clear; fsync-before-ack; `SegmentSeal` record replays attach+clear);
+  every query variant unions active + sealed (tombstones shadow
+  deletes-after-seal; the active copy wins over sealed duplicates; the
+  `k + tombstones` per-source budget keeps Flat results bit-exact vs brute
+  force); delete/delete_by_filter cover sealed-only matches and report
+  them as deleted; compaction (`engine_compact_sealed`) merges everything
+  bit-exactly and survives restart; recovery loads every registered source
+  (`sealed_missing` counts unreadable files -- never silent); the opt-in
+  policy auto-rolls at a threshold (`XVECTORD_SEAL_EVERY` + `_DIR`,
+  engine-level policy works in-memory too); `/stats` gains
+  sealed_segments/sealed_loaded/sealed_missing. Gate `probe_multisegment`
+  27 checks; live server verified (policy server: sealed serving, restart,
+  counters; stock smoke 7/7 with policy off). A live-only defect was found
+  and fixed during the slice: the HTTP request search tail bypassed the
+  union (now routed through it, with union hydration). **D 93 -> 95;
+  overall 86 % (86.32).** Remaining in D: power-loss fault injection.
+  Honesty: whole-file segment loads (no mmap); SQ two-tier deferred to
+  Q-a2b; segment paths are caller-owned (a stale file with the same
+  cid+seg_id would be adopted).
 
 ## Update rule
 

@@ -172,6 +172,22 @@ Goal: a kill never costs an acknowledged write on the available path.
   follows; truncate-based retention stays stdlib-gated (`-5` acked).**
   Honesty: this is process-kill durability (fsynced bytes survive a killed
   process); power-loss safety still needs OS-level fault injection.
+- **D7 multi-segment collection read path -- DONE 2026-10-13** -- sealed
+  segments are first-class query sources: `engine_roll_segment` moves the
+  active collection into an immutable file (register + cache + clear;
+  fsync-before-ack in durable mode), every query variant unions active +
+  sealed (tombstones shadow deletes-after-seal, the active copy wins over a
+  sealed duplicate, Flat results stay bit-exact via the
+  `k + tombstones` per-source budget), compaction merges everything into
+  one segment bit-exactly, restart loads every registered source
+  (`sealed_missing` counts unreadable files -- never silent), and the
+  opt-in policy (`engine_set_seal_policy` / `XVECTORD_SEAL_EVERY` +
+  `XVECTORD_SEAL_DIR`) auto-rolls at a threshold. Gates: `probe_multisegment`
+  (27 checks) in both CI batteries + live server verification (policy
+  server: sealed serving, /stats counters, restart). Honesty: whole-file
+  segment loads (no mmap yet); SQ two-tier rescore deferred to Q-a2b.
+  **Remaining in M-D: power-loss fault injection only.**
+
 - **D6 retention + snapshots -- DONE 2026-10-13** -- checkpoint compact+swap
   (`engine_checkpoint_swap`: rebase the log to live state, then
   `wal_persist_sync` = write tmp -> fsync tmp -> rename -> dir fsync, and

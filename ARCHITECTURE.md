@@ -127,6 +127,7 @@ src/
 |   |-- wal_segment.xi    D5 delta segment: codec v1 append + fsync-on-ack + merge [NEW 2026-10-12]
 |   |-- snapshot.xi       D6 snapshot export/import (meta-gated; bit-exact restore) [NEW 2026-10-13]
 |   |-- manifest_file.xi  collection registry persist/load (temp+rename) [NEW 2026-10-09]
+|   +-- (engine) M-D7 multi-segment read path: roll -> union -> compaction   [NEW 2026-10-13]
 |   `-- write_ahead_events.xi log_upsert/log_delete/log_payload_set      [EXTRACTED]
 |
 `-- api/

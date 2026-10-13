@@ -37,6 +37,7 @@ The boundary that remains is power-loss fault injection (see §5).
 | env | `XVECTOR_API_KEYS="key1:admin,key2:read"` | enables auth; keys 8..128 `[A-Za-z0-9_.-]` |
 | env | `XVECTORD_WAL=<ckpt path>` | durable home (M-D5): fsync-on-ack; `XVECTORD_MANIFEST=<path>` optional |
 | env | `XVECTORD_CHECKPOINT_EVERY=<n>` | auto compact+swap every n commits (M-D6; 0/absent = off; clean quit always swaps) |
+| env | `XVECTORD_SEAL_EVERY=<n>` + `XVECTORD_SEAL_DIR=<dir>` | auto-roll (M-D7): move the active collection into an immutable sealed segment at n points; dir defaults to the durable home's dir; off by default |
 | file | `key=value` lines (`#` comments) via `service_config_load` | unknown keys ignored; malformed line -> `valid=false` |
 | code | `service_config_apply`, `service_auth_add_key`, `rate_limiter_new(capacity, refill_per_sec)` | programmatic control |
 
@@ -90,7 +91,13 @@ falls back to the in-WAL manifests. Retention guidance: set
 and recovery stays bounded (measured: 4000 points reload in ~10 ms; a
 128k-commit smoke log would otherwise be replayed in full); snapshots are
 point-in-time files -- rotate them yourself with your backup tooling (no
-in-repo retention/delete policy by design).
+in-repo retention/delete policy by design). Multi-segment guidance (M-D7):
+roll when the active collection reaches the size your RAM budget tolerates
+(the `/stats` mem estimate plus the point count is the guide); sealed
+sources are read whole-file and stay in RAM once loaded (no mmap yet), so
+compact periodically to bound the source count; the auto-roll policy is
+opt-in (`XVECTORD_SEAL_EVERY` + `XVECTORD_SEAL_DIR`) and never deletes
+anything -- old segment files after a compaction are left for your tooling.
 
 ## 5. Failure domains (known, honest)
 
@@ -101,6 +108,8 @@ in-repo retention/delete policy by design).
 | Torn checkpoint / segment / manifest | prefix/line-safe load keeps all complete records; malformed lines skipped (segment), torn tails healed | `probe_wal_file`, `probe_manifest_file`, `probe_segment_file`, `probe_wal_segment` |
 | Checkpoint swap fails (disk full / locked) | the ack is unaffected (already fsynced in the segment); the swap is retried on the next commit and at quit; the segment is never reset | `probe_snapshot` (swap failure ordering), alert on the quit-path warning |
 | Corrupt/missing snapshot meta | `snapshot_load` refuses (meta-gated); the ckpt/manifest are not touched | `snapshot_valid`, `probe_snapshot` |
+| Roll/compaction policy fails | the ack is already durable; the policy retries at the next commit; compaction refuses when a registered source is not loaded | `/stats sealed_*`, server log line at quit |
+| Sealed file unreadable at restart | counted in `sealed_missing`; the union serves the rest and never goes silent | `/stats sealed_loaded|sealed_missing`, `probe_multisegment` |
 | Deep-nested JSON body | rejected 400 by `json_depth_ok` (64) before the parser | stdlib `json_parse` depth cap filed in the wishlist |
 | Oversized / abusive requests | 413/400/405 by limits; fuzz gate green | `probe_service_limits`, `probe_http_fuzz` |
 | Brute force / key guessing | 401/403 with constant-time compare; token bucket 429 | `probe_service_auth` |
@@ -138,6 +147,7 @@ in-repo retention/delete policy by design).
 | 429 bursts | `rate_limiter` capacity/refill or a misbehaving client; counters show `xvector_rate_limited` |
 | Slow tail | `xvector_latency_ms_p99`, `slow:true` log lines, `selection` of Hnsw `ef` params |
 | Checkpoint file keeps growing / slow restart | set `XVECTORD_CHECKPOINT_EVERY` (compact+swap); the swap fires at the next commit threshold or clean quit |
+| Size/recall unexpectedly low after rolling | `/stats` `sealed_segments` vs `sealed_loaded` vs `sealed_missing`; a missing/unloaded source degrades the union to active+loaded only |
 | Battery red | rerun `scripts/ci.ps1`; per-probe logs in `out/ci_<probe>.log`; crash forensics in `out/fuzz_mark.txt` |
 
 ## 8. Memory budget (M-P P2)
