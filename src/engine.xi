@@ -207,6 +207,11 @@ pub fn sealed_missing(eng: &VectorEngine) -> Int {
   return engine_sealed_missing(eng);
 }
 
+// Cached (loaded) sealed sources of the active collection.
+pub fn sealed_loaded(eng: &VectorEngine) -> Int {
+  return engine_sealed_loaded(eng);
+}
+
 // Opt-in auto-roll policy (P2 tuning): roll at `every` active points into
 // `dir` (must exist; 0 disables). Off by default.
 pub fn set_seal_policy(eng: &mut VectorEngine, every: Int, dir: Str) -> Result[Bool, CoreError] {

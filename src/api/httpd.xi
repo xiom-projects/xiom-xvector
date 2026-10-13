@@ -198,6 +198,41 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
     }
     None => {}
   }
+  // Auto-roll policy (M-D7): roll the active collection at N points into
+  // XVECTORD_SEAL_DIR (default: the durable home's directory). 0 / absent
+  // = off; a missing dir disables the policy with a visible warning.
+  var seal_every: Int = 0;
+  let vse = env.var_opt("XVECTORD_SEAL_EVERY");
+  match vse {
+    Some(v) => {
+      var e3: Int = 0;
+      if parse_port(v, &mut e3) { seal_every = e3; }
+    }
+    None => {}
+  }
+  if seal_every > 0 {
+    var s_dir = "";
+    let vsd = env.var_opt("XVECTORD_SEAL_DIR");
+    match vsd {
+      Some(d) => { if d.len() > 0 { s_dir = d; } }
+      None => {}
+    }
+    if s_dir.len() == 0 && wal_path.len() > 0 {
+      s_dir = path_parent(wal_path);
+    }
+    if s_dir.len() == 0 {
+      io.println("xvectord: XVECTORD_SEAL_EVERY ignored (set XVECTORD_SEAL_DIR or XVECTORD_WAL)");
+    } else {
+      match engine_set_seal_policy(&mut eng, seal_every, s_dir) {
+        Ok(_) => {
+          io.println("xvectord: auto-roll every " + convert.int_to_string(seal_every) + " points into " + s_dir);
+        }
+        Err(_) => {
+          io.println("xvectord: XVECTORD_SEAL_EVERY ignored (seal dir missing: " + s_dir + ")");
+        }
+      }
+    }
+  }
   let sr = socket.socket_tcp();
   if sr.is_err {
     io.println("xvectord: socket create failed");
