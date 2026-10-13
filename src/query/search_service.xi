@@ -38,8 +38,8 @@ pub type BatchHits = {
 }
 
 // Push a hit into a distance-sorted bounded list (shared by the exact and
-// filtered scans): insert sorted, then trim to k.
-fn results_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, k: Int) {
+// filtered scans, and by the M-D7 union merge): insert sorted, then trim.
+pub fn results_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, k: Int) {
   results.push(item);
   var pos: Int = results.len() - 1;
   while pos > 0 && results[pos - 1].distance > results[pos].distance {
