@@ -157,10 +157,11 @@ green both platforms; verdicts + closures filed on the bus.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `2552824` (request-path
-union fix) + this 80th-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `2552824` M-D7 request-path union fix + `2583351` M-D7
-compaction/gate + `9565ffa` M-D7 union search + `a9d5246` M-D7 plumbing +
+**Repo:** private, no pushes; clean tree. HEAD `71af343` (replay-symmetry
+fix) + this 80th-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: `71af343` replay-symmetry fix + `fd61951` D7 docs +
+`2552824` M-D7 request-path union fix + `2583351` M-D7 compaction/gate +
+`9565ffa` M-D7 union search + `a9d5246` M-D7 plumbing +
 `25ee9da` M-D7 design (80th), `48fca54` xvectord D6 policy + `401c120` D6
 compact+swap + snapshots (79th),
 `5a9b8fd` xvectord durable mode + `6bf292d` kill harness +
@@ -1307,10 +1308,18 @@ M-D is complete except power-loss fault injection.**
   (`XVECTORD_SEAL_EVERY`/`XVECTORD_SEAL_DIR`, works in-memory too).
 - **A live-only bypass was found and fixed during the slice** (`2552824`):
   the HTTP request search tail searched the active store directly; now it
-  routes through the union, with union hydration for sealed payloads.
+  routes through the union, with union hydration for sealed payloads. A
+  second real bug was caught by the wrap battery: **replay symmetry** --
+  a replayed Insert did not clear a tombstone shadow, so a delete-miss
+  then upsert left the id live AND tombstoned after recovery and the next
+  checkpoint ate it (`71af343`, found by `probe_soak_mixed`'s chained
+  recovery; rec 421 -> rec2 417, now exact).
 - Gates: `probe_multisegment` **27/27** (diag: 50 warm union queries over
   60 pts = 6 ms); live policy server verified end-to-end (sealed serving,
-  /stats counters, restart); stock smoke 7/7 with the policy off.
+  /stats counters, restart); stock smoke 7/7 with the policy off;
+  **both wrap batteries ALL GATES GREEN** -- Windows (suite 177/177 x2 +
+  sbom 44 modules unsafe=0 + 44 probes x2 + bench smoke + kill matrix)
+  and WSL (same shape).
 NEXT: **the v0.64.5 archive re-verification the moment the tag lands**
 (thread gate first -- stdlib wave-131 hoist + m282; then C-14 after m278;
 C-13; C-15/phantom regression; full batteries both platforms), then
@@ -1717,7 +1726,7 @@ bound). Compiler fn-value ABI batch `fde5548e` + stdlib wave 110
 | `docs/ORBITDB-INTEGRATION.md` | ORBITDB (hybrid pair) | written 2026-10-09 (mirrors their `XVECTOR-INTEGRATION.md`); hybrid probe next |
 | `docs/RELAY-INTRO-XVECTOR.md` | ops + all | OPS parked until owner greenlight |
 | `docs/PRODUCTION-READINESS.md` | owner | 82 %; recompute every wrap |
-| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed**; **doorbell 20:08Z: stdlib ACKED the mmap ask (runtime bundle, after durable-IO P1-P3); compiler v0.64.5 plan carries our thread items + C-13/C-14 in themed batches (m276/m277 on main; no tag yet)**; **2026-10-13: relayed the window-resize diagnosis to engine (`REL-20261013-1501-xvector`: sdl3 0.18 HAS `sdl3_window_size`/set/resizable + events 518/519; size-readback breakage = compiler B-24/B-20 fixed m281; mini-RHI resize = 0.12.0 tier)**; **doorbell 17:05Z: our thread items `-1627`/`-1402` FIXED by compiler m282 `d6690868` (env-cast cause locked; the guard-arena UAF cause filed upstream as `REL-20261013-1423-compiler`, acked high); v0.64.5 candidate m276-m284, next m285, no tag; stdlib wave 126 (strnlen batch 2) landed; nothing new for xvector**; **17:11Z: engine ACKED the resize diagnosis (`REL-20261013-1501-xvector`) -- package `sdl3_window_size` route confirmed on 0.17.0+v0.64.4 (no hand-rolled ptr readback), events 518/519 mapped, swapchain+scene recreate landed (their 7250546), probe_rhi_vulkan 20 checks x2 + owner-verified interactive resize; our v0.64.5 re-verify stands; stdlib `1445` guard_free fixed (wave 124), `1423` spawn-buffer arena stays acked pending their thread wave**; **19:52Z: engine ask ledger `REL-20261013-1948-engine` (to all; sections for packages/bindings/compiler/stdlib/ops -- NO xvector section; engine to reference sections in future per-lane items); compiler at m290 (next m291), stdlib wave 130; v0.64.5 still untagged**; **22:25Z: stdlib 1423 FIXED (wave 131 hoist `664e4a7`; battery green); compiler fixer wave m291-m295 landed (m291 contract enforcement/paren snapshots; m292 leaf-collision catalog pre-load; m295 by-value UFCS = 1548-stdlib-6 fully fixed); no v0.64.5 tag yet -- fixer wave continues; stdlib block 160 (wave 132 in flight)** |
+| **`xiom-relays` (bus)** | all lanes | onboarding ack `REL-20261010-1549-xvector`; migrated open items: compiler `-1550-xvector` + XVC-C-14 `REL-20261010-1709-xvector`, stdlib `-2..-8` (json `-7` verified + closed), packages `-9` fixed / `-10` acked (vectors LIVE + ann extracted), bindings `-11`, owner `-12`; orbitdb item `-1550-orbitdb-11` **closed** by orbitdb; compiler **v0.64.3 released** (`-1727-compiler`; release-check verdicts for C-13/C-14 filed); **shared-home wipe incident `REL-20261010-1835-xvector` (to ops, open)** + **pkg custom-`XIOM_HOME` bug `REL-20261010-1937-xvector` (to packages)** + **507 wishlist `REL-20261010-2002-xvector`**; shared-clone ops item `-1709-compiler` (helper `relay.py commit` now exists); **66th pass: compiler C-15 item `REL-20261011-1134-xvector` filed; orbitdb hybrid note `REL-20261011-1127-orbitdb` acked + answered (`REL-20261011-1146-xvector`: package resolution, not the pin); ops hygiene `REL-20261011-1134-ops` (to: all) incorporated in 2**; 3-hour doorbell cron; **73rd pass: -2002 (507) / -1206 (ann 0.2.0) / -1550-xvector-9 (vectors) / -1835 (hygiene) verified+closed; WIP-verification signal `REL-20261011-1618-xvector` pushed; compiler batch plan `-1342` watched (C-15/phantom not yet landed); thread-gate witness `REL-20261011-1627-xvector` filed; wave-111 CLOSED on `9a2b5ab` -- `-1453`/`-1543` verified + closed; next-archive re-verification set = thread gate + C-15/phantom**; **77th pass (2026-10-12): v0.64.4 verdicts filed (release-check XVECTOR block); `-1134` (C-15) + `-2124` (phantom) verified + closed; `-1310-bindings-2` read + fixed; thread-gate re-run filed `REL-20261012-1402-xvector`; `-1716-orbitdb`/`-1856-stdlib` were fixed by this lane earlier and await their reporters**; **owner-requested production relay (2026-10-12): `REL-20261012-1945-xvector` (gap matrix to all) + `-1945-xvector-2` (stdlib mmap) + `-1945-xvector-3` (compiler SIMD route); bindings ABI answer `-1500-bindings-2` acked+fixed**; **doorbell 20:08Z: stdlib ACKED the mmap ask (runtime bundle, after durable-IO P1-P3); compiler v0.64.5 plan carries our thread items + C-13/C-14 in themed batches (m276/m277 on main; no tag yet)**; **2026-10-13: relayed the window-resize diagnosis to engine (`REL-20261013-1501-xvector`: sdl3 0.18 HAS `sdl3_window_size`/set/resizable + events 518/519; size-readback breakage = compiler B-24/B-20 fixed m281; mini-RHI resize = 0.12.0 tier)**; **doorbell 17:05Z: our thread items `-1627`/`-1402` FIXED by compiler m282 `d6690868` (env-cast cause locked; the guard-arena UAF cause filed upstream as `REL-20261013-1423-compiler`, acked high); v0.64.5 candidate m276-m284, next m285, no tag; stdlib wave 126 (strnlen batch 2) landed; nothing new for xvector**; **17:11Z: engine ACKED the resize diagnosis (`REL-20261013-1501-xvector`) -- package `sdl3_window_size` route confirmed on 0.17.0+v0.64.4 (no hand-rolled ptr readback), events 518/519 mapped, swapchain+scene recreate landed (their 7250546), probe_rhi_vulkan 20 checks x2 + owner-verified interactive resize; our v0.64.5 re-verify stands; stdlib `1445` guard_free fixed (wave 124), `1423` spawn-buffer arena stays acked pending their thread wave**; **19:52Z: engine ask ledger `REL-20261013-1948-engine` (to all; sections for packages/bindings/compiler/stdlib/ops -- NO xvector section; engine to reference sections in future per-lane items); compiler at m290 (next m291), stdlib wave 130; v0.64.5 still untagged**; **22:25Z: stdlib 1423 FIXED (wave 131 hoist `664e4a7`; battery green); compiler fixer wave m291-m295 landed (m291 contract enforcement/paren snapshots; m292 leaf-collision catalog pre-load; m295 by-value UFCS = 1548-stdlib-6 fully fixed); no v0.64.5 tag yet -- fixer wave continues; stdlib block 160 (wave 132 in flight)**; **18:00Z release watch (cron wku_13b432c8): no tag; compiler m320+ with the THREAD GATE GREEN PRE-PIN (stdlib `ae9c963`; pin request filed); stdlib wave 138; bus: nothing new for xvector** |
 | (lane-local homes) | xvector only | `out\toolchain` + `out\xiom-home` (Win); `~/.xvector-toolchain` + `~/.xvector-home` (WSL) -- isolation from shared-home wipes (2026-10-10) |
 
 ---
@@ -2321,9 +2330,10 @@ tree; tag v1.0.0-rc.1 on 530b041. **D5 + D6 + D7 are DONE (fsync-on-ack +
 kill matrix + compact/swap + snapshots + the multi-segment read path;
 board 86 %).** v0.64.4 archive pass DONE (C-15 + phantom imports verified
 fixed; C-13/C-14 + thread gate still red on v0.64.4; **v0.64.5 candidate
-on compiler main at m295+, thread batch + C-14 fix + stdlib wave-131 hoist
-all landed -- the re-verification queue is primed**). NEXT: the v0.64.5
-archive re-verification the moment the tag lands (thread gate FIRST), then
+on compiler main at m320+ -- THREAD GATE GREEN PRE-PIN (stdlib
+`ae9c963`); pin request filed; the re-verification queue is primed**).
+NEXT: the v0.64.5 archive re-verification the moment the tag lands
+(thread gate FIRST), then
 Q-a2b (SQ two-tier on sealed scans), then M-P (P3/P4). Lane pins: compiler
 v0.64.4 installed lane-local (Windows out\toolchain, WSL
 ~/.xvector-toolchain; NEVER %LOCALAPPDATA%\xiom* or ~/.local/share/xiom);
