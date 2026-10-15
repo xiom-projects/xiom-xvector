@@ -1035,7 +1035,10 @@ re-pin is HELD):**
   Workaround required (XVC-C-17): shared handles travel as Int globals,
   reconstructed locally per worker. Channel CROSS-THREAD leg deferred
   (blocked on XVC-C-17). New finding filed: `REL-20261015-2216-xvector`
-  (high).
+  (high). Full Windows battery re-ran clean with the new probe:
+  **ALL GATES GREEN (suite x2 + sbom + 45 probes x2 + bench smoke + kill
+  matrix)**; one earlier run carried a transient clang-spawn flake on
+  `probe_wal_file` (retry x2 green; machine healthy).
 
 - **v0.64.5 archive pass (81st, 2026-10-15):** installed lane-local both
   platforms (tag `84f761c5`, run 38792051847; assets sha256-verified: win
