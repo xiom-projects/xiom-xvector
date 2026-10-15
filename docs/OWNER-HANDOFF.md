@@ -12,9 +12,10 @@ repository stays private; nothing below happens until the owner greenlights.
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
 - **Batteries (at the candidate):** suite 171/171 x2 + SBOM/unsafe gate +
   32 probes x2 + bench smoke on Windows **and** WSL -- ALL GATES GREEN.
-- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **81 %**
-  ("hardened core"; remaining gaps are the gated durability primitives,
-  concurrency, and release-runner activation, all documented).
+- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **88 %**
+  today (81 % at the candidate; "hardened core"; remaining gaps are the
+  gated durability primitives, concurrency, and release-runner activation,
+  all documented).
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
   (44 modules, `unsafe` = 0, compiler v0.64.2, stdlib pin).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
@@ -58,7 +59,7 @@ repository stays private; nothing below happens until the owner greenlights.
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
-| compiler archive > v0.64.3 | **v0.64.4 re-pinned 2026-10-12** (lane-local both platforms; assets sha256-verified; re-verification set + 19-probe repro sweep + full batteries green; XVC-C-15 + phantom imports verified fixed; XVC-C-13/C-14 + thread gate remain open/red, verdicts on the bus) | repeat the re-test procedure at the next archive (repro bundles first, then suite + probes + bench, then re-pin) |
+| compiler archive | **v0.64.5 installed lane-local 2026-10-15** (tag `84f761c5`, run 38792051847; assets sha256-verified; **thread gate GREEN on both platforms**; C-13/C-14/C-15 + phantom imports verified fixed; 19-probe repro sweep green; **Windows battery ALL GATES GREEN**; **WSL battery RED on the new linux-only XVC-C-16 service-search regression -- the v0.64.5 re-pin is HELD**, bus `REL-20261015-2142-xvector`) | re-run the WSL battery and close the thread items when the C-16 fix lands; then finish the v0.64.5 re-pin (repeat the re-test procedure at each archive: repro bundles first, then suite + probes + bench) |
 
 ## 4. Evidence index
 
