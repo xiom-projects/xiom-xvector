@@ -10,12 +10,13 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-13, 80th pass (v1.0.0-rc.1 candidate; **D7
-  multi-segment read path landed: roll/union queries over active + sealed,
-  tombstone shadowing, bit-exact compaction, restart-loaded sources, opt-in
-  auto-roll policy**; D5 kill matrix + fsync-on-ack; D6 compact/swap +
-  snapshots; v0.64.4 archive re-verified; lane-local toolchain isolation)
-- **Overall:** **86 %** (weighted; see method)
+- **As of:** 2026-10-15, 81st pass (v0.64.5 archive re-verification: **the
+  thread gate is CLOSED on both platforms -- real spawn+join runs; G phase
+  flipped to 40**; C-13/C-14 verified fixed; C-15 + phantom stay green;
+  Windows battery ALL GATES GREEN; the WSL battery is RED on the new,
+  unrelated XVC-C-16 (v0.64.5 linux-x64 service search miscompile) -- the
+  v0.64.5 re-pin is HELD until it is fixed)
+- **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -35,13 +36,13 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 95 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 25 | buildable | concurrent readers, write serialization, segment growth, memory budget |
+| G | Concurrency & scalability | 10 | 40 | buildable | G-1 sync smoke, G-2 accept-loop threads, scale tuning (thread gate CLOSED 2026-10-15; the v0.64.5 linux service red XVC-C-16 is unrelated) |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x95 + 0.08x100 +
-0.08x100 + 0.10x25 + 0.05x88 + 0.09x94 + 0.08x60 = **86.32 -> 86 %**.
+0.08x100 + 0.10x40 + 0.05x88 + 0.09x94 + 0.08x60 = **87.82 -> 88 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -216,22 +217,26 @@ knn/range, radius, offset/after-id pagination; `SearchBatchRequest` +
 `search_batch_with_request`; gate `probe_search_request`, 24 checks).
 Remaining: none.
 
-### G. Concurrency & scalability -- 25 %
+### G. Concurrency & scalability -- 40 %
 Done: multi-collection registry (M-D3: named collections with per-
 collection stores/payloads/index configs, create/select/drop/list, routed
-recovery + whole-registry manifest; gate `probe_collections`) and the
+recovery + whole-registry manifest; gate `probe_collections`), the
 benchmark harness + baseline (`docs/BENCHMARKS.md`; bench smoke in both
-batteries). **Thread-primitive gate probed (2026-10-11):** real
-`xiom.thread.spawn[T]` compiles on v0.64.3 (fn-cast accepted) but the
-runtime thread entrypoint AVs (Windows 0xC0000005 / WSL SIGSEGV;
-`docs/repro/xv-thread-abi/`; marks localize it after `spawn` returns --
-last mark `M2: spawn returned`); acceptance pinned + witness
-`REL-20261011-1627-xvector`; re-run green at the next archive = the
-phase becomes actionable. The engine is still single-threaded and each
-call targets one active collection.
-Remaining: (thread gate green, then) concurrent readers, write
-serialization model, segment growth / compaction policy, memory budget,
-scale tuning beyond the baseline.
+batteries), the P2 memory budget (`engine_memory_estimate` + `/stats`
+`mem_*` fields + `docs/OPERATIONS.md` section 8; gate
+`probe_memory_estimate`), the segment growth policies (D6 checkpoint swap
++ D7 seal auto-roll, opt-in; gates `probe_snapshot`/`probe_multisegment`),
+and **the thread-primitive gate CLOSED (2026-10-15, v0.64.5)**: real
+`xiom.thread.spawn[T]` + `JoinHandle.join` run OS threads on BOTH
+platforms (3 workers return exact sums; a worker id differs from main;
+marks `M3: join ok 42`; acceptance `docs/repro/xv-thread-abi/`; fixes:
+compiler m282 `d6690868` env-cast + stdlib wave-131 buffer hoist + wave-139
+trampoline i64). The engine is still single-threaded and each call targets
+one active collection.
+Remaining: G-1 thread + sync smoke (promote the acceptance probe into
+`tests/probes/` + both batteries), G-2 flag-gated accept-loop threads
+(`XVECTORD_THREADS`), concurrent readers / write serialization model,
+scale tuning beyond the baseline (`docs/G-PHASE-PLAN.md` slice order).
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -310,7 +315,7 @@ extraction with the packages lane.
 |---|---|---|
 | M1 Durable in-memory core | WAL + recovery + payloads, green suites + probes | **Met 2026-10-08** |
 | M2 Crash-safe on disk | file-backed WAL segments, fsync, durable manifest, kill tests | In progress: whole-file WAL checkpoint + atomic swap (M-D1); durable registry file (M-D2); multi-collection routed recovery + whole-registry manifest (M-D3); sealed segment files with engine seal/restore (M-D4); fsync/append delta, multi-segment reads, file-level kill test, retention blocked on stdlib fsync/append |
-| M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | In progress: HNSW hardening (recall harness, tombstones, compaction, codec) + payload index + planner + multi-collection registry + benchmark harness landed; concurrency/serialization and scale tuning pending |
+| M3 Indexed at scale | HNSW hardening + recall harness, sorted payload index + planner, concurrency | In progress: HNSW hardening (recall harness, tombstones, compaction, codec) + payload index + planner + multi-collection registry + benchmark harness landed; **thread gate CLOSED 2026-10-15 (real spawn+join on both platforms)**; G-1/G-2 + scale tuning next |
 | M4 Operable & released | observability, soak/fuzz green, CI + release stamp, staging E2E | In progress: observability + the metrics adoption landed, soak/fuzz green, release candidate + stamp (rc.1) prepared; staging E2E + public release owner-gated |
 
 ## Change log
@@ -1180,6 +1185,23 @@ extraction with the packages lane.
   Honesty: whole-file segment loads (no mmap); SQ two-tier deferred to
   Q-a2b; segment paths are caller-owned (a stale file with the same
   cid+seg_id would be adopted).
+- **2026-10-15 (81st pass, v0.64.5 archive re-verification):** assets
+  sha256-verified + installed lane-local both platforms (win `bd71e2d3`,
+  linux `246e5e82`); **the thread gate is GREEN on BOTH platforms** (real
+  spawn+join: 3 workers exact sums, worker id != main; marks
+  `M3: join ok 42`; was 0xC0000005/SIGSEGV) -- the G phase's blocking gate
+  is closed, so **G 25 -> 40** (P2 memory budget and the D5-D7
+  seal/checkpoint policies were already in; G-1 sync smoke, G-2
+  accept-loop threads, readers/writers and scale tuning remain). C-13 +
+  C-14 VERIFIED FIXED on both platforms; C-15 + phantom controls stay
+  green; 19-probe repro sweep green; **Windows battery ALL GATES GREEN**
+  (suite 177/177 x2 + sbom 44 modules unsafe=0 + 44 probes x2 + bench
+  smoke + kill matrix). The **WSL battery went RED on the new XVC-C-16**
+  (v0.64.5 linux-x64 HTTP-service `/search` miscompile; A/B: v0.64.4 linux
+  + v0.64.5 windows green; repro `docs/repro/xv-http-service-linux/`,
+  bus `REL-20261015-2142-xvector`) -- the v0.64.5 re-pin is HELD and the
+  linux acceptance stays red until the fix lands. **Overall 86 % (86.32)
+  -> 88 % (87.82).**
 
 ## Update rule
 

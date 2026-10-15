@@ -5,21 +5,29 @@
 
 Status: design, 2026-10-11 (M-P P1: "concurrency design doc -- writer/
 reader model, consistency notes"; `docs/PRODUCTION-PLAN.md`). Gates:
-nothing here ships without its slice gates; the runtime thread gate is
-RED today (`docs/repro/xv-thread-abi`).
+nothing here ships without its slice gates; **the runtime thread gate is
+GREEN as of v0.64.5 (2026-10-15; both platforms; acceptance
+`docs/repro/xv-thread-abi` -- exit 0, 3 workers exact sums, worker id !=
+main, marks `M3: join ok 42`)**. The v0.64.5 archive re-pin itself is
+HELD on the unrelated XVC-C-16 (v0.64.5 linux-x64 HTTP-service search
+miscompile; `REL-20261015-2142-xvector`), so G-1 starts on the next
+full-green pass.
 
-## 1. Runtime reality (as of 2026-10-12, compiler v0.64.4)
+## 1. Runtime reality (as of 2026-10-15, compiler v0.64.5)
 
 - The engine + service are single-threaded by design (one accept loop,
   one active collection per call, WAL-before-ack).
-- `xiom.thread`: compile-side GREEN, runtime RED -- `spawn[T]` returns,
-  then AVs at the worker entrypoint (Windows `0xC0000005` / WSL
-  SIGSEGV; last forensic mark `M2: spawn returned`). Re-run on v0.64.4
-  (2026-10-12): **still red, unchanged** -- the fn-value ABI batch
-  (m263-m265) fixed the marshal half but the runtime entrypoint needs its
-  own fix; evidence re-filed (`REL-20261012-1402-xvector`; witness
-  `REL-20261011-1627-xvector`). Acceptance pinned (`docs/repro/xv-thread-abi`);
-  re-run at the next archive.
+- `xiom.thread`: **compile-side AND runtime GREEN at v0.64.5** --
+  `spawn[T]` + `JoinHandle.join` run REAL OS threads on Windows + WSL
+  (the acceptance probe: 3 workers return exact sums, a worker's
+  `current_thread_id()` differs from main; the forensics variant's last
+  mark moved from `M2: spawn returned` to `M3: join ok 42`). Two stacked
+  fixes landed it: the compiler env-cast half (m282 `d6690868`, in
+  v0.64.5) and the stdlib halves (wave-131 spawn-buffer main-heap hoist
+  + wave-139 trampoline i64 store; stdlib-v0.64.5 `092dfa0`). Verify
+  evidence: `REL-20261011-1627-xvector` / `REL-20261012-1402-xvector`
+  (items stay `fixed` until the next full-green archive pass closes
+  them). Next: G-1 below.
 - `xiom.sync` (mutex/condvar/channel/barrier/rwlock/atomics) is
   XIOM-implemented; cross-thread usefulness is untestable until the
   thread gate is green (same-thread smokes prove little). The sibling
@@ -103,6 +111,8 @@ Ordered candidate slices, each gated:
 
 ## 6. Slice order recommendation
 
-P2/G-5 (memory budget, non-gated) -> thread gate green -> G-1 -> G-2 ->
+P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1**
+(thread + sync smoke: promote the acceptance probe into `tests/probes/` +
+both batteries; then the G-2 flag-gated accept loop) -> G-2 ->
 G-4 -> (evaluate G-3) -> sharding harness story. Owner-facing claims use
 the v1 wording until the post-gate slices are green.

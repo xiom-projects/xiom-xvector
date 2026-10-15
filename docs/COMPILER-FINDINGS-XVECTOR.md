@@ -1,49 +1,50 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-> **Coordination bus (2026-10-10):** open cross-lane items now live in the
-> private `xiom-lang/xiom-relays` repo. The open findings **XVC-C-13**
-> (REL-20261010-1550-xvector) and **XVC-C-14** (filed with this wrap)
-> go through the bus (`--to compiler --kind bug`); everything else in this
-> file is closed history. File new findings as relay items, not here.
-> **XVC-C-15** (found 2026-10-11, `REL-20261011-` item filed at the 66th
-> pass) is the same drill: bus item + repro bundle under
-> `docs/repro/xv-f32-slot-literal-write/`.
+> **Coordination bus (2026-10-10):** cross-lane items live in the
+> private `xiom-lang/xiom-relays` repo. As of 2026-10-15 **no XVECTOR
+> finding is open on Windows**: C-13/C-14/C-15 and the phantom-import
+> gap are all VERIFIED FIXED; the one open item is **XVC-C-16** (v0.64.5
+> linux-x64 HTTP-service search miscompile, found on WSL during the
+> archive pass; `REL-20261015-2142-xvector`). File new findings as relay
+> items, not here.
 
 # Compiler findings from the XVECTOR lane
 
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.64.4** (current pin; released 2026-10-12,
-installed lane-local on Windows (`out\toolchain`) and WSL
-(`~/.xvector-toolchain`); see the isolation note in `SESSION.md`),
+Instrument: **XIOM Compiler v0.64.5** (current pin; released 2026-10-15,
+tag `84f761c5`, run 38792051847; installed lane-local on Windows
+(`out\toolchain`) and WSL (`~/.xvector-toolchain`); see the isolation note
+in `SESSION.md`),
 Windows + Linux/WSL; stdlib `E:\xiom-lang\stdlib`
-(`/mnt/e/xiom-lang/stdlib` in WSL); registry packages consumed:
+(`/mnt/e/xiom-lang/stdlib` in WSL; tree `ea1c312b` at the v0.64.5 battery);
+registry packages consumed:
 `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
 lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
 `docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
 All findings below were reported on v0.64.0, re-tested on v0.64.1, and
 re-tested again on v0.64.2 (2026-10-09); **XVC-C-08..C-12** were found later
 on v0.64.1 (2026-10-08/09) and re-tested on v0.64.2; **XVC-C-13** and
-**XVC-C-14** were re-tested on v0.64.3 (2026-10-10) and again on v0.64.4
-(2026-10-12), still open; **XVC-C-15** was fixed in v0.64.4 (m271) and
-verified (2026-10-12).
+**XVC-C-14** were re-tested on v0.64.3/v0.64.4 and **VERIFIED FIXED on
+v0.64.5** (2026-10-15: C-13 prints 65 with the warning gone; C-14's bundle
+builds+runs exit 0); **XVC-C-15** was fixed in v0.64.4 (m271) and stays
+green on v0.64.5; **XVC-C-16** is the one OPEN item (v0.64.5 linux-x64
+HTTP-service search miscompile; Windows green).
 
-**Current status (compiler v0.64.4, 2026-10-12): two XVECTOR findings are
-open (XVC-C-13, XVC-C-14 -- re-tested unchanged on v0.64.4); XVC-C-15 is
-VERIFIED FIXED (m271), and the phantom-import diagnostic gap
-(`REL-20261010-2124-xvector`, m266/m267) is VERIFIED FIXED too; verdicts
-filed on `release-checks/compiler-compiler-v0.64.3`.** 15 findings total
-(C-01..C-15), each with a repro bundle under `docs/repro/`:
+**Current status (compiler v0.64.5, 2026-10-15): one XVECTOR finding is
+open (XVC-C-16, linux-x64 only); everything else is VERIFIED FIXED
+(C-13 m320, C-14 m278+m298, C-15 m271, phantom imports m266/m267).** 16
+findings total (C-01..C-16), each with a repro bundle under `docs/repro/`:
 
 | Range | Status |
 |---|---|
 | XVC-C-01..C-08, C-10 | **verified fixed** (C-01..C-06 in v0.64.1; C-07/C-08 in v0.64.2 after the repro re-runs; C-10 incidentally fixed in v0.64.2 -- inline pad shape no longer segfaults) |
 | XVC-C-11, C-12 | **fixed in context** (v0.64.2 re-test of the original failing unit: unguarded `read_file` Str content and 5-byte `read_file_bytes` both clean) |
 | XVC-C-09 | **repro green** on WSL + Windows; workaround retained (weaker re-test -- the crash lived in the compiled engine path, not the repro shape) |
-| XVC-C-13 | **OPEN (re-tested on v0.64.4 2026-10-12: unchanged -- Win 167 / WSL 63, expect 65; the garbage value shifts per build)** -- `&Str` parameter types are unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values) |
-| XVC-C-14 | **OPEN (re-tested on v0.64.4 2026-10-12: unchanged -- clang/opt store mismatch at `xiominput.ll:850`, Windows + WSL)** -- two same-named struct types across modules: struct-field layouts resolve by short name, so one module's field silently takes the other type's layout (clang store reject when the shapes differ); found in the xiom.metrics adoption (shim `Counter` + package `Counter`) |
+| XVC-C-13 | **VERIFIED FIXED on v0.64.5 (m320 `b672a19f`; re-verified 2026-10-15)** -- was: `&Str` parameter types unknown to the checker (`unknown type '&Str' -- defaulting to i64` warning, then silent wrong values). The repro now builds with the warning GONE and prints `first_byte(A)=65` with exit 0 on Windows + WSL (was 167 Win / 63 WSL on v0.64.4). Bus item `REL-20261010-1550-xvector` verified + closed |
+| XVC-C-14 | **VERIFIED FIXED on v0.64.5 (m278 `484d9f21` + m298 `c18e550e`; re-verified 2026-10-15)** -- was: two same-named struct types across modules with one layout taking over the other (clang store reject at `xiominput.ll:850` when the shapes differ; silent wrong fields when compatible). The bundle now builds and runs exit 0 with `shim counter=1 tally hits=1` on Windows + WSL. Bus item `REL-20261010-1709-xvector` verified + closed |
 | XVC-C-15 | **VERIFIED FIXED on v0.64.4 (m271 `f69b542e`; re-verified 2026-10-12)** -- was: literal stores into `Vec[Float32]` slots skipped numeric narrowing (a Float64 literal stored its raw low 32 bits, `a[1] = 7.0` -> 0.0; an Int literal stored raw bits as the f32 pattern, `b[1] = 7` -> 9.8e-45; struct-field stores corrupted the same way). Repro now exits **0** on Windows + WSL (all six shapes); the lane dropped its `as Float32` workaround (see `probe_quantization`) |
 | retained workarounds | C-04 `SearchHits` wrapper (zero-cost public API), C-01 suite dispatch style, C-02 predicate negatives, C-09 local-assign nested writes, C-10 pad function + strict bounds, C-11/C-12 byte parser + `file_size` guard, C-14 single type name program-wide (shim `Counter` retired) |
 
@@ -119,6 +120,7 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-09 | **[OPEN, v0.64.2]** **XVC-C-13: `&Str` parameter types are unknown to the type checker** -- `xiom: warning: unknown type '&Str' -- defaulting to i64. This may produce incorrect code.`; the function body then reads the parameter as an integer (`first_byte("A")` returns **71 on Windows / 127 on WSL** instead of 65; no crash). Found while adding the M-D2 manifest file: `manifest_name_valid(name: &Str)` made every name validate as invalid (`slice.str_bytes` on the i64 yields no bytes), so `manifest_persist` refused every registry. Every stdlib/lane Str parameter is by value, so the shape had never been exercised. | `docs/repro/xv-str-ref-param/probe.xi` (warning present on both builds; Windows 71 / WSL 127, both exit nonzero). | Pass `Str` **by value** (lane + stdlib convention); the manifest validator is by-value. | warning-loud but value-silent: a `&Str` parameter compiles and returns garbage |
 | 2026-10-10 | **[OPEN, v0.64.2]** **XVC-C-14: two same-named struct types across modules -- one layout takes over the other** -- found in the `xiom.metrics` 0.2.0 adoption: the xvector core shim's `Counter` and the package `Counter` coexisted in one program. `VectorEngine` (declared in `xiom.vector.engine.core`, importing only the shim) was emitted with `%struct.xiom.metrics.Counter` field layouts while `engine_new` produced shim values -- clang rejected the store (`xiominput.ll:20528`, `'%tmp24' ... shim.Counter ... but expected xiom.metrics.Counter`); all XIOM-level checks passed first. The minimal repro (4 modules) shows the reverse direction: `repro.tally` (importing `xiom.metrics`) gets the **shim** layout for its `Tally.hits` field while `metric_counter_new()` returns the package type. Trigger (tested): two modules each declare a struct field typed by the same short name, resolving to different same-named types; a single such struct stays green. The winning side is program-order dependent; when the two layouts are compatible the wrong fields compile silently. | `docs/repro/xv-counter-type-shadow/` (mini-project + `xiom.toml`; Windows + WSL identical: clang `xiominput.ll:850:36` store mismatch; WSL `opt` prints "LLVM IR verification failed" first and keeps the IR). | One type name, one type: the engine stat counters moved onto `xiom.metrics` and the shim `Counter` was retired in the adoption slice (single `Counter` type program-wide; batteries green). Keep the repro as the regression gate. | struct-field layout silently resolved by short name across modules; wrong fields when the layouts are compatible, clang error only when they differ |
 | 2026-10-11 | **[FIXED v0.64.4 (m271 `f69b542e`); verified 2026-10-12]** **XVC-C-15: literal stores into `Vec[Float32]` slots skip numeric narrowing** -- `a[1] = 7.0` (Float64 literal) stores the raw low 32 bits of the f64 constant (**0.0**); `b[1] = 7` (Int literal) stores the raw integer bits as the f32 pattern (**9.80908925027372e-45**); struct-field stores (`vector.data[1] = 7.0`) corrupt the same way. A Float32 variable, an explicit `... as Float32`, and `push(...)` all convert correctly (`Vec[Float64]` slots are also fine). Silent data corruption: no warning, no clang error. Found by `probe_quantization`'s constant-dimension check (a `c[1] = 7.0` setup line made training see 0). | `docs/repro/xv-f32-slot-literal-write/probe.xi` (6-shape matrix: A/B/E corrupted pre-fix, C/F/G controls green; v0.64.3 Windows exit **3**; **v0.64.4: exit 0, Windows + WSL**). | None needed post-fix: the repro exits 0 and the explicit `as Float32` workaround in `probe_quantization` was dropped 2026-10-12 (23 checks green x2; the constant-dim assertion is the unguarded regression line). | silent wrong values wherever a float literal is stored into a float vector element -- feeds training/encoding paths garbage |
+| 2026-10-15 | **[OPEN on v0.64.5 linux-x64 only]** **XVC-C-16: the HTTP service `/search` path miscompiles on linux-x64** -- the WSL full battery went RED on 6 service/search gates (`probe_http_service` 6 failed checks, `probe_service_limits` 3, `probe_service_auth` 3, `probe_http_fuzz` 1, `probe_metrics` 3, `probe_http_server` 3) while everything else (suite 177/177 x2, 38 other probes x2, sbom 44 modules unsafe=0, bench smoke, kill matrix) is green; the Windows battery on the same tree is ALL GATES GREEN. Symptom: every `/search` request through `http_service_handle` misbehaves although the collection exists -- knn/offset/batch/empty-collection -> 404 `{"error":"not found"}`, `mode:"range"` with no pagination fields -> 400 `"range mode does not support pagination"`. Direct controls in the same program are GREEN under the failing compiler (`select_collection` Ok; `search_request_new` + `search_with_request` -> 2 hits with exact field readback; json extraction -> "docs"), and the failure reproduces with the compiler's BUNDLED stdlib => context-sensitive miscompile of the service module's search-handler lowering (XVC-C-08/C-09 family), not the stdlib tree. Bisect: linux green v0.64.4 / red v0.64.5 (m313-m333 window; m328-m333 pin-gate round a candidate). | `docs/repro/xv-http-service-linux/` (probe + README with the full A/B table): v0.64.4 linux (sha256 72a131cc) exit 0; v0.64.5 linux (246e5e82) exit 3; v0.64.5 windows (bd71e2d3) exit 0; `probe_http_service` 0 fails vs 6 fails | none -- the v0.64.5 re-pin is **HELD** (Windows battery green, WSL red); filed `REL-20261015-2142-xvector` (high) | WSL/linux acceptance of the service read path red until fixed; smoke-only impact (engine probes + suite green) |
 
 ## Notes for the compiler lane
 
@@ -140,28 +142,39 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 - SearchRequest/hydration probe: `tests/probes/probe_search_request.xi` (real-module hydration gate;
   XVC-C-08 fixed in v0.64.2, the suite asserts the flags again too;
   run with `scripts\run-probe.ps1 tests\probes\probe_search_request.xi -Runs 2`).
-- `&Str` repro (XVC-C-13, OPEN): `docs/repro/xv-str-ref-param/probe.xi` --
+- `&Str` repro (XVC-C-13, FIXED v0.64.5 / m320): `docs/repro/xv-str-ref-param/probe.xi` --
   `.\scripts\build.ps1 docs\repro\xv-str-ref-param\probe.xi -Name strref`
-  then run `out\strref.exe` (v0.64.4: prints 167, exit 1; WSL prints 63;
-  expect 65. Values shifted across archives -- the i64 fallback reads
-  stack garbage).
-- Short-name type-shadow repro (XVC-C-14, OPEN):
+  then run `out\strref.exe` (v0.64.4: prints 167, exit 1; WSL 63; **v0.64.5:
+  no warning, prints 65, exit 0 on both platforms**).
+- Short-name type-shadow repro (XVC-C-14, FIXED v0.64.5 / m278+m298):
   `docs/repro/xv-counter-type-shadow/` is a mini-project (own `xiom.toml`);
-  run from that directory with `src\main.xi` (v0.64.2: clang store mismatch
-  at `xiominput.ll:850`, exit 1, Windows + WSL). See its README for the
+  run from that directory with `src\main.xi` (v0.64.4: clang store mismatch
+  at `xiominput.ll:850`, exit 1; **v0.64.5: builds + runs exit 0, output
+  `shim counter=1 tally hits=1`, Windows + WSL**). See its README for the
   full recipe.
+- Linux service-search repro (XVC-C-16, OPEN on v0.64.5 linux):
+  `docs/repro/xv-http-service-linux/probe.xi` --
+  `bash scripts/build.sh docs/repro/xv-http-service-linux/probe.xi repro_service_search`
+  then `./out/repro_service_search` (v0.64.5 linux: exit 3 -- the three wire
+  checks fail with 404/400 bodies; v0.64.4 linux + v0.64.5 windows: exit 0).
+  The probe prints each response body plus the direct-API controls.
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
   then the suite x2 + the probes, then re-pin in `SESSION.md` (done for
   v0.64.2 on 2026-10-09 -- see the re-test section).
-- Relay state: `docs/RELAY-COMPILER.md` Addenda 1-11 (9 = XVC-C-13,
-  10 = XVC-C-14, 11 = XVC-C-15). C-01/C-02/C-04 stay as
-  deliberate lane choices.
-- Archive status (2026-10-12): **v0.64.4** installed lane-local on Windows
-  + WSL (release run `38256358845`; assets sha256-verified); full re-test
-  done (re-verification set + 19-probe repro sweep + isolated batteries
-  both platforms). **XVC-C-15 and the phantom-import gap VERIFIED FIXED;
-  XVC-C-13/C-14 re-tested unchanged (still open); thread gate still AVs**
-  (runtime-side fix needed; re-run filed on the bus `REL-20261012-1402-
-  xvector`). Verdicts on `release-checks/compiler-compiler-v0.64.3`.
+- Relay state: `docs/RELAY-COMPILER.md` Addenda 1-12 (9 = XVC-C-13,
+  10 = XVC-C-14, 11 = XVC-C-15); the v0.64.5 wave (C-13/C-14 closures +
+  C-16 filing) is bus-routed (`REL-20261015-2142-xvector` and the closed
+  items). C-01/C-02/C-04 stay as deliberate lane choices.
+- Archive status (2026-10-15): **v0.64.5** installed lane-local on Windows
+  + WSL (release run `38792051847`, tag `84f761c5`; assets sha256-verified:
+  win `bd71e2d3`, linux `246e5e82`). Full re-test: thread gate GREEN on
+  BOTH platforms (acceptance closed; evidence on the thread items); C-13
+  VERIFIED FIXED (65 both platforms); C-14 VERIFIED FIXED (bundle exit 0
+  both platforms); C-15 + phantom controls stay green; 19-probe repro
+  sweep green; Windows battery ALL GATES GREEN. **WSL battery RED on
+  XVC-C-16** (linux service-search miscompile; re-pin HELD). Verdicts +
+  closures on the bus (`-1550` verified+closed, `-1709` verified+closed,
+  `REL-20261015-2142-xvector` open; check rows updated on
+  `release-checks/compiler-compiler-v0.64.4`).
 - Soak / mixed-workload gate: `tests/probes/probe_soak_mixed.xi`
   (600 deterministic ops with bookkeeping invariants + recovery).
