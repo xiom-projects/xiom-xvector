@@ -231,12 +231,18 @@ and **the thread-primitive gate CLOSED (2026-10-15, v0.64.5)**: real
 platforms (3 workers return exact sums; a worker id differs from main;
 marks `M3: join ok 42`; acceptance `docs/repro/xv-thread-abi/`; fixes:
 compiler m282 `d6690868` env-cast + stdlib wave-131 buffer hoist + wave-139
-trampoline i64). The engine is still single-threaded and each call targets
-one active collection.
-Remaining: G-1 thread + sync smoke (promote the acceptance probe into
-`tests/probes/` + both batteries), G-2 flag-gated accept-loop threads
-(`XVECTORD_THREADS`), concurrent readers / write serialization model,
-scale tuning beyond the baseline (`docs/G-PHASE-PLAN.md` slice order).
+trampoline i64). **G-1's thread + counter legs landed (2026-10-16):**
+`tests/probes/probe_thread_sync.xi` (45th probe, both batteries) pins the
+spawn/join acceptance + a 4-thread mutex-guarded counter (exact 2000) + a
+4-thread atomic counter (exact 2000) on Windows + WSL, plus the
+same-thread channel FIFO/close contract; the channel CROSS-THREAD leg is
+blocked on XVC-C-17 (imported-type global pointer-field drop;
+`REL-20261015-2216-xvector`). The engine is still single-threaded and each
+call targets one active collection.
+Remaining: G-1 channel cross-thread leg (on XVC-C-17), G-2 flag-gated
+accept-loop threads (`XVECTORD_THREADS`), concurrent readers / write
+serialization model, scale tuning beyond the baseline
+(`docs/G-PHASE-PLAN.md` slice order).
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -1202,6 +1208,19 @@ extraction with the packages lane.
   bus `REL-20261015-2142-xvector`) -- the v0.64.5 re-pin is HELD and the
   linux acceptance stays red until the fix lands. **Overall 86 % (86.32)
   -> 88 % (87.82).**
+- **2026-10-16 (G-1 slice, on top of v0.64.5):**
+  `tests/probes/probe_thread_sync.xi` joins both batteries as the 45th
+  probe: spawn/join acceptance (3 workers exact, worker id != main),
+  4-thread mutex-guarded counter = exact 2000, 4-thread atomic counter =
+  exact 2000 (Windows 5/5 stress + WSL; suite 177/177 x2 both platforms;
+  **Windows battery ALL GATES GREEN: suite x2 + sbom 44 modules unsafe=0 +
+  45 probes x2 + bench smoke + kill matrix**). The channel cross-thread
+  leg is blocked by the new **XVC-C-17** (imported-type global
+  pointer-field drop; `REL-20261015-2216-xvector`; Int-handle workaround
+  validated) -- **G stays 40** (G-1 partial; G-2 next). One full-battery
+  run carried a transient clang-spawn flake on `probe_wal_file` (`clang
+  failed with exit code -1`; retry x2 green; machine healthy -- the clean
+  re-run above is the wrap signature).
 
 ## Update rule
 

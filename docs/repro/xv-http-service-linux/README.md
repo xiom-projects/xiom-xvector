@@ -60,6 +60,23 @@ bash scripts/build.sh docs/repro/xv-http-service-linux/probe.xi repro_service_se
 The probe prints each wire response body and the direct-API controls; exit =
 failed checks.
 
+## Additional narrowing (parallel session, 2026-10-15)
+
+A second xvector session filed the same regression independently
+(`REL-20261015-2251-xvector`, since merged/closed into this item by its
+reporter) and narrowed it further:
+
+- `http_parse_request` on the exact bytes `POST /search HTTP/1.1 ...`
+  returns byte-identical method/path ([/search]) on both compilers and
+  platforms;
+- a byte-exact replica of the private `path_segments("/search")` plus
+  `segs[0] == "search"` MATCHES on both Linux compilers (and Windows).
+
+So the divergence sits **deeper than path parsing / string comparison**
+-- in the dispatcher layer (auth middleware chain, body/JSON gating, or a
+helper it calls), consistent with the context-sensitive lowering
+diagnosis above.
+
 ## Filing
 
 Bus item `REL-20261015-…-xvector` (to compiler), filed 2026-10-15 with the
