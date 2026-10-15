@@ -157,9 +157,11 @@ green both platforms; verdicts + closures filed on the bus.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `71af343` (replay-symmetry
-fix) + this 80th-wrap commit; tag `v1.0.0-rc.1` still on `530b041`.
-Recent slices: `71af343` replay-symmetry fix + `fd61951` D7 docs +
+**Repo:** private, no pushes; clean tree. HEAD `1311e7b` (18:00Z watch)
++ this handoff commit; tag `v1.0.0-rc.1` still on `530b041`.
+Recent slices: release-watch commits `6222793`..`1311e7b` (2026-10-15,
+3h cadence; v0.64.5 hold -> fix -> release), `8cef86d` 80th wrap
+completion, `71af343` replay-symmetry fix + `fd61951` D7 docs +
 `2552824` M-D7 request-path union fix + `2583351` M-D7 compaction/gate +
 `9565ffa` M-D7 union search + `a9d5246` M-D7 plumbing +
 `25ee9da` M-D7 design (80th), `48fca54` xvectord D6 policy + `401c120` D6
@@ -1294,6 +1296,10 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
+**TRIGGER FIRED (2026-10-15T19:18Z): `v0.64.5` IS RELEASED -- tag
+`84f761c5`, release run 38792051847 fully green, assets live (gh Latest =
+v0.64.5). DELETE THE OLD v0.64.4 WATCH LANGUAGE BELOW AND RUN THE ARCHIVE
+RE-VERIFICATION QUEUE (section 13) FIRST.**
 **80th-pass wrap (2026-10-13 night): D7 MULTI-SEGMENT READ PATH DONE --
 M-D is complete except power-loss fault injection.**
 - Roll (`engine_roll_segment`): the active collection moves into an
@@ -2367,3 +2373,107 @@ qualified; keep bodies as BYTES; suite x2 + WSL spot before any wrap;
 check free memory before trusting reds; bench loops hard-capped;
 toolchain/package homes are lane-local on purpose.
 ```
+
+## 13. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-15T19:30Z; supersedes 12)
+
+> **NOTE:** the v0.64.5 watch FIRED at 19:18Z -- the archive is LIVE. Run
+> the queue below FIRST; the M-D backlog follows it.
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first: section 0 is
+the state, section 1 the queue context, THIS section the work order.
+Consumer lane: never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the
+private xiom-relays bus. Identity "Lefteris Notas
+<lefterisnotas@gmail.com>"; conventional commits, DCO -s.
+
+TRIGGER FIRED -- v0.64.5 archive is LIVE: tag 84f761c5, release run
+38792051847 fully green, assets live (2026-10-15T19:18Z); stdlib-v0.64.5
+tagged + published (`092dfa0` retag; their side closed; 2123 closed).
+The thread-gate fixes are IN this archive (m282 env-cast + the stdlib
+wave-131 spawn-buffer hoist; pre-pin GREEN at stdlib ae9c963), plus the
+C-14 identity fix (m278) and the candidate-regression fixes (m323-m327).
+Currently INSTALLED lane-local = v0.64.4; this pass installs v0.64.5.
+
+Do this, in order:
+1) Relay bus FIRST and LAST: git -C E:\xiom-lang\xiom-relays fetch origin
+   main; git -C E:\xiom-lang\xiom-relays merge --ff-only origin/main (bare
+   pull hits a multi-branch quirk); python tools/relay.py view --lane
+   xvector; process items (ack/fix with refs; never edit another lane's
+   item; push only xvector items via `relay.py commit --lane xvector`).
+   The thread items REL-20261011-1627-xvector and REL-20261012-1402-xvector
+   are `fixed` by the compiler -- do NOT verify/close them until the
+   real-spawn acceptance below is GREEN.
+2) Install lane-local BOTH platforms from the v0.64.5 release assets
+   (sha256-verified against the release SHA256SUMS; Windows out\toolchain
+   [move the v0.64.4 dir aside first -- keep the .bak OUT of the repo,
+   under %TEMP%], WSL ~/.xvector-toolchain [old copy to /tmp]); verify
+   `xiom --version` reports v0.64.5 on both.
+3) Re-verification set (Windows; repeat the key legs on WSL):
+   a. THREAD GATE FIRST (the pre-pin green must hold at the archive):
+      . .\scripts\dev-env.ps1; .\scripts\build.ps1
+      docs\repro\xv-thread-abi\probe.xi -Name repro_thread_abi
+      .\out\repro_thread_abi.exe  -> expect EXIT 0 (was 0xC0000005);
+      run the marks variant too. On green: the G phase flips per
+      docs/G-PHASE-PLAN.md -- record the witness, then verify+close BOTH
+      thread items (reporter lane; refs: archive tag + commit).
+   b. C-14 after m278: docs\repro\xv-counter-type-shadow (bundle; build
+      with the bundle as cwd) -> expect the clang/opt store mismatch at
+      xiominput.ll:850 to be GONE (exit 0).
+   c. C-13: docs\repro\xv-str-ref-param\probe.xi -> record the value
+      (expect 65 if fixed; was 167 Win / 63 WSL).
+   d. C-15 regression: docs\repro\xv-f32-slot-literal-write\probe.xi ->
+      expect exit 0 (fixed in v0.64.4; must stay fixed).
+   e. Phantom-import controls: out\phantom_ctrl1.xi / phantom_ctrl2.xi ->
+      exactly ONE error[T001] unresolved import each, exit 1.
+   f. Repro sweep: re-run the bundle probes (out\repro_sweep.ps1 may
+      exist; else rebuild the list) -- all green except documented reds.
+4) FULL batteries both platforms BEFORE re-pinning:
+   Windows: .\scripts\ci.ps1 -> ALL GATES GREEN (suite 177/177 x2 + sbom
+   44 modules unsafe=0 + 44 probes x2 + bench smoke + kill matrix);
+   WSL: bash scripts/ci.sh -> same shape.
+5) On GREEN: re-pin the docs and close the loop --
+   - SESSION section 0 pins: compiler v0.64.5 installed lane-local; record
+     the stdlib tree hash actually used (`git -C E:\xiom-lang\stdlib log
+     -1` at battery time) + the packages HEAD.
+   - PRODUCTION-READINESS: "As of" + log entry; if the G phase flips, the
+     G score moves off 25 (recompute); G-PHASE-PLAN status line;
+     OWNER-HANDOFF compiler row.
+   - Bus: verify+close -1627/-1402; update the release-check rows (read
+     the compiler's latest wave item / check file first -- fill verdicts
+     as reporter); commit signed.
+   - The batteries above ARE the acceptance; no extra re-runs.
+   If ANY red: minimal repro -> `relay.py new` to compiler with the repro
+   path + evidence; do NOT close the thread items; continue on
+   non-blocked in-lane work.
+6) After the archive pass, in-lane backlog (fresh slices): Q-a2b (SQ
+   two-tier rescore on sealed scans; unblocked by D7), then M-P (P3 SIMD
+   seam -- the bindings kernels ABI is agreed, the package is
+   compiler-gated; P4 IVF-PQ prototype from FAISS), then the standing
+   queue in section 1. Watch: arm a 2-4h doorbell/cron for post-pin waves
+   (stdlib mmap revendoring; the compiler's v0.64.6 list is in their
+   handoff).
+
+Standing owner items: the rc.1 public-release greenlight
+(docs/OWNER-HANDOFF.md ready); the ann-swap greenlight
+(REL-20261011-1308-xvector). Discipline: struct literals list every
+field; locals initialized; Str by value (XVC-C-13); json.json_* qualified;
+keep bodies as BYTES; suite x2 + WSL spot before any wrap; check free
+memory before trusting reds; bench loops hard-capped; toolchain/package
+homes are lane-local on purpose; DO NOT import the legacy
+xiom.vector.collection.* family (XVC-C-14 trap; the m278 fix is in
+v0.64.5 but the wrappers stay dead weight).
+```
+
+### Handoff notes (for the record)
+- The release-watch cron (`wku_13b432c8`, 3h cadence) lives in the
+  PREVIOUS session; a fresh session arms its own watch.
+- D7 evidence chain: `probe_multisegment` 27/27; live policy server
+  (sealed serving + `/stats` counters + restart); two gate-caught fixes
+  (`2552824` request-path union bypass; `71af343` replay symmetry); both
+  wrap batteries ALL GATES GREEN (2026-10-13/14); D 95 / overall 86 %.
+- The v0.64.5 release survived two holds: `2123` candidate regressions
+  (Cell[Int8]/tuple-length readback; fixed m323-m327; stdlib item closed)
+  and the release-lane recovery (retag/advisories/PR assembly; run
+  38792051847 green).
