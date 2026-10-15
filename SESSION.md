@@ -157,8 +157,12 @@ green both platforms; verdicts + closures filed on the bus.
 
 ## 0. STATE (hand-off point)
 
-**Repo:** private, no pushes; clean tree. HEAD `1311e7b` (18:00Z watch)
-+ this handoff commit; tag `v1.0.0-rc.1` still on `530b041`.
+**Repo:** private, no pushes; clean tree. HEAD `1fa0803` (handoff) + the
+release-watch/archive-pass commits; tag `v1.0.0-rc.1` still on `530b041`.
+**Installed lane-local: compiler v0.64.5** (was v0.64.4; old dirs parked
+OUT of the repo: `%TEMP%\kilo\v0645\toolchain-v0.64.4.bak` and WSL
+`/tmp/xvector-toolchain-v0.64.4.bak`). Upstream at install: stdlib
+`stdlib-v0.64.5` (tag `092dfa0`); packages unchanged.
 Recent slices: release-watch commits `6222793`..`1311e7b` (2026-10-15,
 3h cadence; v0.64.5 hold -> fix -> release), `8cef86d` 80th wrap
 completion, `71af343` replay-symmetry fix + `fd61951` D7 docs +
@@ -999,6 +1003,14 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
 lane `cd281b7`; latest re-verification = the v0.64.4 archive pass on the
 current tree):**
 
+- **v0.64.5 archive pass (81st, 2026-10-15):** installed lane-local both
+  platforms (tag `84f761c5`, run 38792051847; sha256-verified). **Thread
+  gate GREEN** (exit 0: 3 workers return exact sums via join; worker OS
+  thread id differs from main; marks variant reaches `M3: join ok 42` --
+  was AV 0xC0000005 / `M2: spawn returned`). **C-14 fixed** (bundle exit
+  0; xiominput.ll:850 mismatch gone). **C-13 fixed** (`first_byte(A)=65`).
+  C-15 regression clean; phantom controls exactly one T001 each.
+  Batteries: (this pass; Windows + WSL).
 - **D7 multi-segment read path (80th pass, 2026-10-13):**
   `probe_multisegment` **27/27** (Flat union bit-exact vs brute force incl.
   2 sealed + active; range/page across sources; sealed-only delete +
@@ -1296,10 +1308,17 @@ Work proceeds autonomously slice-by-slice under the lane's goal loop, one
 verified slice at a time (suite x2 + all probes x2, Windows + WSL spot,
 signed commits, docs updated).
 
-**TRIGGER FIRED (2026-10-15T19:18Z): `v0.64.5` IS RELEASED -- tag
-`84f761c5`, release run 38792051847 fully green, assets live (gh Latest =
-v0.64.5). DELETE THE OLD v0.64.4 WATCH LANGUAGE BELOW AND RUN THE ARCHIVE
-RE-VERIFICATION QUEUE (section 13) FIRST.**
+**ARCHIVE PASS EXECUTED (2026-10-15): `v0.64.5` INSTALLED lane-local both
+platforms (tag `84f761c5`, run 38792051847, assets sha256-verified; WSL
+binary also reports v0.64.5). RE-VERIFICATION SET ALL GREEN:**
+- **THREAD GATE GREEN (exit 0; 3 workers exact sums; OS thread ids; marks
+  witness M3 `join ok 42`) -- THE G PHASE FLIPS.**
+- **XVC-C-14 FIXED** (counter-type-shadow bundle exit 0; ll:850 gone).
+- **XVC-C-13 FIXED** (`first_byte(A)=65`, expect 65; was 167/63).
+- XVC-C-15 regression clean (exit 0); phantom controls one T001 each.
+**Remaining this pass: batteries both platforms + bus closures (-1627,
+-1402, and the C-13/C-14 items via the compiler's transitions) +
+release-check rows + G-phase score updates.**
 **80th-pass wrap (2026-10-13 night): D7 MULTI-SEGMENT READ PATH DONE --
 M-D is complete except power-loss fault injection.**
 - Roll (`engine_roll_segment`): the active collection moves into an
