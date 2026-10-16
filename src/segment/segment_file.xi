@@ -38,6 +38,7 @@ module xiom.vector.segment.segment_file
 use xiom.io;
 use xiom.convert;
 use xiom.num.float;
+use xiom.hash;
 use xiom.string.slice;
 use xiom.vectors;
 use xiom.vector.index.ann_index;
@@ -66,6 +67,13 @@ pub type SealedSegment = {
   has_sq: Bool;
   sq: SQ8;
   codes: Vec[Int];
+  // L-2 integrity footer (`z <count> <crc32>`, optional, always last):
+  // loaders tolerate its absence (prefix semantics unchanged); the move
+  // path (`engine_attach_segment`) REQUIRES a verified footer so a
+  // truncated/corrupt artifact copy cannot attach silently.
+  footer_seen: Bool;
+  footer_ok: Bool;
+  declared_points: Int;
 }
 
 pub fn sealed_segment_new(seg_id: Int, cid: Int, dim: Int, metric: DistanceMetric, kind: AnnIndexKind, params: AnnParams) -> SealedSegment
@@ -89,6 +97,9 @@ pub fn sealed_segment_new(seg_id: Int, cid: Int, dim: Int, metric: DistanceMetri
     has_sq: false,
     sq: SQ8{ dim: dim, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() },
     codes: Vec[Int].new(),
+    footer_seen: false,
+    footer_ok: false,
+    declared_points: 0,
   };
 }
 
@@ -222,6 +233,15 @@ pub fn segment_file_persist(ss: &SealedSegment, path: Str) -> Bool {
       ci = ci + 1;
     }
   }
+  // Integrity footer (L-2 move artifacts): declared point count + a crc32
+  // over the content bytes BEFORE the footer. Optional to old loaders;
+  // attach requires it (and verifies both).
+  var foot_crc = hash.crc32_ieee(&out);
+  append_bytes(&mut out, "z ");
+  append_bytes(&mut out, convert.int_to_string(ss.store.ids.len()));
+  append_bytes(&mut out, " ");
+  append_bytes(&mut out, convert.int_to_string(foot_crc));
+  append_bytes(&mut out, "\n");
   var tmp = path + ".tmp";
   var wres = io.write_file_bytes(tmp, &out);
   match wres {
@@ -285,6 +305,9 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
     has_sq: false,
     sq: SQ8{ dim: 1, vmin: Vec[Float32].new(), vstep: Vec[Float32].new() },
     codes: Vec[Int].new(),
+    footer_seen: false,
+    footer_ok: false,
+    declared_points: 0,
   };
   if !io.file_exists(path) { return ss; }
   var fsz = io.file_size(path);
@@ -320,6 +343,8 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
   var stop: Bool = false;
   var sq_ranges: Bool = false;
   var codes_done: Int = 0;
+  var footer_pos: Int = -1;
+  var footer_crc: Int = 0;
   while pos < b.len() && !stop {
     var tag = b[pos];
     if tag == 109 {
@@ -544,6 +569,32 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
           }
         }
       }
+    } elif tag == 122 {
+      // z <count> <crc32> (optional integrity footer; last record only)
+      if !meta_done || footer_pos >= 0 {
+        stop = true;
+      } else {
+        var rz = parse_int_at(b, pos + 2);
+        if !rz.ok {
+          stop = true;
+        } else {
+          var cz = parse_int_at(b, rz.pos + 1);
+          if !cz.ok {
+            stop = true;
+          } else {
+            var pz: Int = cz.pos;
+            if pz < b.len() && b[pz] == 13 { pz = pz + 1; }
+            if pz < b.len() && b[pz] == 10 { pz = pz + 1; } else { stop = true; }
+            if !stop {
+              ss.footer_seen = true;
+              ss.declared_points = rz.value;
+              footer_crc = cz.value;
+              footer_pos = pos;
+              pos = pz;
+            }
+          }
+        }
+      }
     } else {
       stop = true;
     }
@@ -553,6 +604,19 @@ pub fn segment_file_load(path: Str) -> SealedSegment {
   } else {
     ss.has_sq = false;
     ss.codes = Vec[Int].new();
+  }
+  // Footer verification: crc over everything before the footer line and
+  // the declared point count must both match; footer_ok gates attach.
+  if footer_pos >= 0 {
+    var pre = Vec[UInt8].new();
+    var pf: Int = 0;
+    while pf < footer_pos {
+      pre.push(b[pf]);
+      pf = pf + 1;
+    }
+    if hash.crc32_ieee(&pre) == footer_crc && ss.declared_points == ss.store.ids.len() {
+      ss.footer_ok = true;
+    }
   }
   return ss;
 }

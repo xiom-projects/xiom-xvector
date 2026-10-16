@@ -110,6 +110,7 @@ anything -- old segment files after a compaction are left for your tooling.
 | Corrupt/missing snapshot meta | `snapshot_load` refuses (meta-gated); the ckpt/manifest are not touched | `snapshot_valid`, `probe_snapshot` |
 | Roll/compaction policy fails | the ack is already durable; the policy retries at the next commit; compaction refuses when a registered source is not loaded | `/stats sealed_*`, server log line at quit |
 | Sealed file unreadable at restart | counted in `sealed_missing`; the union serves the rest and never goes silent | `/stats sealed_loaded|sealed_missing`, `probe_multisegment` |
+| Interrupted artifact copy (collection move, L-2) | `attach_segment` refuses (integrity footer missing or mismatched): no partial collection attaches, both homes stay consistent | `probe_collection_move` |
 | Deep-nested JSON body | rejected 400 by `json_depth_ok` (64) before the parser | stdlib `json_parse` depth cap filed in the wishlist |
 | Oversized / abusive requests | 413/400/405 by limits; fuzz gate green | `probe_service_limits`, `probe_http_fuzz` |
 | Brute force / key guessing | 401/403 with constant-time compare; token bucket 429 | `probe_service_auth` |
@@ -120,7 +121,9 @@ anything -- old segment files after a compaction are left for your tooling.
 
 - On-disk format versions: checkpoint/WAL magic `xvector-wal 1`
   (ManifestUpdate v1/v2/v3 families), manifest `xvector-manifest 1`,
-  sealed segment `xvector-segment 1`, snapshot meta
+  sealed segment `xvector-segment 1` (v2 when SQ-armed; since L-2 every
+  persisted segment appends a `z <count> <crc32>` integrity footer --
+  ignored by old readers, REQUIRED by attach), snapshot meta
   `xvector-snapshot 1 <lsn> <collections>`, and the **D5 delta segment**
   (`<ckpt>.seg`, `xiom.wal` codec v1 lines
   `lsn|op|key|value|timestamp[|p0,p1,...]`; append-only, fsync-on-ack,
@@ -180,3 +183,36 @@ Sizing rules of thumb (model-derived, 64-bit):
   model; seal a segment (`seal_segment`) before compaction when a
   durable copy is wanted. Compaction cost is a full HNSW rebuild, so
   batch it (admin path), not per-delete.
+
+## 9. Collection move (offline, L-2)
+
+Move ONE collection between homes with two engine calls plus a file copy
+(the grid-runner/drain CLI and roll-then-move support land in L-5):
+
+```text
+src:  export_collection(eng, "docs", "move/docs.seg")   # durable roll: the collection's
+                                                         # full live state -> ONE segment artifact
+                                                         # (the source keeps serving via its sealed
+                                                         # entry; v1: no pre-existing sealed
+                                                         # segments, non-empty)
+copy: <your tooling> copies move/docs.seg to the destination host
+dst:  create_named_collection(dst, "docs", dim, metric)  # same dim/metric as the source
+      attach_segment(dst, "move/docs.seg")               # installs points+payloads+index config;
+                                                         # re-checkpoints (durable before the ack)
+verify: search sanity vs the source; engine_size; the index kind/params travel in the artifact
+drop: drop_collection(src, "docs")                       # after verification; durable
+```
+
+Integrity: every segment persisted since L-2 ends with a `z <count>
+<crc32>` footer (declared point count + crc over the content bytes).
+Old loaders ignore it (prefix semantics unchanged); **attach REQUIRES a
+verified footer** -- a truncated, corrupted, or pre-L-2 copy is refused
+with `Corruption` instead of attaching a partial collection. Kill during
+the copy touches only the artifact file; both homes stay consistent (the
+destination has no half-attached registry entry).
+
+Known v1 limits (documented, gated): a collection that already has
+sealed segments must be compacted before export; the source must be
+non-empty; attach targets a freshly created collection (same dim/metric;
+name is the caller's choice). None of these blocks the move flow; L-5
+adds compaction-aware moves + the drain CLI.

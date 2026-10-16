@@ -277,3 +277,16 @@ pub fn seal_segment(eng: &mut VectorEngine, seg_id: Int, path: Str) -> Result[Bo
 pub fn restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError] {
   return engine_restore_segment(eng, path);
 }
+
+// L-2 collection move: export a named collection's full live state to one
+// segment artifact (durable roll; the source stays queryable via its
+// sealed entry). v1: no pre-existing sealed segments, non-empty.
+pub fn export_collection(eng: &mut VectorEngine, name: Str, path: Str) -> Result[Int, CoreError] {
+  return engine_export_collection(eng, name, path);
+}
+
+// L-2 collection move: attach a segment artifact to the ACTIVE collection
+// (matching dim/metric; no cid requirement; integrity footer REQUIRED).
+pub fn attach_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError] {
+  return engine_attach_segment(eng, path);
+}

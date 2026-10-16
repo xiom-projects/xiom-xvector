@@ -179,7 +179,14 @@ code slices started). **Release ownership (owner directive 2026-10-16):**
 mote registry publication -> coordinate with the packages lane via relay
 when package-ready (owner-gated); lattice releases -> ops-owned GitHub
 Actions release set.
-Recent slices: **L-1 mote polish (2026-10-16)**: `probe_mote_embedded`
+Recent slices: **L-2 collection move (2026-10-16)**: `export_collection`
+(durable roll -> one self-contained segment artifact; source keeps
+serving via its sealed entry) + `attach_segment` (fresh cid, no cid
+requirement, index config travels) + the segment **integrity footer**
+(`z <count> <crc32>`; attach refuses truncated/corrupt/pre-L-2 copies)
++ `probe_collection_move` (47th probe, both batteries) +
+`docs/OPERATIONS.md` section 9; staged facts: probe/suite x2 both
+platforms, full Windows battery re-run (see commit). + **L-1 mote polish (2026-10-16)**: `probe_mote_embedded`
 (the 46th probe) + `docs/MOTE-QUICKSTART.md`; caught + fixed the
 **cid-collision regression** (create-after-reopen reused a recovered cid
 -> the next recovery silently dropped the earlier collection); WSL legs
@@ -1034,9 +1041,22 @@ custom `XIOM_HOME` on WSL misplaced the `xiom.wal` install
   the benchmark adapters; C 99, D 74, G 25); recompute at every wrap.
 
 **Green evidence (compiler v0.64.5 installed 2026-10-15 lane-local + stdlib
-lane `ea1c312b`; latest re-verification = the v0.64.5 archive pass on the
-current tree -- Windows battery green; WSL battery red on XVC-C-16, so the
-re-pin is HELD):**
+lane `ea1c312b`; latest re-verification = the v0.64.5 archive pass + the
+L-1/L-2 slices on top -- Windows batteries green; the WSL archive battery
+is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
+
+- **L-2 collection move (2026-10-16):** `export_collection` +
+  `attach_segment` (the offline move primitive; the portable unit is one
+  self-contained segment file) + the segment-codec **integrity footer**
+  (`z <count> <crc32>`; backward compatible -- old loaders ignore it --
+  and REQUIRED by attach, so truncated/corrupted/pre-L-2 copies are
+  refused instead of attaching a partial collection). `probe_collection_move`
+  (47th probe, both battery lists): export refusals, three bad-copy
+  refusals, bit-exact attach (distances + HNSW config m=8/ef_search=16),
+  dst persist+reopen, cid freshness (docs+extra survive), src drop +
+  reopen consistent. Evidence: probe x2 + suite 177/177 x2 on Windows AND
+  WSL; segment-family probes re-green (footer compatibility); full
+  Windows battery re-run. `docs/OPERATIONS.md` section 9 = the ops recipe.
 
 - **L-1 mote polish (2026-10-16):** `tests/probes/probe_mote_embedded.xi`
   (46th probe, both battery lists) -- the embedded round trip a mote
@@ -1426,6 +1446,16 @@ stdlib wave-146 POSIX build break** (`REL-20261016-1143-xvector`: runtime
 fails) -- re-run when stdlib fixes it. Reference study 04
 (`docs/REFERENCE-STUDY-04-LATTICE.md`) landed + folded into
 `docs/checklists/lattice-v1.md`.
+**L-2 COLLECTION MOVE LANDED (2026-10-16):** `export_collection` +
+`attach_segment` (one self-contained segment artifact is the portable
+move unit; the source keeps serving via its sealed entry) + the segment
+integrity footer (`z <count> <crc32>`; attach refuses truncated/corrupt
+copies) + `probe_collection_move` (47th probe, both batteries) +
+`docs/OPERATIONS.md` section 9; probe x2 + suite 177/177 x2 both
+platforms; full Windows battery re-run. Next lattice step: **L-3 router
+v1** (stateless mapping + reverse proxy) -- or L-5 drain CLI once the
+router lands; the C-16/C-17 compiler watch continues (C-16 acked,
+queued for the v0.64.6 fixer wave).
 **G-1 SLICE LANDED (2026-10-16):** `tests/probes/probe_thread_sync.xi`
 (45th probe, both batteries) -- spawn/join acceptance + 4-thread
 mutex-guarded counter (exact 2000) + 4-thread atomic counter (exact 2000)

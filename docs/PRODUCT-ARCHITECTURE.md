@@ -115,9 +115,17 @@ graph LR
 - Home layout: `manifest` (collection registry + per-collection refs) +
   per-collection WAL + segment files (active + sealed) + snapshots.
 - Segment v2 carries optional SQ codes (Q-a); sealed segments are
-  immutable; compaction preserves tombstones/bytes bit-exactly.
-- **The move unit is one collection directory + its manifest entry.**
-  Nothing else is needed to relocate a collection between homes.
+  immutable; compaction preserves tombstones/bytes bit-exactly. Since
+  L-2 every persisted segment appends a `z <count> <crc32>` integrity
+  footer (old loaders ignore it; attach requires it).
+- **The portable move unit is ONE segment file** (self-contained: meta +
+  vectors + payloads + graph + SQ codes + footer). Moving a collection =
+  `export_collection` (durable roll on the source; the source keeps
+  serving through its sealed entry) -> file copy -> `create_named_collection`
+  + `attach_segment` on the destination -> verify -> `drop_collection` on
+  the source. The manifest entry is recreated on attach (fresh cid), not
+  transported. v1 scope: no pre-existing sealed segments on the source
+  (L-5 adds compaction-aware moves + the drain CLI).
 
 ## 6. Request paths
 
