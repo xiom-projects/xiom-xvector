@@ -310,8 +310,14 @@ fn main() -> Int {
 
   var eng2 = engine_open_durable(ck, sg, mf, 4, DistanceMetric.Cosine);
   fails = check(engine_size(&eng2) == 2, "engine: reopen keeps the checkpointed points", fails);
-  fails = check(engine_synced_lsn(&eng2) == engine_durable_lsn(&eng2),
-    "engine: reopened frontier aligned to the log", fails);
+  // Frontier semantics (fixed during L-4, probe_reopen_write): enable/reopen
+  // adopts the SEGMENT FILE as the durable frontier -- the recovered log is
+  // renumbered, so "aligned to the log" is not a valid relation; the truthful
+  // one is frontier == the segment's last durable record (0 for a rotated
+  // segment). The first commit re-serializes the renumbered block into the
+  // segment, which the post-commit check below pins.
+  fails = check(engine_synced_lsn(&eng2) == segment_last_lsn(sg),
+    "engine: reopened frontier aligned to the segment file (durable truth)", fails);
 
   var v3 = Vector.new(4);
   v3.set(0, 0.0); v3.set(1, 0.0); v3.set(2, 1.0); v3.set(3, 0.0);

@@ -75,7 +75,7 @@ graph TB
 | Checkpoint/compact+swap, roll/seal, union reads, compaction | **exists** (D5-D7) |
 | **Collection move primitive** (freeze -> flush -> copy -> attach -> flip) | **new** (L-2) |
 | **Router v1** (stateless mapping file + reverse proxy + retry) | **new** (L-3) |
-| **Replica v1** (async WAL catch-up, lag metric, manual promotion) | **new** (L-4) |
+| **Replica v1** (async WAL catch-up, lag metric, manual promotion) | **landed v1** (L-4; file-ship catch-up + manual promotion runbook) |
 | **Drain/rebalance CLI + cluster ops docs** | **new** (L-5) |
 | **Intra-collection scatter-gather + ranked merge** | **new** (L-6, phase B) |
 | TLS on the wire | ecosystem gap; edge proxy until the FFI binding lands |

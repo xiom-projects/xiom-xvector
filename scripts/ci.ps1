@@ -63,7 +63,9 @@ $probes = @(
   "probe_mote_embedded",
   "probe_collection_move",
   "probe_router_2shards",
-  "probe_move_under_load"
+  "probe_move_under_load",
+  "probe_replica",
+  "probe_reopen_write"
 )
 
 $failures = 0

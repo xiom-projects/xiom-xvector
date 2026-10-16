@@ -571,13 +571,15 @@ pub fn rate_limiter_allow(lim: &mut RateLimiter, now_ms: Int) -> Bool {
 
 // The full service state: limits/config (S2), auth (S3), rate limiting,
 // plus the observability bundle (M-O): counters/histograms + the bounded
-// structured-log ring.
+// structured-log ring. `replica_lag` is the L-4 follower watermark delta
+// (-1 = not a replica); /stats and /metrics surface it when >= 0.
 pub type ServiceState = {
   cfg: ServiceConfig;
   auth: ServiceAuth;
   rate: RateLimiter;
   metrics: ServiceMetrics;
   log: LogRing;
+  replica_lag: Int;
 }
 
 pub fn service_state_new() -> ServiceState {
@@ -587,6 +589,7 @@ pub fn service_state_new() -> ServiceState {
     rate: rate_limiter_disabled(),
     metrics: service_metrics_new(),
     log: log_ring_new(256, 250),
+    replica_lag: -1,
   };
 }
 
@@ -662,6 +665,10 @@ fn render_metrics(eng: &VectorEngine, st: &ServiceState) -> Str {
   out = out + "xvector_points_active " + convert.int_to_string(engine_size(eng)) + "\n";
   out = out + "# TYPE xvector_lsn gauge\n";
   out = out + "xvector_lsn " + convert.int_to_string(engine_durable_lsn(eng)) + "\n";
+  if st.replica_lag >= 0 {
+    out = out + "# TYPE xvector_replica_lag gauge\n";
+    out = out + "xvector_replica_lag " + convert.int_to_string(st.replica_lag) + "\n";
+  }
   return out;
 }
 
@@ -746,6 +753,19 @@ fn handle_state_inner(eng: &mut VectorEngine, raw: &Vec<UInt8>, st: &mut Service
         }
         None => {}
       }
+    }
+  }
+  if raw.len() > st.cfg.max_request_bytes {
+    return jerror(413, "request exceeds service limit");
+  }
+  if st.replica_lag >= 0 {
+    // Follower mode (L-4): GET /stats carries the replica lag from the
+    // state layer (handle_cfg has no ServiceState). Auth has already
+    // passed (the scope map gives /stats read scope) and the size gate
+    // mirrors handle_cfg's.
+    var req2 = http_parse_request(raw);
+    if req2.ok && req2.method == "GET" && req2.path == "/stats" {
+      return handle_stats(eng, req2.query, st.replica_lag);
     }
   }
   return http_service_handle_cfg(eng, raw, &st.cfg);
@@ -1357,7 +1377,7 @@ fn handle_upsert_fast(eng: &mut VectorEngine, name: Str, f: &FastUpsert, cfg: &S
   }
 }
 
-fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
+fn handle_stats(eng: &VectorEngine, query: Str, replica_lag: Int) -> Vec[UInt8] {
   var name_opt = query_param(query, "collection");
   var name = eng.active_name;
   var have_name: Bool = eng.active_idx >= 0;
@@ -1379,6 +1399,9 @@ fn handle_stats(eng: &VectorEngine, query: Str) -> Vec[UInt8] {
       out = json.json_set(out, "nodes", json.json_number(st.nodes as Float64));
       out = json.json_set(out, "tombstones", json.json_number(st.tombstones as Float64));
       out = json.json_set(out, "lsn", json.json_number(st.wal_lsn as Float64));
+      if replica_lag >= 0 {
+        out = json.json_set(out, "replica_lag", json.json_number(replica_lag as Float64));
+      }
       // M-D7 multi-segment visibility (active-collection perspective).
       out = json.json_set(out, "sealed_segments", json.json_number(engine_sealed_count(eng) as Float64));
       out = json.json_set(out, "sealed_loaded", json.json_number(engine_sealed_loaded(eng) as Float64));
@@ -1575,7 +1598,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
   }
   if segs.len() == 1 && segs[0] == "stats" {
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
-    return handle_stats(eng, req.query);
+    return handle_stats(eng, req.query, -1);
   }
   return jerror(404, "unknown route");
 }
