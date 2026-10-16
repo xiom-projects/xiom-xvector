@@ -57,6 +57,7 @@ probe_snapshot
 probe_multisegment
 probe_batch_ops
 probe_thread_sync
+probe_mote_embedded
 )
 
 failures=0

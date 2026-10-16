@@ -5,6 +5,14 @@
 
 ## Lattice-tier asks (2026-10-16, top-tier directive)
 
+> **LIVE BLOCKER (2026-10-16):** the wave-146 POSIX runtime has a build
+> break -- `runtime/xiom_runtime.c:5616` uses `TCP_NODELAY` without
+> `#include <netinet/tcp.h>` in the POSIX include block, so EVERY
+> WSL/Linux consumer build fails (`REL-20261016-1143-xvector`, high;
+> the xvector WSL gates are held on it). Windows unaffected.
+> Also confirmed landed while checking: `xiom.os.event.poll` (real
+> poll/WSAPoll readiness) -- the old fd-readiness ask is SATISFIED.
+
 For the `xvector-lattice` scale-out tier (`docs/PRODUCT-ARCHITECTURE.md`;
 owners: L-3 router, L-4 replica, L-5 ops). **Status refresh first
 (stdlib at wave 144, re-checked 2026-10-16) -- LANDED since the
@@ -27,8 +35,8 @@ Open asks:
 | **POSIX directory watch (inotify/kqueue)** -- `xiom.os.watch` is a documented Err on POSIX (Windows ReadDirectoryChangesW is real) | L-4 replica WAL tailing + L-5 ops on Linux/WSL; polling works but adds lag and burns cycles | medium | poll the WAL file (`read_at` + size checks) at an interval |
 | **Advisory file lock (`flock`/`LockFileEx`)** -- no lock primitive exists in the tree | single-writer-per-home enforcement: a shard fails fast when a second process opens the same home (the documented OUT-OF-CONTRACT case in `docs/PRODUCT-ARCHITECTURE.md` sec. 7) | medium | operational discipline + manifest checks (no hard guard) |
 | **TLS/ALPN primitives** (via the `docs/TLS_DECISION.md` binding route; PULSE filed `REL-20261015-2202-pulse` ask 1 -- XVECTOR adds itself as a requester) | direct enterprise serving for lattice: native HTTPS without an edge proxy; also shard-to-shard auth | high (ecosystem) | edge proxy terminates TLS (architecture plan sec. 11) |
-| **fd readiness (`poll`/`select` on sockets)** -- optional path | single-threaded router with many connections (L-3) instead of thread-per-connection | low (optional) | threads/processes per connection (G-2 available) |
-| `f32_bits`/`bits_to_f32` (old row `-6`, still open) | Float32 bitcast hot path (efficiency only) | low | `float_bits(v as Float64)` round-trip (exact) |
+| ~~fd readiness (`poll`/`select` on sockets)~~ **LANDED** (`xiom.os.event.poll`; runtime poll/WSAPoll real) | single-threaded router with many connections (L-3) | done | -- |
+| ~~`f32_bits`/`bits_to_f32` (old row `-6`)~~ **LANDED** (wave 147 `80bad18`, runtime-backed; probe p_wave147) | Float32 bitcast hot path | done | -- |
 | path-level `truncate`/`ftruncate` wrappers (old row `-5`; the fd path landed wave 117) | parity only | low | the real fd truncate (`truncate_fd`) |
 
 > **Coordination bus (2026-10-10):** the open rows below are migrated to

@@ -2396,7 +2396,19 @@ fn engine_recover_registry(w: &WalWriter, dim: Int, metric: DistanceMetric, file
   if ai >= 0 {
     load_active(&mut eng, ai);
   }
-  // 5. Checkpoint: every alive collection's data + its v2 manifest.
+  // 5. Restore the cid counter (gate-caught fix, 2026-10-16): creating a
+  // collection after a reopen must not reuse a recovered cid -- colliding
+  // cids make the next recovery's last-wins manifest merge drop the
+  // earlier collection (found by probe_mote_embedded: reopen -> create
+  // "other" -> persist -> reopen lost "docs").
+  var max_cid: Int = 0;
+  var mci: Int = 0;
+  while mci < eng.collections.len() {
+    if eng.collections[mci].cid > max_cid { max_cid = eng.collections[mci].cid; }
+    mci = mci + 1;
+  }
+  eng.next_collection = max_cid + 1;
+  // 6. Checkpoint: every alive collection's data + its v2 manifest.
   engine_checkpoint_from(&mut eng, w.next_lsn);
   return eng;
 }

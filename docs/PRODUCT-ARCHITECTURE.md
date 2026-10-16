@@ -230,6 +230,9 @@ sequenceDiagram
 
 ## 12. Slice plan (details in `docs/checklists/lattice-v1.md`)
 
+Reference input: `docs/REFERENCE-STUDY-04-LATTICE.md` (bbolt/redb/
+sqlite-vec/ann-benchmarks/zstd mechanics per slice, with traps).
+
 - **L-0** naming + plan docs (this commit). Gate: docs reviewed.
 - **L-1** mote polish: quickstart (open home -> upsert -> search,
   embedded), optional `mote` CLI, docs. Gate: quickstart example probe
@@ -262,10 +265,20 @@ filters spanning collections (clients fan out).
 - **TLS** (ecosystem) gates direct enterprise serving; edge now.
 - **Replication ship shape:** confirm the WAL frontier/sequence exists
   for catch-up (L-4 design starts by pinning this against the actual
-  WAL records; fallback = snapshot + tail replay).
+  WAL records; fallback = snapshot + tail replay). Reference study 04
+  (sqlite reader-frontier snapshot) is the model; `xiom.os.event.poll`
+  (real since wave 143) is available for event-driven tails.
 - **Mapping staleness window** during moves is client-visible as a
   single retry; document the exact window in L-5.
 - **Filtered scatter-gather** can need higher oversampling with
-  selective filters; the L-6 gate measures the factor.
+  selective filters; the L-6 gate measures the factor and must name the
+  recall definition per arm (ID-set vs distance-threshold; study 04).
+- **Homes/replicas on shared/network filesystems: unsupported** --
+  sqlite documents WAL as unsafe there (transient shared-memory index);
+  ops rule = local disks only (document at L-5).
+- **Manifest/checkpoint hardening candidates** (study 04): checksummed
+  manifest entry + a recovery-required bit (catch half-attached
+  registries on open); checkpoint salt rotation to prevent old/new
+  record mixing after a crash.
 - **XVC-C-16/C-17** (compiler lane, open) currently gate the v0.64.5
   re-pin and the shared-handle pattern; neither blocks L-1/L-2.

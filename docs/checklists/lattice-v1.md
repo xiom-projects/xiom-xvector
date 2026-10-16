@@ -19,13 +19,22 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-1 -- mote polish (embedded tier)
 
-- [ ] quickstart doc (`docs/MOTE-QUICKSTART.md`): open a home in-process,
+- [x] quickstart doc (`docs/MOTE-QUICKSTART.md`): open a home in-process,
   create collection, upsert, search, reopen; embedding via `xiom.vectors`
-- [ ] embedded round-trip probe in `tests/probes/` (open -> upsert ->
-  search -> reopen; NO sockets) + both battery lists
-- [ ] optional `mote` CLI stub (open/search/bench) -- only if it earns
+  **(done 2026-10-16)**
+- [x] embedded round-trip probe in `tests/probes/`
+  (`probe_mote_embedded`, the 46th probe; in both battery lists)
+  **(done 2026-10-16)** -- it immediately caught the **cid-collision
+  regression**: creating a collection after a reopen reused a recovered
+  cid, so the next recovery's last-wins manifest merge silently dropped
+  the earlier collection; fixed in `engine_recover_registry`
+  (`eng.next_collection = max(cid)+1`), suite 177/177 x2 after the fix
+- [ ] `mote` CLI stub (open/search/bench) -- optional, only if it earns
   its keep; gate: the same round-trip via CLI exits 0
-- Gate: probe x2 both platforms; suite x2; docs
+- Gate: probe x2 both platforms; suite x2; docs. **WSL legs HELD
+  2026-10-16 on the stdlib wave-146 POSIX build break**
+  (`REL-20261016-1143-xvector`: runtime `TCP_NODELAY` missing
+  `<netinet/tcp.h>`), re-run when stdlib fixes it.
 
 ## L-2 -- collection move primitive (the rebalancing unit)
 
@@ -35,6 +44,11 @@ Consumer lane; repo private; findings bus-routed.
   after the flip; kill during copy leaves both homes consistent (no
   half-attached registry); re-open both homes served AND embedded (P2
   format-identity check)
+- Reference (study 04): redb savepoints as the freeze model (snapshot of
+  root + allocator state); bbolt's exclusive-open lock as the fail-fast
+  guard. Hardening candidates: checksummed manifest entry + a
+  `recovery_required` bit so a half-attached registry is caught on open;
+  checkpoint salt rotation (sqlite) to prevent old/new frame mixing.
 - Gate: probe x2 + suite x2 + WSL spot; `docs/OPERATIONS.md` move section
 
 ## L-3 -- router v1 (stateless)
@@ -53,7 +67,11 @@ Consumer lane; repo private; findings bus-routed.
 ## L-4 -- replica v1 (async catch-up, manual promotion)
 
 - [ ] design: pin the catch-up shape against actual WAL records
-  (frontier/sequence); fallback = snapshot + tail replay
+  (frontier/sequence); fallback = snapshot + tail replay. Reference
+  (study 04): sqlite's reader-frontier snapshot (readers pin the last
+  valid frame; torn tail = longest valid prefix) is the model; zstd
+  `e_flush`/`e_end` frame directives for progressive ship
+  **(poll/WSAPoll readiness already exists: `xiom.os.event.poll`)**
 - [ ] follower mode (read-only; applies WAL; lag metric + `/stats` field)
 - [ ] manual promotion runbook: stop writer -> replay to frontier ->
   flip mapping (version bump)
@@ -79,7 +97,10 @@ Consumer lane; repo private; findings bus-routed.
 - [ ] strict mode default; partial mode opt-in with `"partial": true`
 - [ ] `probe_scatter_gather`: Flat exactness vs single-node ground truth
   (equal result sets), HNSW recall bound vs the gate, filtered pushdown
-  oversampling measurement, pagination semantics
+  oversampling measurement, pagination semantics. **The gate must name
+  the recall definition per arm** (reference study 04): VectorDBBench
+  uses ID-set recall; ann-benchmarks uses distance-threshold recall
+  (epsilon ~1e-3, can credit wrong IDs inside the band)
 - Gate: probes x2 both platforms + suite x2; BENCHMARKS note
 
 ## G-2 -- in-process concurrency (parallel track)
@@ -89,6 +110,9 @@ Consumer lane; repo private; findings bus-routed.
 
 ## Cross-cutting
 
+- [ ] **Homes/replicas on shared/network filesystems are unsupported**
+  (ops rule; sqlite documents WAL as unsafe on network FS -- reference
+  study 04): local disks only, document in OPERATIONS at L-5
 - [ ] **mote registry publication (when the package is ready):**
   coordinate with the **packages lane via the relay bus** (item + sha256
   + swap/verification gates, owner-gated) -- never a unilateral publish
@@ -100,3 +124,11 @@ Consumer lane; repo private; findings bus-routed.
 - [ ] P1-P6 invariant checks stay explicit: format identity (a
   mote-written home opens served and vice versa) is probed at L-2 and
   re-checked at L-3+
+
+## Reference
+
+`docs/REFERENCE-STUDY-04-LATTICE.md` (2026-10-16): bbolt (open-lock
+modes + batch coalescing), redb (publish-last header, savepoints,
+recovery ladder), sqlite/sqlite-vec (reader-frontier snapshot, salt
+rotation, embedded UX), ann-benchmarks + VectorDBBench (gate
+methodology), zstd (stream frames). Port-candidate table + traps inside.
