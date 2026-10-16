@@ -14,7 +14,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 xiom-vector is organized as a **layered engine** rather than a flat set of files. It reuses `xiom-core` (errors, ids, config, limits, contracts, WAL, metrics) as its durable-systems substrate and adds the vector-specific layers on top: types, storage, indexes, query, collections, payload/filtering, segments, durability, and a public API facade.
 
-The engine's working core -- dense-vector math, the three distance metrics, the exact flat/brute-force search, the in-memory HNSW graph, payload filtering, WAL-backed recovery (vectors + metadata), a whole-file WAL checkpoint on disk with torn-tail-safe load, the multi-collection registry, and sealed segment files (vectors + payloads + graph codec, atomic persist, seal/restore) -- is implemented today. The multi-segment read path and retention are typed and scaffolded against the roadmap; progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
+The engine's working core -- dense-vector math, the three distance metrics, exact flat search + HNSW ANN (multi-layer, tombstone deletes, codec), payload filtering with a sorted key index and a pre/post planner, WAL-backed recovery (vectors + metadata), durable homes (delta segment + fsync-on-ack + atomic checkpoint swap), the multi-collection registry, sealed segment files with roll/union reads and bit-exact compaction, snapshots, and opt-in SQ8 quantization -- is implemented today. The **served tier** (`xvectord`, HTTP wire + sockets) and the **collection-move primitive** are live; the stateless cluster router, replicas, and rebalancing are the current scale-out work (`docs/checklists/lattice-v1.md`). Progress is measured in [`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md).
 
 See:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) -- the shared-core + vector-layer model, module tree, write/search paths, failure domains.
@@ -22,6 +22,30 @@ See:
 - [`COLLECTIONS.md`](COLLECTIONS.md) -- the user-facing collection schema model.
 - [`SPEC.md`](SPEC.md) -- module-by-module reference.
 - [`docs/`](docs/) -- deep dives (engine, core-vs-vector, metrics, HNSW, segments, filtering, query execution, contracts, errors).
+
+## Product tiers (codenames)
+
+Two tiers of the same engine -- **one engine, one on-disk format, two deployment shapes**. A lattice shard serves the exact files a mote writes (same WAL, manifest, segments, identical results): develop embedded, deploy served, no migration. Naming decision: [`docs/PRODUCT-LAYERS.md`](docs/PRODUCT-LAYERS.md); architecture: [`docs/PRODUCT-ARCHITECTURE.md`](docs/PRODUCT-ARCHITECTURE.md).
+
+| Tier | Codename | Shape | Usage | Highlights |
+|---|---|---|---|---|
+| 1 -- embedded | **xvector-mote** | library, in-process -- no socket, no daemon | link the engine (`xiom.vector.engine` facade) or the registry package `xiom.vectors`; optional in-process HTTP handler (`http_service_handle_cfg`) when an embedded service surface is wanted; quickstart in [`docs/MOTE-QUICKSTART.md`](docs/MOTE-QUICKSTART.md) | exact flat search + HNSW ANN, filters + payload index + planner, range/pagination/batch/delete-by-filter, multi-collection registry, WAL durability + recovery, sealed segments + roll/union reads, snapshots, opt-in SQ8 quantization |
+| 2 -- scale-out | **xvector-lattice** | served daemon `xvectord` + stateless router (L-3, in progress) + async replicas (L-4) + drain/rebalance (L-5) + intra-collection scatter-gather (L-6, phase B) | run `xvectord` on the wire (HTTP/1.1 over sockets), shard by collection across single-writer homes, route through the stateless router once it lands; ops runbook in [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | everything mote has, plus: wire service, API keys (read/write/admin scopes), request limits, token-bucket rate limiting, `/metrics` + log ring, durable modes (`XVECTORD_WAL` delta segment + checkpoint/seal policies), the collection move primitive (`export_collection`/`attach_segment`), per-collection routing |
+
+Both tiers run the same `src/` tree -- a lattice node IS a mote plus transport, cluster wiring, and ops (no forked format, no divergent numeric behavior; the shared suite + gates cover both). Shards stay single-writer per home; consistency is the engine's (WAL-before-ack, atomic manifest switch, tombstone shadowing); routing is stateless (any router instance can serve any request). Codenames label the tiers in docs, release notes, and owner-facing material; technical identifiers stay stable (`xiom.vectors`, `xvectord`, the home format). Registry-tier naming follows the ecosystem convention (mote = registry tier; lattice = standalone).
+
+**Release ownership:** mote publishes as a registry package through the packages lane (relay-coordinated, owner-gated); lattice releases ship as an ops-owned GitHub Actions release set.
+
+**Try the served tier:**
+
+```bash
+.\scripts\build.ps1 src\api\httpd.xi -Name xvectord     # Windows
+bash scripts/build.sh src/api/httpd.xi xvectord         # WSL
+./out/xvectord --port 7707                              # in-memory; XVECTORD_WAL=<path> for a durable home
+curl http://127.0.0.1:7707/health
+curl -X POST http://127.0.0.1:7707/collections -d '{"name":"docs","dim":4,"metric":"cosine"}'
+curl -X POST http://127.0.0.1:7707/search -d '{"collection":"docs","vector":[1,0,0,0],"top_k":1}'
+```
 
 ## Installation
 ```bash
@@ -117,13 +141,14 @@ is zero-cost and stable as public API).
 | In-memory HNSW graph (insert + greedy search) | [OK] Done |
 | Bounded top-K heap | [OK] Done |
 | Engine orchestration (create/upsert/search/delete) | [OK] Done |
-| WAL-before-ack write path | [YELLOW] In progress (in-memory WAL + payload-encoded vectors + recovery replay; whole-file checkpoint on disk with torn-tail-safe load, `durability.wal_file`; `fsync`/append blocked on the stdlib fd-syscall gap) |
+| WAL-before-ack write path | [YELLOW] In progress (WAL-before-ack for upserts + metadata; payload-encoded vectors; recovery replay; whole-file checkpoint with torn-tail-safe load, `durability.wal_file`; durable mode in `xvectord`: delta segment append + fsync-on-ack + atomic checkpoint swap, kill-matrix gated; power-loss fault injection pending) |
 | Collections / schema / validator | [YELLOW] In progress (multi-collection registry: create/select/drop/list, per-collection isolation + routed recovery, whole-registry manifest; schema/validator scaffold) |
-| Segments + lifecycle state machine | [YELLOW] In progress (sealed-segment codec `segment.segment_file`: vectors + payloads + Hnsw graph, atomic whole-file persist, torn-tail-safe load, lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/`restore_segment` with WAL re-checkpoint; multi-segment read path + retention pending) |
-| Payload + metadata filtering | [YELLOW] In progress (typed Eq/Range/In/Exists eval + engine integration + filtered search done; sorted key index + pre/post planner pending) |
-| Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; sealed segment files via `segment_file` with engine seal/restore; **`xiom.wal` 0.1.0 registry adoption landed** (alignment gate `probe_package_wal`; migration plan in `docs/XIOM-WAL-ADOPTION.md`); fsync/delta + multi-segment read path pending) |
-| Service surface (HTTP) | [YELLOW] In progress (`api.http_service` -- HTTP/1.1 byte-level pipeline: parse/route/JSON/reply; `/health`, `/collections`, points get/upsert/delete, `/search` (knn/range/page/batch), `/stats`; S2: ServiceConfig limits (request size/top_k/batch/dim; env + key=value file), `{error,kind,status}` model over the full CoreError enum, `http_service_shutdown` checkpoint; S3: API-key auth (constant-time, scopes read/write/admin, `XVECTOR_API_KEYS`) + token-bucket rate limiting (429); S4: fuzz gate + JSON depth guard + SBOM/unsafe gate + `docs/SECURITY.md`; no sockets yet -- the stdlib `xiom.net` adapter is gated on C-PULSE-02; gates `probe_http_service` + `probe_service_limits` + `probe_service_auth` + `probe_http_fuzz`) |
-| IVF / PQ / disk-backed / SIMD | [STOP] Not started |
+| Segments + lifecycle state machine | [YELLOW] In progress (sealed-segment codec `segment.segment_file`: vectors + payloads + Hnsw graph + optional SQ section + integrity footer, atomic whole-file persist, torn-tail-safe load, lifecycle Mutable -> Sealing -> Sealed; engine `seal_segment`/`restore_segment` with WAL re-checkpoint; D5-D7 landed: roll/union reads over active + sealed (tombstone shadowing, bit-exact compaction), snapshots, collection move; retention + power-loss injection pending) |
+| Payload + metadata filtering | [OK] Done (typed Eq/Range/In/Exists/And/Or/Not + no-payload semantics; sorted key index; pre/post-filter planner with index-driven candidates and multi-key intersections; filtered/ANN integration with exact fallback; delete-by-filter; payload durability + recovery) |
+| Durable recovery / manifest | [YELLOW] In progress (WAL replay + compacted checkpoint + in-WAL collection manifest; whole-file WAL persistence via `wal_file`; durable collection registry via `manifest_file` -- atomic rename, torn-tail-safe load, file-wins open with in-WAL fallback; sealed segment files via `segment_file` with engine seal/restore; **`xiom.wal` 0.1.0 registry adoption landed** (alignment gate `probe_package_wal`; migration plan in `docs/XIOM-WAL-ADOPTION.md`); fsync + delta segment + snapshots + multi-segment read path landed; power-loss injection pending) |
+| Service surface (HTTP) | [YELLOW] In progress (`api.http_service` -- HTTP/1.1 byte-level pipeline: parse/route/JSON/reply; `/health`, `/version`, `/collections`, points get/upsert/delete, `/search` (knn/range/page/batch), `/stats`, `/metrics`; S2: ServiceConfig limits (request size/top_k/batch/dim; env + key=value file), `{error,kind,status}` model over the full CoreError enum, `http_service_shutdown` checkpoint; S3: API-key auth (constant-time, scopes read/write/admin, `XVECTOR_API_KEYS`) + token-bucket rate limiting (429); S4: fuzz gate + JSON depth guard + SBOM/unsafe gate + `docs/SECURITY.md`; **socket adapter `xvectord` live** on the stdlib `xiom.net` layer (`src/api/httpd.xi`; real-socket gate `probe_http_server` + curl end-to-end; `XVECTORD_*` durable mode + checkpoint/seal policies); gates `probe_http_service` + `probe_service_limits` + `probe_service_auth` + `probe_http_fuzz` + `probe_http_server`; the stateless cluster router is L-3, in progress) |
+| Quantization (SQ8) | [OK] Done (Q-a1/Q-a2a: trained per-dim ranges, truncation codec, FAISS-pattern query tables, two-tier rescore; documented error bounds; opt-in SQ section in segment codec v2) |
+| IVF / PQ / disk-backed / SIMD | [STOP] Not started (reference studies 01-03 landed; P4 IVF-PQ + P5 disk-resident planned) |
 
 Full detail in [`ROADMAP.md`](ROADMAP.md). The v1.0 production programme
 (milestones, ordered slice backlog, benchmark/security/release plans, owner
