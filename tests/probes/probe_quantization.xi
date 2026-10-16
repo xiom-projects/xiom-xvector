@@ -447,9 +447,15 @@ fn main() -> Int {
       var w2 = write_slice(&fb, fb.len() - 4000, cut2);
       var lc1 = segment_file_load(cut1);
       var lc2 = segment_file_load(cut2);
-      fails = check(w1 && w2 && lc1.valid && !lc1.has_sq && lc1.store.ids.len() == n
+      // L-2 semantics: the last byte is the integrity footer's newline --
+      // cutting it drops ONLY the footer; the q/c sections stay intact
+      // (codes kept, footer_seen false). A cut INTO the q/c section still
+      // drops the codes and keeps the vectors.
+      fails = check(w1 && w2
+        && lc1.valid && lc1.has_sq && lc1.store.ids.len() == n
+        && lc1.codes.len() == n * dim && !lc1.footer_seen
         && lc2.valid && !lc2.has_sq && lc2.store.ids.len() == n,
-        "segment v2: torn q/c section drops codes, vectors intact", fails);
+        "segment v2: footer-only tear keeps codes; q/c tear drops codes, vectors intact", fails);
     }
     Err(_) => { fails = fails + 1; }
   }

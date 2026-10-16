@@ -38,18 +38,36 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-2 -- collection move primitive (the rebalancing unit)
 
-- [ ] offline primitive: freeze (flush/checkpoint) -> copy collection
-  dir + manifest entry -> attach -> verify; CLI wrapper
-- [ ] `probe_collection_move`: move between homes, search/stats bit-exact
-  after the flip; kill during copy leaves both homes consistent (no
-  half-attached registry); re-open both homes served AND embedded (P2
-  format-identity check)
-- Reference (study 04): redb savepoints as the freeze model (snapshot of
-  root + allocator state); bbolt's exclusive-open lock as the fail-fast
-  guard. Hardening candidates: checksummed manifest entry + a
-  `recovery_required` bit so a half-attached registry is caught on open;
-  checkpoint salt rotation (sqlite) to prevent old/new frame mixing.
-- Gate: probe x2 + suite x2 + WSL spot; `docs/OPERATIONS.md` move section
+- [x] offline primitive **(done 2026-10-16)**: `export_collection`
+  (durable roll -> ONE segment artifact; refuses unknown/empty/
+  already-rolled collections) + `attach_segment` (installs points +
+  payloads + index config into the freshly created collection; no cid
+  requirement; integrity footer REQUIRED). The portable unit is the
+  segment file itself (self-contained: meta + vectors + payloads +
+  graph + SQ codes). No half-attach possible: the destination registry
+  entry appears only when the verified artifact is installed.
+- [x] segment-codec integrity footer: every persisted segment appends
+  `z <count> <crc32>`; old loaders ignore it (prefix semantics
+  unchanged, `probe_segment_file`/`probe_snapshot`/`probe_multisegment`/
+  `probe_quantization` all re-green); attach refuses missing/mismatched
+  footers (truncated, corrupted, and pre-L-2 copies).
+- [x] `probe_collection_move` (47th probe, both battery lists; done
+  2026-10-16): export refusals; truncated/footer-less copies REFUSED;
+  good attach bit-exact (search {1,2} + distances + HNSW config travels
+  m=8/ef_search=16); dst persist + reopen; docs + extra both survive
+  (cid freshness); src drop + reopen consistent. Evidence: probe x2 +
+  suite 177/177 x2 on Windows AND WSL; full Windows battery green (see
+  the wrap commit).
+- Reference (study 04): redb savepoints as the freeze model; bbolt's
+  exclusive-open lock as the fail-fast guard. Hardening candidates:
+  checksummed manifest entry + a `recovery_required` bit so a
+  half-attached registry is caught on open; checkpoint salt rotation
+  (sqlite) to prevent old/new frame mixing.
+- [ ] L-5 extension: compaction-aware moves (collections that already
+  have sealed segments) + the drain CLI + move-under-load gate
+- Gate: probe x2 + suite x2 + WSL spot **(done)**;
+  `docs/OPERATIONS.md` move section **(done -- section 9 + the
+  interrupted-copy failure row + the format note)**
 
 ## L-3 -- router v1 (stateless)
 

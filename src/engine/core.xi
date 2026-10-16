@@ -773,6 +773,67 @@ pub fn engine_roll_segment(eng: &mut VectorEngine, path: Str) -> Result[Int, Cor
   return Ok(seg_id);
 }
 
+// L-2 collection move -- EXPORT half (2026-10-16). Select the named
+// collection and roll its full live state into ONE segment artifact
+// (durable; the source collection stays queryable through the sealed
+// union). v1 scope: the collection must have NO pre-existing sealed
+// segments (a rolled collection needs compaction first -- L-5) and must
+// be non-empty. The artifact carries the integrity footer; the attach
+// half refuses truncated/corrupt copies. Returns the assigned segment id.
+pub fn engine_export_collection(eng: &mut VectorEngine, name: Str, path: Str) -> Result[Int, CoreError]
+  requires: eng.created
+{
+  match engine_select(eng, name) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  if eng.sealed.len() > 0 {
+    return Err(CoreError.InvalidState("collection has sealed segments; export v1 needs a single active store"));
+  }
+  if eng.store.ids.len() == 0 {
+    return Err(CoreError.InvalidState("collection is empty"));
+  }
+  return engine_roll_segment(eng, path);
+}
+
+// L-2 collection move -- ATTACH half (2026-10-16). Install a segment
+// artifact into the ACTIVE collection (which the caller created with
+// matching dim/metric). Unlike restore_segment this does NOT require a
+// cid match (the artifact comes from another home) and it REQUIRES a
+// verified integrity footer (declared point count + crc32), so a
+// truncated or corrupted artifact copy can never attach silently.
+// Re-checkpoints + commits (durable before the ack).
+pub fn engine_attach_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreError]
+  requires: eng.created
+{
+  var ss = segment_file_load(path);
+  if !ss.valid {
+    return Err(CoreError.Corruption("segment file invalid"));
+  }
+  if !ss.footer_seen || !ss.footer_ok {
+    return Err(CoreError.Corruption("segment integrity footer missing or mismatched"));
+  }
+  if ss.dim != eng.dimension || ss.metric != eng.metric {
+    return Err(CoreError.InvalidInput("segment does not match the active collection"));
+  }
+  eng.store = ss.store;
+  eng.payloads = ss.payloads;
+  var params = AnnParams{ m: ss.m, ef_construction: ss.ef_construction, ef_search: ss.ef_search };
+  if ss.kind == AnnIndexKind.Hnsw && ss.has_graph {
+    eng.graph = ss.graph;
+    eng.index_kind = AnnIndexKind.Hnsw;
+    eng.ann = params;
+  } else {
+    apply_index(&mut eng, ss.kind, params);
+  }
+  engine_checkpoint_from(eng, eng.wal.next_lsn);
+  match engine_wal_commit(eng) {
+    Ok(_) => {}
+    Err(e) => { return Err(e); }
+  }
+  return Ok(true);
+}
+
 // M-D7 accessors + opt-in roll policy (P2 tuning).
 pub fn engine_sealed_count(eng: &VectorEngine) -> Int {
   return eng.sealed.len();
