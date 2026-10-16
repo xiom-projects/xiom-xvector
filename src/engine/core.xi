@@ -2085,18 +2085,24 @@ pub fn engine_synced_lsn(eng: &VectorEngine) -> Int {
 }
 
 // Enable durable mode (M-D5): heal (or create) the delta segment at
-// `seg_path`, adopt its frontier (never below the in-memory log's current
-// LSN), and commit every subsequent mutation before its ack. Idempotent.
-// Framing is xiom.wal codec v1 (durability.wal_segment).
+// `seg_path` and adopt the SEGMENT FILE as the durable frontier. The
+// file is the durable truth: in-memory records beyond it (e.g. the
+// renumbered block `engine_recover` emits when a home is reopened) are
+// re-sent by the first commit, keeping the segment gap-free across
+// reopen-then-write cycles. The old rule took max(file, in-memory
+// current), which marked that renumbered block "durable" although it
+// was never in the segment: the next commit appended past it and the
+// reopen merge stopped at the gap -- post-restart writes were lost
+// (found+fixed by probe_reopen_write during L-4; the kill matrix never
+// reloaded a home before writing, so it missed the shape). Commit every
+// subsequent mutation before its ack. Idempotent. Framing is xiom.wal
+// codec v1 (durability.wal_segment).
 pub fn engine_enable_durable(eng: &mut VectorEngine, seg_path: Str) -> Result[Bool, CoreError] {
   if seg_path.len() == 0 { return Err(CoreError.InvalidInput("empty segment path")); }
   if !segment_heal(seg_path) { return Err(CoreError.IOFailure("segment heal failed")); }
   var file_last = segment_last_lsn(seg_path);
-  var cur = wal_writer_current_lsn(&eng.wal);
-  var f = file_last;
-  if cur > f { f = cur; }
   eng.wal_seg_path = seg_path;
-  eng.wal_seg_frontier = f;
+  eng.wal_seg_frontier = file_last;
   eng.wal_seg_needs_heal = false;
   return Ok(true);
 }

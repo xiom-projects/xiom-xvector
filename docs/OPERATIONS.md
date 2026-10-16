@@ -348,3 +348,45 @@ The router image/templates activate when the socket transport lands
 (replacing the in-process forward at the `router_forward_direct` seam,
 gated on the `xiom.http` client half); until then the router ships as
 the L-3/L-5 library and the gates above are its acceptance.
+
+## 12. Replicas (async catch-up, manual promotion, L-4)
+
+A replica is an ordinary durable home fed by `xiom.vector.api.replica`:
+each sync byte-ships the leader's whole-file checkpoint (when its size
+changed -- a swap rewrites it) and the append+fsync delta segment into
+the follower home, then advances the shipped-frontier watermark
+(`<follower_ckpt>.ack`, atomic temp+rename). Serving reads from the
+follower is plain `open_durable(follower_ckpt, follower_seg)` -- the
+loader's checkpoint-dedupe merge is the "apply with checkpoint skip"
+rule. Lag = leader frontier - ack; the embedder copies it into
+`ServiceState.replica_lag`, which surfaces as `/stats`'s `replica_lag`
+field and the `xvector_replica_lag` gauge.
+
+Runbook (manual promotion):
+
+1. Stop the writer (or fence it); run one final ship -- the follower
+   must report lag 0.
+2. Reopen the follower home as the new writer (`open_durable`); it is
+   canonical (leader-shaped files), so the D5/D6 durable machinery owns
+   it from then on.
+3. Flip the mapping: point the collection at the replica's shard id and
+   bump the version (the router's single retry covers the window).
+
+Crash windows: checkpoint first, segment second, ack last -- an
+interruption leaves the follower OPENABLE at the previous or partial
+point (prefix-exact merge), never corrupt; the next ship repairs it.
+
+Known v1 scope: WAL/active state only -- a rolled collection needs its
+sealed segment files shipped via the artifact path (export + copy +
+attach); that file-ship loop is an L-4 follow-up. Homes on
+shared/network filesystems remain unsupported (local disks only).
+
+Note (found and fixed in the L-4 slice): a durable home that was
+REOPENED and then written used to lose the post-reopen writes on the
+NEXT reopen. `engine_enable_durable` adopted `max(segment file,
+in-memory log)` as the durable frontier, but `engine_recover` renumbers
+the recovered log above the file; the first commit then appended past
+the never-persisted renumbered block and the segment developed a gap
+that the next merge stopped at. Fixed in the engine: the segment file
+IS the durable frontier, and the first commit re-sends the block.
+Regression line: `probe_reopen_write` (in both batteries).

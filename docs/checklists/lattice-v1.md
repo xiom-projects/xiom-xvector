@@ -115,18 +115,40 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-4 -- replica v1 (async catch-up, manual promotion)
 
-- [ ] design: pin the catch-up shape against actual WAL records
-  (frontier/sequence); fallback = snapshot + tail replay. Reference
-  (study 04): sqlite's reader-frontier snapshot (readers pin the last
-  valid frame; torn tail = longest valid prefix) is the model; zstd
-  `e_flush`/`e_end` frame directives for progressive ship
-  **(poll/WSAPoll readiness already exists: `xiom.os.event.poll`)**
-- [ ] follower mode (read-only; applies WAL; lag metric + `/stats` field)
-- [ ] manual promotion runbook: stop writer -> replay to frontier ->
-  flip mapping (version bump)
-- [ ] kill matrix with replica: acked writes survive writer kill AFTER
-  promotion; lag returns to 0 under steady state
-- Gate: kill matrix both platforms + probes x2; `docs/OPERATIONS.md`
+- [x] design: pin the catch-up shape against actual WAL records
+  (frontier/sequence); fallback = snapshot + tail replay **(done
+  2026-10-16)**: FILE-ship catch-up -- byte copies of the leader
+  checkpoint (size-change gated) + delta segment into the follower home;
+  the loader's checkpoint-dedupe merge is the "apply with checkpoint
+  skip" rule; shipped-frontier watermark in `<follower_ckpt>.ack`. (A
+  first records-replay cut was abandoned: `engine_recover` renumbers the
+  log above the file, which broke the merge cursor -- see the fix note.)
+- [x] follower mode (read-only; applies WAL; lag metric + /stats field)
+  **(done)**: `src/api/replica.xi` (`replica_ship`, `replica_lag_estimate`);
+  lag rides `ServiceState.replica_lag` -> `/stats` `replica_lag` +
+  `xvector_replica_lag` gauge
+- [x] manual promotion runbook: stop writer -> replay to frontier -> flip
+  mapping (version bump) **(done)**: OPERATIONS section 12; the probe
+  walks the full runbook incl. the stale-router retry onto the promoted
+  home (byte-equal)
+- [x] kill matrix with replica: acked writes survive writer kill AFTER
+  promotion; lag returns to 0 under steady state **(done -- in-process)**:
+  `probe_replica` (50th; reopen sweeps 1..30 + 101..103; 5 post-promotion
+  writes survive a files-only reopen; three steady write+ship rounds end
+  at lag 0). The OS-level replica kill matrix (process level, live tail)
+  rides the socket transport.
+- Gate: kill matrix both platforms + probes x2; `docs/OPERATIONS.md`.
+  **Windows done (51 probes x2 + suite + FULL BATTERY ALL GATES GREEN);
+  WSL spot HELD (owner resource guidance; fold into the v0.64.6 pass)**
+- Found+fixed during the slice: **durable reopen-then-write loss** --
+  `engine_enable_durable` set the frontier to `max(segment file,
+  in-memory log)`; after a reopen the recovered log is renumbered ABOVE
+  the file, so the first commit appended past the never-persisted
+  renumbered block and the next merge stopped at the gap (post-reopen
+  writes lost). Fix: the segment file is the durable frontier; the first
+  commit re-sends the block. Regression line `probe_reopen_write` (51st
+  probe); `probe_wal_segment`'s frontier expectation updated to the
+  durable-truth relation.
 
 ## L-5 -- drain / rebalance + cluster ops
 

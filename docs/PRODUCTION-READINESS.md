@@ -10,12 +10,11 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-15, 81st pass (v0.64.5 archive re-verification: **the
-  thread gate is CLOSED on both platforms -- real spawn+join runs; G phase
-  flipped to 40**; C-13/C-14 verified fixed; C-15 + phantom stay green;
-  Windows battery ALL GATES GREEN; the WSL battery is RED on the new,
-  unrelated XVC-C-16 (v0.64.5 linux-x64 service search miscompile) -- the
-  v0.64.5 re-pin is HELD until it is fixed)
+- **As of:** 2026-10-16, 84th pass (L-3 router v1 + L-4 replica v1 + L-5
+  move/drain landed; full Windows battery ALL GATES GREEN -- 51 probes x2;
+  a durable reopen-then-write loss was found and fixed in-lane
+  (`probe_reopen_write`); C-16 fix integrated upstream, the v0.64.5 re-pin
+  still HELD until the candidate archive lands)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -33,7 +32,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | A | Core data model & vector math | 8 | 95 | release-grade | none (fuzz/reference cross-check tracked in I) |
 | B | Exact search & query engine | 10 | 97 | release-grade | ANN-widened range (M-P) |
 | C | ANN index (HNSW hardening) | 14 | 99 | release-grade | file-backed persistence |
-| D | Persistence & durability | 20 | 95 | release-grade | power-loss fault injection |
+| D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
 | G | Concurrency & scalability | 10 | 40 | buildable | G-1 sync smoke, G-2 accept-loop threads, scale tuning (thread gate CLOSED 2026-10-15; the v0.64.5 linux service red XVC-C-16 is unrelated) |
