@@ -171,6 +171,11 @@ restart -- the v0.64.4 linux archive was re-downloaded on demand for A/B
 RED on the new linux-only XVC-C-16 (service `/search` miscompile; filed
 `REL-20261015-2142-xvector`) -- see the 81st-pass slice entry below and
 `docs/COMPILER-FINDINGS-XVECTOR.md`.
+**Product tiers (owner-picked 2026-10-16):** `xvector-mote` (embedded) /
+`xvector-lattice` (scale-out server) -- decision `docs/PRODUCT-LAYERS.md`;
+architecture plan `docs/PRODUCT-ARCHITECTURE.md` + execution checklist
+`docs/checklists/lattice-v1.md` (L-0 recorded during the watch window; no
+code slices started).
 Recent slices: **G-1 thread + sync smoke (2026-10-16)**: `probe_thread_sync`
 (the 45th probe) in both batteries -- spawn/join + 4-thread mutex counter
 (exact) + 4-thread atomic counter (exact) + channel contract; new finding

@@ -41,10 +41,17 @@ needed) -> signed commit. Red build = rejection.
   Mutable -> Sealing -> Sealed); engine `seal_segment`/`restore_segment`
   (cid/dim/metric validated; WAL re-checkpoint after restore);
   `probe_segment_file` (38 checks)
-- [ ] D5 (GATED: stdlib fsync/append) WAL delta + fsync on commit;
-  file-level kill harness (spawn/kill/recover) on Windows + WSL
-- [ ] D6 retention policy + snapshots/export-import + restore drill;
-  `probe_snapshot`; formats documented in SPEC
+- [x] D5 WAL delta + fsync-on-ack (fd/append path) + kill harness
+  **(done 2026-10-12, 78th)**: `probe_wal_segment` 38/38; kill matrix 6/6
+  Windows + 6/6 WSL; durable server restart-verified
+- [x] D6 retention policy + snapshots/export-import + restore drill
+  **(done 2026-10-13, 79th)**: `probe_snapshot` 27/27 (compact+swap churn,
+  post-swap crash recovery, auto-policy zero-loss, multi-collection
+  restore, corrupt-meta refusal); formats in SPEC
+- [x] D7 multi-segment read path **(done 2026-10-13, 80th)**:
+  roll/seal + union queries + tombstone shadowing + bit-exact
+  compaction; `probe_multisegment` 27/27; two gate-caught fixes
+  (`2552824`, `71af343`)
 
 ## M-Q -- Query surface complete
 
