@@ -6,7 +6,12 @@ $out = Join-Path $root "out"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 $stdlibPin = (& git -C "E:\xiom-lang\stdlib" rev-parse --short HEAD 2>$null)
-$compiler = (& "$env:LOCALAPPDATA\xiom.new\bin\xiom.exe" --version 2>$null | Select-Object -First 1)
+# Lane-local compiler first (dev-env convention); the global install is the
+# fallback only when XIOM_COMPILER is unset (pre-2026-10-16 this recorded
+# whatever the global install was, not the pinned toolchain).
+$comp = $env:XIOM_COMPILER
+if (-not $comp) { $comp = "$env:LOCALAPPDATA\xiom.new\bin\xiom.exe" }
+$compiler = (& $comp --version 2>$null | Select-Object -First 1)
 $appVersion = (Get-Content (Join-Path $root "VERSION") -ErrorAction SilentlyContinue | Select-Object -First 1)
 
 $srcRoot = Join-Path $root "src"

@@ -9,7 +9,9 @@
 // stdlib requires abort: "contract violated: requires at line 52").
 //
 // Observed (v0.64.5, Windows + WSL): checks A and B FAIL (pointer dropped);
-// the local-type controls (C/D) pass. Expected (correct): all pass.
+// the local-type controls (C/D) pass. Fixed v0.64.6 (m337): all checks green
+// on Windows; the WSL leg re-runs with the v0.64.6 re-pin pass. This probe
+// stays as the regression gate.
 //
 // Run (from the repo root):
 //   . .\scripts\dev-env.ps1
@@ -20,6 +22,7 @@
 
 module repro_global_ptr
 
+use xiom.sync;
 use xiom.sync.mutex;
 use xiom.io;
 use xiom.convert;
@@ -33,6 +36,8 @@ var GA: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
 var GB: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
 // C/D: the local-type control.
 var GM: Mixed = Mixed{ p: null; v: 0 };
+// D: multi-field IMPORTED type (the "Semaphore" variant of the re-verify).
+var G_SEM: sync.Semaphore = sync.Semaphore{ count: 0, max: 0 };
 
 fn hptr() -> *Int {
   var p: *Int = null;
@@ -44,6 +49,8 @@ fn a_null() -> Bool { return GA.locked == null; }
 fn b_null() -> Bool { return GB.locked == null; }
 fn m_null() -> Bool { return GM.p == null; }
 fn m_v() -> Int { return GM.v; }
+fn gsem_count() -> Int { return G_SEM.count; }
+fn gsem_max() -> Int { return G_SEM.max; }
 
 fn main() -> Int {
   io.println("=== xvector probe: imported-type global struct stores (XVC-C-17 repro) ===");
@@ -79,6 +86,38 @@ fn main() -> Int {
     io.println("  [PASS] C2 scalar field persists (v=9)");
   } else {
     io.println("  [FAIL] C2 scalar field lost (v=" + convert.int_to_string(m_v()) + ")");
+    fails = fails + 1;
+  }
+
+  // D: multi-field imported type -- literal store keeps BOTH fields.
+  G_SEM = sync.Semaphore{ count: 7, max: 9 };
+  if gsem_count() == 7 && gsem_max() == 9 {
+    io.println("  [PASS] D imported multi-field literal store keeps both fields (7/9)");
+  } else {
+    io.println("  [FAIL] D imported multi-field store: count=" + convert.int_to_string(gsem_count())
+      + " max=" + convert.int_to_string(gsem_max()));
+    fails = fails + 1;
+  }
+
+  // D2: cross-module constructor return into the same global.
+  G_SEM = sync.sem_new(5);
+  if gsem_count() == 5 && gsem_max() == 5 {
+    io.println("  [PASS] D2 imported multi-field call-return store (5/5)");
+  } else {
+    io.println("  [FAIL] D2 imported multi-field call-return: count=" + convert.int_to_string(gsem_count())
+      + " max=" + convert.int_to_string(gsem_max()));
+    fails = fails + 1;
+  }
+
+  // D3: read-modify-write through the global (pull, acquire, push).
+  var semshare = G_SEM;
+  let _acq = sync.sem_acquire(&mut semshare);
+  G_SEM = semshare;
+  if gsem_count() == 4 && gsem_max() == 5 {
+    io.println("  [PASS] D3 acquire through the global (count 4, max 5)");
+  } else {
+    io.println("  [FAIL] D3 acquire through the global: count=" + convert.int_to_string(gsem_count())
+      + " max=" + convert.int_to_string(gsem_max()));
     fails = fails + 1;
   }
 
