@@ -4,8 +4,9 @@
 // L-2 collection-move probe (offline move primitive):
 //   SRC home: create "docs" (dim 4 cosine, HNSW config) + upsert 3 ->
 //   export_collection -> segment artifact (durable roll; source stays
-//   queryable through the sealed union) -> refusal cases (unknown, empty,
-//   already-rolled).
+//   queryable through the sealed union) -> refusal cases (unknown, empty)
+//   + the L-5 compaction-aware re-export (a rolled collection merges
+//   through D7 instead of refusing).
 //   COPY: the artifact is the portable unit; craft a truncated copy, a
 //   CRC-mismatch copy, and a footer-less copy.
 //   DST home: create "docs" (same config) -> attach_segment: all three
@@ -125,11 +126,14 @@ fn main() -> Int {
   fails = check(ex_ok, "export: docs -> segment artifact (durable roll)", fails);
   // The source collection stays queryable through the sealed union.
   fails = check(search_two(&mut src, &q), "export: source still serves (sealed union)", fails);
-  // A rolled collection cannot be exported again in v1.
+  // L-5: a rolled collection re-exports through the COMPACTION-AWARE path
+  // (merge sealed + active remainder; bit-exact union) -- no longer a
+  // refusal; the rewritten artifact stays attachable below.
   var ex_twice = export_collection(&mut src, "docs", p_art);
-  var twice_err: Bool = false;
-  match ex_twice { Ok(_) => {} Err(_) => { twice_err = true; } }
-  fails = check(twice_err, "export: already-rolled collection -> Err (v1 scope)", fails);
+  var twice_ok: Bool = false;
+  match ex_twice { Ok(_) => { twice_ok = true; } Err(_) => {} }
+  fails = check(twice_ok, "export: rolled collection re-exports via compaction (L-5)", fails);
+  fails = check(search_two(&mut src, &q), "export #2: source still serves (sealed union)", fails);
 
   // ---- craft bad copies from the good artifact ----
   var rb = io.read_file_bytes(p_art);

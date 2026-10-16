@@ -16,6 +16,8 @@ module xiom.vector.api.router
 //   GET  /version       -> router name/version/api + mapping version
 //   GET  /cluster/mapping -> mapping view (admin scope)
 //   GET  /cluster/stats   -> aggregate shard stats + mapping version (admin)
+//   POST /cluster/move    -> online move {collection, to} (admin; L-5)
+//   POST /cluster/drain   -> move every collection off {shard} (admin; L-5)
 //   GET  /stats (no collection param) -> the same aggregate (admin scope
 //                          per the L-3 checklist; with ?collection= it is a
 //                          plain forward on read scope)
@@ -64,12 +66,14 @@ module xiom.vector.api.router
 // calls (the /cluster/stats aggregation) use `internal_key`.
 
 use xiom.io;
+use xiom.convert;
 use xiom.string.slice;
 use xiom.serialize.json;
 use xiom.time;
 use xiom.vector.api.http_service;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
+use xiom.vector.durability.wal_file;
 
 // One shard context: the service state (config/auth/rate/metrics/log) plus
 // the engine that serves it. Owned by the HOST (probe / future server);
@@ -102,6 +106,7 @@ pub type RouterState = {
   auth: ServiceAuth;
   rate: RateLimiter;
   internal_key: Str;
+  artifact_dir: Str;
   requests: Int;
   errors: Int;
   forwarded: Int;
@@ -311,6 +316,89 @@ pub fn router_mapping_owner(m: &RouterMapping, name: Str) -> Int {
   return -1;
 }
 
+// Collection index in the mapping, or -1.
+fn router_mapping_index(m: &RouterMapping, name: Str) -> Int {
+  var i: Int = 0;
+  while i < m.coll_names.len() {
+    if m.coll_names[i] == name { return i; }
+    i = i + 1;
+  }
+  return -1;
+}
+
+// Minimal JSON string escaping for the persist renderer (\" \\ \n \r \t).
+fn router_json_esc(out: &mut Vec[UInt8], s: Str) {
+  var b = slice.str_bytes(s);
+  var i: Int = 0;
+  while i < b.len() {
+    var c = b[i];
+    if c == 34u8 {
+      out.push(92u8);
+      out.push(34u8);
+    } elif c == 92u8 {
+      out.push(92u8);
+      out.push(92u8);
+    } elif c == 10u8 {
+      out.push(92u8);
+      out.push(110u8);
+    } elif c == 13u8 {
+      out.push(92u8);
+      out.push(114u8);
+    } elif c == 9u8 {
+      out.push(92u8);
+      out.push(116u8);
+    } else {
+      out.push(c);
+    }
+    i = i + 1;
+  }
+}
+
+// Persist the mapping (admin writes; the caller has already applied the
+// version bump): render the versioned JSON, write `<path>.tmp`, swap with
+// io.rename (the lane's atomic whole-file discipline). False on any IO
+// error; the target file is left untouched on failure.
+pub fn router_mapping_persist(m: &RouterMapping, path: Str) -> Bool {
+  var out = Vec[UInt8].new();
+  append_bytes(&mut out, "{\"version\":");
+  append_bytes(&mut out, convert.int_to_string(m.version));
+  append_bytes(&mut out, ",\"shards\":[");
+  var i: Int = 0;
+  while i < m.shard_ids.len() {
+    if i > 0 { out.push(44u8); }
+    append_bytes(&mut out, "{\"id\":\"");
+    router_json_esc(&mut out, m.shard_ids[i]);
+    append_bytes(&mut out, "\",\"url\":\"");
+    router_json_esc(&mut out, m.shard_urls[i]);
+    append_bytes(&mut out, "\"}");
+    i = i + 1;
+  }
+  append_bytes(&mut out, "],\"collections\":{");
+  var j: Int = 0;
+  while j < m.coll_names.len() {
+    if j > 0 { out.push(44u8); }
+    append_bytes(&mut out, "\"");
+    router_json_esc(&mut out, m.coll_names[j]);
+    append_bytes(&mut out, "\":\"");
+    var oi = m.coll_shard[j];
+    router_json_esc(&mut out, m.shard_ids[oi]);
+    append_bytes(&mut out, "\"");
+    j = j + 1;
+  }
+  append_bytes(&mut out, "}}");
+  var tmp = path + ".tmp";
+  var wres = io.write_file_bytes(tmp, &out);
+  match wres {
+    Ok(_) => {}
+    Err(_) => { return false; }
+  }
+  var rres = io.rename(tmp, path);
+  match rres {
+    Ok(_) => { return true; }
+    Err(_) => { return false; }
+  }
+}
+
 // Local shard-context index for a shard id, or -1.
 fn router_shard_find(shards: &mut Vec[RouterShard], id: Str) -> Int {
   var i: Int = 0;
@@ -343,6 +431,7 @@ pub fn router_state_new(mapping_path: Str) -> RouterState {
     auth: service_auth_new(),
     rate: rate_limiter_disabled(),
     internal_key: "",
+    artifact_dir: "",
     requests: 0,
     errors: 0,
     forwarded: 0,
@@ -672,6 +761,249 @@ fn router_dispatch(rt: &mut RouterState, shards: &mut Vec[RouterShard], coll: St
   return resp;
 }
 
+// Cluster admin (L-5): online collection move + node drain ----------------
+
+type RouterMoveBody = {
+  err: Str;
+  collection: Str;
+  to: Str;
+}
+
+fn router_pick_move(req: &HttpRequest) -> RouterMoveBody {
+  if !json_depth_ok(req.body, 64) { return RouterMoveBody{ err: "json nesting exceeds service limit", collection: "", to: "" }; }
+  var parsed = json.json_parse(req.body);
+  var doc = json.json_null();
+  match parsed {
+    Ok(v) => { doc = v; }
+    Err(_) => { return RouterMoveBody{ err: "bad json", collection: "", to: "" }; }
+  }
+  var coll: Str = "";
+  var to: Str = "";
+  var co = json.json_get(doc, "collection");
+  match co {
+    Some(cv) => {
+      match cv {
+        String(s) => { coll = s; }
+        _ => {}
+      }
+    }
+    None => {}
+  }
+  if coll.len() == 0 { return RouterMoveBody{ err: "missing collection", collection: "", to: "" }; }
+  var to_o = json.json_get(doc, "to");
+  match to_o {
+    Some(tv) => {
+      match tv {
+        String(s) => { to = s; }
+        _ => {}
+      }
+    }
+    None => {}
+  }
+  if to.len() == 0 { return RouterMoveBody{ err: "missing to", collection: "", to: "" }; }
+  return RouterMoveBody{ err: "", collection: coll, to: to };
+}
+
+fn router_pick_drain(req: &HttpRequest) -> RouterPick {
+  if !json_depth_ok(req.body, 64) { return RouterPick{ err: "json nesting exceeds service limit", name: "" }; }
+  var parsed = json.json_parse(req.body);
+  var doc = json.json_null();
+  match parsed {
+    Ok(v) => { doc = v; }
+    Err(_) => { return RouterPick{ err: "bad json", name: "" }; }
+  }
+  var so = json.json_get(doc, "shard");
+  match so {
+    Some(sv) => {
+      match sv {
+        String(s) => {
+          if s.len() > 0 { return RouterPick{ err: "", name: s }; }
+        }
+        _ => {}
+      }
+    }
+    None => {}
+  }
+  return RouterPick{ err: "missing shard", name: "" };
+}
+
+// Outcome of one move attempt (code = HTTP status for the route wrapper).
+type RouterMoveResult = {
+  ok: Bool;
+  code: Int;
+  msg: Str;
+  from_id: Str;
+}
+
+// One online move (admin): compaction-aware export on the source ->
+// fresh collection + attach on the destination -> drop on the source ->
+// mapping flip + atomic persist (version bump). A failed mapping persist
+// reinstalls the source from the artifact (best effort) and reports
+// loudly. Single-writer semantics: every write acked before the export
+// is inside the artifact (bit-exact union); writes after the flip route
+// to the new owner; the stale-cache window is one bounded retry
+// (probe-gated).
+fn router_move_core(rt: &mut RouterState, shards: &mut Vec[RouterShard], coll: Str, to_id: Str) -> RouterMoveResult {
+  if rt.artifact_dir.len() == 0 {
+    return RouterMoveResult{ ok: false, code: 500, msg: "artifact dir not configured", from_id: "" };
+  }
+  var owner = router_mapping_owner(&rt.mapping, coll);
+  if owner < 0 { return RouterMoveResult{ ok: false, code: 404, msg: "collection not mapped", from_id: "" }; }
+  var from_id = rt.mapping.shard_ids[owner];
+  if to_id == from_id { return RouterMoveResult{ ok: false, code: 400, msg: "destination equals source", from_id: from_id }; }
+  var to_idx = router_shard_find(shards, to_id);
+  if to_idx < 0 { return RouterMoveResult{ ok: false, code: 404, msg: "destination shard not configured", from_id: from_id }; }
+  var from_idx = router_shard_find(shards, from_id);
+  if from_idx < 0 { return RouterMoveResult{ ok: false, code: 503, msg: "source shard not configured", from_id: from_id }; }
+  var art = rt.artifact_dir + "/xvmove_" + coll + ".seg";
+  // 1. source: select (dim/metric) + compaction-aware export.
+  var sh = shards[from_idx];
+  var eng = sh.engine;
+  match select_collection(&mut eng, coll) {
+    Ok(_) => {}
+    Err(_) => {
+      sh.engine = eng;
+      shards[from_idx] = sh;
+      return RouterMoveResult{ ok: false, code: 404, msg: "source collection missing", from_id: from_id };
+    }
+  }
+  var dim: Int = eng.dimension;
+  var metric: DistanceMetric = eng.metric;
+  var exr = export_collection(&mut eng, coll, art);
+  var ex_ok: Bool = false;
+  match exr {
+    Ok(_) => { ex_ok = true; }
+    Err(_) => {}
+  }
+  sh.engine = eng;
+  shards[from_idx] = sh;
+  if !ex_ok { return RouterMoveResult{ ok: false, code: 500, msg: "source export failed", from_id: from_id }; }
+  // 2. destination: fresh collection + attach (config travels in the artifact).
+  var th = shards[to_idx];
+  var teng = th.engine;
+  var cr_ok: Bool = false;
+  match create_named_collection(&mut teng, coll, dim, metric) {
+    Ok(_) => { cr_ok = true; }
+    Err(_) => {}
+  }
+  if !cr_ok {
+    th.engine = teng;
+    shards[to_idx] = th;
+    return RouterMoveResult{ ok: false, code: 409, msg: "destination create failed", from_id: from_id };
+  }
+  var at_ok: Bool = false;
+  match attach_segment(&mut teng, art) {
+    Ok(_) => { at_ok = true; }
+    Err(_) => {}
+  }
+  th.engine = teng;
+  shards[to_idx] = th;
+  if !at_ok {
+    // Best-effort cleanup: remove the half-created destination collection.
+    var th2 = shards[to_idx];
+    var teng2 = th2.engine;
+    let _d1 = drop_collection(&mut teng2, coll);
+    th2.engine = teng2;
+    shards[to_idx] = th2;
+    return RouterMoveResult{ ok: false, code: 500, msg: "destination attach failed", from_id: from_id };
+  }
+  // 3. source: drop (the artifact file stays; ops cleans it).
+  var sh2 = shards[from_idx];
+  var eng2 = sh2.engine;
+  var dr_ok: Bool = false;
+  match drop_collection(&mut eng2, coll) {
+    Ok(_) => { dr_ok = true; }
+    Err(_) => {}
+  }
+  sh2.engine = eng2;
+  shards[from_idx] = sh2;
+  if !dr_ok {
+    return RouterMoveResult{ ok: false, code: 500, msg: "source drop failed (both sides hold the collection)", from_id: from_id };
+  }
+  // 4. mapping flip + persist (version bump). On persist failure,
+  //    reinstall the source from the artifact (best effort) and report.
+  var m = rt.mapping;
+  var ci = router_mapping_index(&m, coll);
+  if ci < 0 {
+    return RouterMoveResult{ ok: false, code: 500, msg: "mapping lost the collection during the move", from_id: from_id };
+  }
+  m.coll_shard[ci] = to_idx;
+  m.version = m.version + 1;
+  if !router_mapping_persist(&m, rt.mapping_path) {
+    var sh3 = shards[from_idx];
+    var eng3 = sh3.engine;
+    var rc_ok: Bool = false;
+    match create_named_collection(&mut eng3, coll, dim, metric) {
+      Ok(_) => {
+        match attach_segment(&mut eng3, art) {
+          Ok(_) => { rc_ok = true; }
+          Err(_) => {}
+        }
+      }
+      Err(_) => {}
+    }
+    sh3.engine = eng3;
+    shards[from_idx] = sh3;
+    var msg2 = "mapping persist failed (destination copy remains; manual cleanup)";
+    if rc_ok { msg2 = "mapping persist failed; source reinstalled from the artifact (destination copy remains)"; }
+    return RouterMoveResult{ ok: false, code: 500, msg: msg2, from_id: from_id };
+  }
+  rt.mapping = m;
+  return RouterMoveResult{ ok: true, code: 200, msg: "", from_id: from_id };
+}
+
+// Drain: move every collection owned by `shard_id` off it, round-robin
+// over the remaining shards (no new placement on the drained node; the
+// node stays configured until the mapping is edited). Stops at the first
+// failed move and reports it (nothing silent).
+fn router_cluster_drain(rt: &mut RouterState, shards: &mut Vec[RouterShard], shard_id: Str) -> Vec[UInt8] {
+  var sidx = -1;
+  var i: Int = 0;
+  while i < rt.mapping.shard_ids.len() {
+    if rt.mapping.shard_ids[i] == shard_id { sidx = i; }
+    i = i + 1;
+  }
+  if sidx < 0 { return jerror(404, "unknown shard"); }
+  var dests = Vec[Str].new();
+  var j: Int = 0;
+  while j < rt.mapping.shard_ids.len() {
+    if j != sidx { dests.push(rt.mapping.shard_ids[j]); }
+    j = j + 1;
+  }
+  if dests.len() == 0 { return jerror(400, "no destination shard"); }
+  var names = Vec[Str].new();
+  var k: Int = 0;
+  while k < rt.mapping.coll_names.len() {
+    if rt.mapping.coll_shard[k] == sidx { names.push(rt.mapping.coll_names[k]); }
+    k = k + 1;
+  }
+  var moved: Int = 0;
+  var failed: Str = "";
+  var di: Int = 0;
+  var n: Int = 0;
+  while n < names.len() {
+    var res = router_move_core(rt, shards, names[n], dests[di]);
+    if !res.ok {
+      failed = names[n] + ": " + res.msg;
+      n = names.len();
+    } else {
+      moved = moved + 1;
+      di = di + 1;
+      if di >= dests.len() { di = 0; }
+    }
+    n = n + 1;
+  }
+  var out = json.json_object_new();
+  out = json.json_set(out, "drained", json.json_string(shard_id));
+  out = json.json_set(out, "moved", json.json_number(moved as Float64));
+  out = json.json_set(out, "mapping_version", json.json_number(rt.mapping.version as Float64));
+  if failed.len() > 0 {
+    out = json.json_set(out, "failed", json.json_string(failed));
+    return http_response(500, out);
+  }
+  return http_response(200, out);
+}
+
 // Route table --------------------------------------------------------------
 
 fn router_route(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpRequest, raw: &Vec[UInt8]) -> Vec[UInt8] {
@@ -691,6 +1023,26 @@ fn router_route(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpR
   if segs.len() == 2 && segs[0] == "cluster" && segs[1] == "stats" {
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
     return router_cluster_stats(rt, shards);
+  }
+  if segs.len() == 2 && segs[0] == "cluster" && segs[1] == "move" {
+    if !(req.method == "POST") { return jerror(405, "method not allowed"); }
+    var mv = router_pick_move(req);
+    if mv.err.len() > 0 { return jerror(400, mv.err); }
+    var res = router_move_core(rt, shards, mv.collection, mv.to);
+    if !res.ok { return jerror(res.code, res.msg); }
+    var out = json.json_object_new();
+    out = json.json_set(out, "moved", json.json_bool(true));
+    out = json.json_set(out, "collection", json.json_string(mv.collection));
+    out = json.json_set(out, "from", json.json_string(res.from_id));
+    out = json.json_set(out, "to", json.json_string(mv.to));
+    out = json.json_set(out, "mapping_version", json.json_number(rt.mapping.version as Float64));
+    return http_response(200, out);
+  }
+  if segs.len() == 2 && segs[0] == "cluster" && segs[1] == "drain" {
+    if !(req.method == "POST") { return jerror(405, "method not allowed"); }
+    var dv = router_pick_drain(req);
+    if dv.err.len() > 0 { return jerror(400, dv.err); }
+    return router_cluster_drain(rt, shards, dv.name);
   }
   if segs.len() == 1 && segs[0] == "stats" {
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
