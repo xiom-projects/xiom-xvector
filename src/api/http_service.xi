@@ -431,7 +431,7 @@ pub fn service_auth_new() -> ServiceAuth {
   return ServiceAuth{ enabled: false, keys: Vec[ApiKey].new() };
 }
 
-fn scope_code(s: ApiScope) -> Int {
+pub fn scope_code(s: ApiScope) -> Int {
   if s == ApiScope.Write { return 1; }
   if s == ApiScope.Admin { return 2; }
   return 0;
@@ -465,7 +465,7 @@ pub fn service_auth_add_key(auth: &mut ServiceAuth, key: Str, scope: ApiScope) -
   return true;
 }
 
-fn auth_lookup(auth: &ServiceAuth, presented: Str) -> Option[ApiScope] {
+pub fn auth_lookup(auth: &ServiceAuth, presented: Str) -> Option[ApiScope] {
   var pb = slice.str_bytes(presented);
   var found: Bool = false;
   var scope: ApiScope = ApiScope.Read;
@@ -591,7 +591,9 @@ pub fn service_state_new() -> ServiceState {
 }
 
 // Required scope for a routed request; None = public (/health only).
-fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
+// Shared with the L-3 router (xiom.vector.api.router): the router edge
+// applies the exact same scope map before forwarding.
+pub fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
   var segs = path_segments(path);
   if segs.len() == 1 && segs[0] == "health" { return None; }
   if segs.len() == 1 && segs[0] == "version" { return None; }
@@ -604,7 +606,8 @@ fn required_scope(method: Str, path: Str) -> Option[ApiScope] {
 }
 
 // Parse the 3-digit status from an assembled response (0 when unparseable).
-fn response_status(resp: &Vec[UInt8]) -> Int {
+// Shared with the L-3 router (stale-mapping retry inspects forwarded 404s).
+pub fn response_status(resp: &Vec[UInt8]) -> Int {
   if resp.len() < 12 { return 0; }
   var d1 = (resp[9] as Int) - 48;
   var d2 = (resp[10] as Int) - 48;
@@ -798,7 +801,8 @@ pub fn http_response(status: Int, doc: JsonValue) -> Vec[UInt8] {
   return out;
 }
 
-fn jerror(status: Int, msg: Str) -> Vec[UInt8] {
+// Stable wire errors (shared with the L-3 router: same {error,kind,status}).
+pub fn jerror(status: Int, msg: Str) -> Vec[UInt8] {
   var o = json.json_object_new();
   o = json.json_set(o, "error", json.json_string(msg));
   o = json.json_set(o, "kind", json.json_string(kind_for_status(status)));
@@ -928,9 +932,9 @@ fn index_kind_name_of(k: AnnIndexKind) -> Str {
   return "flat";
 }
 
-// ---- Path / query helpers ----
+// ---- Path / query helpers (shared with the L-3 router) ----
 
-fn path_segments(path: Str) -> Vec[Str] {
+pub fn path_segments(path: Str) -> Vec[Str] {
   var out = Vec[Str].new();
   var b = slice.str_bytes(path);
   var start: Int = 0;
@@ -947,7 +951,7 @@ fn path_segments(path: Str) -> Vec[Str] {
   return out;
 }
 
-fn query_param(query: Str, key: Str) -> Option[Str] {
+pub fn query_param(query: Str, key: Str) -> Option[Str] {
   var b = slice.str_bytes(query);
   var start: Int = 0;
   var i: Int = 0;
