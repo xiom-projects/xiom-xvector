@@ -1409,8 +1409,14 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 **HANDOFF STATE (end of 2026-10-16 session, 83rd pass; HEAD `bc53af7` + this wrap):**
 - Compiler lane: v0.64.5 installed lane-local both platforms. **XVC-C-16**
   (linux-x64 service `/search` miscompile; bus `REL-20261015-2142-xvector`)
-  stays ACKED with fixer **m339 in flight** -- the v0.64.6 cut is being
-  assembled (stdlib pin ask on the bus) but NO candidate build exists yet.
+  stays ACKED with the fixer wave **INTEGRATED upstream** (m339: clang-18
+  X86 Avoid-SFB pass clobbered the SearchRequest materialization; fix =
+  `-mllvm -x86-disable-avoid-SFB=true` on clang-major-18 x86_64) -- the
+  v0.64.6 candidate cut is being assembled (stdlib-v0.64.6 pinned at
+  b81430b) but NO candidate build exists yet; the lane re-verify (WSL
+  repro + service gates) runs when it lands AND WSL is free. Queued
+  follow-up on their side: a second layout-sensitive create-path
+  corruption that survives the SFB flag (own bisect, after the cut).
   **XVC-C-17** (imported-type global pointer-field drop; bus
   `REL-20261015-2216-xvector`) has the fix INTEGRATED upstream (m337); the
   lane re-verify awaits the next candidate build. **XVC-C-18 NEW** (JSON
@@ -2874,9 +2880,9 @@ lane-local both platforms; FULL Windows battery ALL GATES GREEN (suite
 177/177 x2 + sbom 45 modules unsafe=0 + 49 probes x2 + bench smoke + kill
 matrix); L-0..L-3 + L-5 landed (L-3 router v1; L-5 = `POST /cluster/move`
 + `POST /cluster/drain`, compaction-aware, move-under-load gated -- the
-socket hop follows the xiom.http client half `REL-20261016-1129-xvector-2`); XVC-C-16 acked (m339 fixer in flight; no
-candidate build), C-17 fix integrated upstream (re-verify pending the
-candidate), **XVC-C-18 OPEN** (object-key reads through a `match` binding
+socket hop follows the xiom.http client half `REL-20261016-1129-xvector-2`); XVC-C-16 acked with the fix INTEGRATED upstream
+(m339 clang-18 SFB pass; candidate cut imminent, no build yet), C-17 fix
+integrated upstream (re-verify pending the candidate), **XVC-C-18 OPEN** (object-key reads through a `match` binding
 return garbage; repro `docs/repro/xv-object-key-iter/` + copy-out
 workaround shipped); thread items -1627/-1402 accept-green but fixed;
 v0.64.5 re-pin HELD on C-16. **WSL is PAUSED per owner guidance: do NOT
