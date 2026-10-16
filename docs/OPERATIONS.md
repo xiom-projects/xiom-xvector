@@ -211,11 +211,13 @@ with `Corruption` instead of attaching a partial collection. Kill during
 the copy touches only the artifact file; both homes stay consistent (the
 destination has no half-attached registry entry).
 
-Known v1 limits (documented, gated): a collection that already has
-sealed segments must be compacted before export; the source must be
-non-empty; attach targets a freshly created collection (same dim/metric;
-name is the caller's choice). None of these blocks the move flow; L-5
-adds compaction-aware moves + the drain CLI.
+Known limits (documented, gated): the source must be non-empty; attach
+targets a freshly created collection (same dim/metric; name is the
+caller's choice). L-5 landed the compaction-aware export: a collection
+with pre-existing sealed segments (auto-roll policy or an earlier
+export) merges through the D7 compaction path -- bit-exact union -- so
+sealed collections move too; the cluster-level move/drain operations are
+section 11.
 
 ## 10. Cluster router (stateless, L-3)
 
@@ -277,3 +279,72 @@ library + gates (`probe_router_2shards`), not as a standalone binary.
 **Non-goals (v1):** cross-collection batches in one `/search` body,
 automatic placement, failover; intra-collection scatter-gather is L-6
 (phase B).
+
+## 11. Cluster operations (move / drain, L-5)
+
+Online move (admin): `POST /cluster/move` `{"collection": "<n>", "to":
+"<shard id>"}` against the router. The router (with its configured
+artifact dir) runs:
+
+1. compaction-aware export on the source -- every sealed entry + the
+   active remainder merge into ONE artifact (tombstones applied,
+   active-wins; bit-exact with the pre-export union). The source keeps
+   serving throughout.
+2. fresh collection + attach on the destination (artifact integrity
+   footer verified; index config travels with the artifact).
+3. drop on the source; the artifact file stays for ops to clean/archive.
+4. mapping flip + atomic persist (version bump; a failed persist
+   reinstalls the source from the artifact and reports loudly).
+
+Semantics (single-writer): every write acked before the export is inside
+the artifact; writes after the flip route to the new owner; a router with
+a stale mapping cache sees exactly ONE bounded retry (forwarded 404 ->
+reload -> retry). Gated by `probe_move_under_load` (no acked write lost
+across a 30-id sweep; sealed+active merge exactness; the stale-cache
+window == one reload).
+
+Drain a node (decommission step): `POST /cluster/drain` `{"shard":
+"<id>"}` moves every collection owned by that shard, round-robin over the
+remaining shards, stopping at the first failure (reported, never silent).
+The drained shard stays configured but owns nothing -- no new placement;
+remove its entry from the mapping file once it leaves the cluster. A
+single-shard cluster refuses (400). There is no standalone CLI yet: the
+admin route IS the operation while the router is the in-process library;
+the CLI ships with the socket transport.
+
+Artifacts: moves write `xvmove_<collection>.seg` into the router's
+artifact dir. In the in-process transport the artifact doubles as the
+source's sealed file until the drop; ops that ship bytes over the wire
+should copy the artifact and verify sha256 on the receiving side.
+
+### Cluster templates (sketch)
+
+Edge proxy terminates TLS for now (the ecosystem TLS binding is a PULSE
+gap; see `docs/SECURITY.md`); router and shards speak plain HTTP/1.1
+inside the trust boundary.
+
+systemd (per node):
+
+    # /etc/systemd/system/xvectord.service   (one per shard home)
+    [Service]
+    ExecStart=/opt/xvector/xvectord --port 7701
+    Environment=XVECTORD_WAL=/var/lib/xvector/node1/manifest.db
+    # + XVECTOR_API_KEYS / XVECTORD_SEAL_EVERY / XVECTORD_SEAL_DIR as needed
+    Restart=on-failure
+
+    # /etc/systemd/system/xvector-router.service   (one per cluster)
+    [Service]
+    ExecStart=/opt/xvector/xvector-router --mapping /etc/xvector/mapping.json
+    Restart=on-failure
+
+Docker Compose (sketch):
+
+    services:
+      shard1: { image: xvector/xvectord:rc.1, command: "--port 7701" }
+      shard2: { image: xvector/xvectord:rc.1, command: "--port 7702" }
+      router: { image: xvector/router:rc.1, command: "--mapping /etc/xvector/mapping.json" }
+
+The router image/templates activate when the socket transport lands
+(replacing the in-process forward at the `router_forward_direct` seam,
+gated on the `xiom.http` client half); until then the router ships as
+the L-3/L-5 library and the gates above are its acceptance.

@@ -280,7 +280,8 @@ pub fn restore_segment(eng: &mut VectorEngine, path: Str) -> Result[Bool, CoreEr
 
 // L-2 collection move: export a named collection's full live state to one
 // segment artifact (durable roll; the source stays queryable via its
-// sealed entry). v1: no pre-existing sealed segments, non-empty.
+// sealed entry). L-5: compaction-aware -- pre-existing sealed segments
+// are merged (D7 compaction path); empty collections are refused.
 pub fn export_collection(eng: &mut VectorEngine, name: Str, path: Str) -> Result[Int, CoreError] {
   return engine_export_collection(eng, name, path);
 }

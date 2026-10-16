@@ -63,8 +63,11 @@ Consumer lane; repo private; findings bus-routed.
   checksummed manifest entry + a `recovery_required` bit so a
   half-attached registry is caught on open; checkpoint salt rotation
   (sqlite) to prevent old/new frame mixing.
-- [ ] L-5 extension: compaction-aware moves (collections that already
-  have sealed segments) + the drain CLI + move-under-load gate
+- [x] L-5 extension: compaction-aware moves (collections that already
+  have sealed segments) + the drain operation + move-under-load gate
+  **(landed 2026-10-16 in L-5; move/drain are admin ROUTES while the
+  router is the in-process library -- the standalone CLI ships with the
+  socket transport)**
 - Gate: probe x2 + suite x2 + WSL spot **(done)**;
   `docs/OPERATIONS.md` move section **(done -- section 9 + the
   interrupted-copy failure row + the format note)**
@@ -127,13 +130,26 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-5 -- drain / rebalance + cluster ops
 
-- [ ] admin: `POST /cluster/move`, drain node (move its collections off;
-  no new placement), mapping version bump
-- [ ] `probe_move_under_load`: no acked write lost; the client-visible
-  retry window bounded and documented
-- [ ] cluster templates sketch (systemd/docker; edge proxy for TLS) +
-  OPERATIONS cluster section
-- Gate: probe x2 + suite x2; docs
+- [x] admin: `POST /cluster/move`, drain node (move its collections off;
+  no new placement), mapping version bump **(done 2026-10-16)**: the move
+  = compaction-aware export -> destination create + attach -> source drop
+  -> mapping flip + atomic persist (version bump; a failed persist
+  reinstalls the source from the artifact); drain = round-robin move of
+  every owned collection (first failure reported; a single-shard cluster
+  refuses 400); no standalone CLI yet (the admin route IS the operation
+  while the router is the in-process library)
+- [x] `probe_move_under_load`: no acked write lost; the client-visible
+  retry window bounded and documented **(done)**: 41 checks -- 20
+  pre-move + 10 post-flip acked writes with a 30-id destination sweep,
+  stale observer == exactly one reload + one retry, sealed+active merge
+  exactness (10-point union), sealed-only move, drain (repoint + empty
+  source), admin fuzz + read-key scope
+- [x] cluster templates sketch (systemd/docker; edge proxy for TLS) +
+  OPERATIONS cluster section **(done)**: OPERATIONS section 11 (+ the
+  section 9 limits note; templates activate with the socket transport)
+- Gate: probe x2 + suite x2; docs. **Windows done (probe 41/41 x2 +
+  affected probes x2 + suite 177/177 x2 + full battery); WSL spot HELD
+  (owner resource guidance; fold into the v0.64.6 re-pin pass)**
 
 ## L-6 -- intra-collection scatter-gather (phase B)
 

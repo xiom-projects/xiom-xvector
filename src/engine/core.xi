@@ -773,12 +773,15 @@ pub fn engine_roll_segment(eng: &mut VectorEngine, path: Str) -> Result[Int, Cor
   return Ok(seg_id);
 }
 
-// L-2 collection move -- EXPORT half (2026-10-16). Select the named
-// collection and roll its full live state into ONE segment artifact
-// (durable; the source collection stays queryable through the sealed
-// union). v1 scope: the collection must have NO pre-existing sealed
-// segments (a rolled collection needs compaction first -- L-5) and must
-// be non-empty. The artifact carries the integrity footer; the attach
+// L-2 collection move -- EXPORT half (2026-10-16; COMPACTION-AWARE since
+// L-5). Select the named collection and materialize its FULL live state
+// as ONE segment artifact at `path`: a plain active store is rolled
+// directly; a collection with pre-existing sealed segments (auto-roll
+// policy or an earlier export) is merged through the D7 compaction path
+// (every sealed entry + the active remainder, tombstones applied,
+// active-wins) -- bit-exact with the pre-export union. The source stays
+// queryable through the sealed registry in both paths. Empty collections
+// are refused. The artifact carries the integrity footer; the attach
 // half refuses truncated/corrupt copies. Returns the assigned segment id.
 pub fn engine_export_collection(eng: &mut VectorEngine, name: Str, path: Str) -> Result[Int, CoreError]
   requires: eng.created
@@ -788,7 +791,7 @@ pub fn engine_export_collection(eng: &mut VectorEngine, name: Str, path: Str) ->
     Err(e) => { return Err(e); }
   }
   if eng.sealed.len() > 0 {
-    return Err(CoreError.InvalidState("collection has sealed segments; export v1 needs a single active store"));
+    return engine_compact_sealed(eng, path);
   }
   if eng.store.ids.len() == 0 {
     return Err(CoreError.InvalidState("collection is empty"));
