@@ -3,6 +3,36 @@
 
 # Package wishlist from the XVECTOR lane
 
+## Lattice-tier asks (2026-10-16, top-tier directive)
+
+For `xvector-lattice` (`docs/PRODUCT-ARCHITECTURE.md`; owners: L-1 mote
+publication, L-3 router, L-4 replica, L-5 ops). Deliverables go through
+this lane's relay items; publication of the mote package itself
+coordinates here when package-ready (owner directive 2026-10-16).
+
+- **`xiom.http` client half (or a `xiom.http_client` split)** -- the
+  router IS a reverse proxy: it needs a robust OUTBOUND HTTP client
+  (keep-alive, timeouts, streaming bodies for snapshot/WAL transfer
+  between homes, a pluggable TLS hook). The 2026-10-10 eval adopted only
+  `http_status_text` and parked the client because the lane's server
+  dispatch is static/gate-pinned (`docs/XIOM-HTTP-EVAL.md`); the client
+  is exactly the piece L-3/L-4 needs now. Ask: stabilise the client half
+  as its own surface + probe so we can adopt it without touching the
+  server module. **Priority: medium-high** (otherwise hand-rolled).
+- **TLS binding package** (openssl/schannel route per stdlib
+  `docs/TLS_DECISION.md`; PULSE filed the ecosystem asks -- XVECTOR adds
+  itself as a requester): enterprise serving + shard-to-shard auth.
+  **Priority: high** (ecosystem).
+- **zstd (real; the custom brotli frame is non-RFC)** -- snapshot/WAL/
+  segment shipping for L-4 replicas, backups, cross-node moves.
+  **Priority: medium.**
+- **OTLP exporter** (join PULSE's ask) -- cluster telemetry beyond the
+  scrape endpoint. **Priority: low-medium.**
+- **`xiom.btree` / `xiom.kv`** -- unchanged: watch for future
+  multi-segment metadata; no adoption now.
+- **`xiom.vectors` stays the mote-tier contract** (`docs/PRODUCT-LAYERS.md`);
+  no new extraction ask at this time.
+
 > **Coordination bus (2026-10-10):** open cross-lane items are migrated to
 > the private `xiom-lang/xiom-relays` repo: `xiom.vectors` extraction =
 > **REL-20261010-1550-xvector-9** (packages), `xiom.ann` extraction =

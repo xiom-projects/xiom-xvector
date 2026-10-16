@@ -3,6 +3,34 @@
 
 # Stdlib wishlist from the XVECTOR lane
 
+## Lattice-tier asks (2026-10-16, top-tier directive)
+
+For the `xvector-lattice` scale-out tier (`docs/PRODUCT-ARCHITECTURE.md`;
+owners: L-3 router, L-4 replica, L-5 ops). **Status refresh first
+(stdlib at wave 144, re-checked 2026-10-16) -- LANDED since the
+2026-10-12 re-check:** fsync/fdatasync + `sync_fd`/`fsync_dir` +
+`write_all` fd path + `append_file_bytes` (wave 115; bus `-2/-3/-4`
+closed), fd truncate (`truncate_fd` real, wave 117), the **mmap family**
+(wave 120 `fbf4bc0`: file/anon/unmap/msync/madvise/protect/lock,
+probe 297), **signals** (wave 123: `signal_install`/`signal_wait`/
+`signal_pending` -- sigaction + self-pipe POSIX, console events Windows;
+the graceful-drain primitive), net polish **NODELAY/SO_KEEPALIVE/
+listener backlog** + refused-connect fix (wave 143), directory
+**watch** (Windows-first, real), `read_at`/`write_at`, `copy_file`,
+`walk_dir`, `remove_dir`. The fsync trio + fd path were verified
+in-lane 2026-10-12; mmap/signals/watch land at adoption.
+
+Open asks:
+
+| Need | Why (lattice slice) | Priority | Workaround until then |
+|---|---|---|---|
+| **POSIX directory watch (inotify/kqueue)** -- `xiom.os.watch` is a documented Err on POSIX (Windows ReadDirectoryChangesW is real) | L-4 replica WAL tailing + L-5 ops on Linux/WSL; polling works but adds lag and burns cycles | medium | poll the WAL file (`read_at` + size checks) at an interval |
+| **Advisory file lock (`flock`/`LockFileEx`)** -- no lock primitive exists in the tree | single-writer-per-home enforcement: a shard fails fast when a second process opens the same home (the documented OUT-OF-CONTRACT case in `docs/PRODUCT-ARCHITECTURE.md` sec. 7) | medium | operational discipline + manifest checks (no hard guard) |
+| **TLS/ALPN primitives** (via the `docs/TLS_DECISION.md` binding route; PULSE filed `REL-20261015-2202-pulse` ask 1 -- XVECTOR adds itself as a requester) | direct enterprise serving for lattice: native HTTPS without an edge proxy; also shard-to-shard auth | high (ecosystem) | edge proxy terminates TLS (architecture plan sec. 11) |
+| **fd readiness (`poll`/`select` on sockets)** -- optional path | single-threaded router with many connections (L-3) instead of thread-per-connection | low (optional) | threads/processes per connection (G-2 available) |
+| `f32_bits`/`bits_to_f32` (old row `-6`, still open) | Float32 bitcast hot path (efficiency only) | low | `float_bits(v as Float64)` round-trip (exact) |
+| path-level `truncate`/`ftruncate` wrappers (old row `-5`; the fd path landed wave 117) | parity only | low | the real fd truncate (`truncate_fd`) |
+
 > **Coordination bus (2026-10-10):** the open rows below are migrated to
 > the private `xiom-lang/xiom-relays` repo (one item per row; `--to stdlib
 > --kind wishlist`): fsync/fdatasync = **REL-20261010-1550-xvector-2**, fd
