@@ -45,6 +45,20 @@ no divergent numeric behavior; the shared suite/probes gate both).
 - Power-loss fault injection still open in D; fsync/fd/mmap primitives now
   real in the stdlib (mmap family wave 120, fsync/fd waves 115-117).
 
+## Release ownership (owner directive 2026-10-16)
+
+- **mote (tier 1, the registry package):** when the package is ready for
+  publication, coordination goes through the **packages lane via the
+  relay bus** (registry artifacts, sha256, swap/verification gates --
+  mirroring the xiom.vectors / xiom.ann flows, owner-gated). The lane
+  files/coordinates the relay item when the package is ready; never a
+  unilateral publish.
+- **lattice (tier 2, the server):** releases ship as an **ops-owned
+  GitHub Actions release set** (tag + assets + checksums per the
+  ecosystem convention); this lane supplies the version, gate evidence,
+  and artifacts, and coordinates with ops via the relay when a release
+  candidate is ready.
+
 ## Name notes
 
 Chosen for layering semantics: a lattice is an arrangement of nodes; the
