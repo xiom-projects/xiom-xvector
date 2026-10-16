@@ -175,7 +175,10 @@ RED on the new linux-only XVC-C-16 (service `/search` miscompile; filed
 `xvector-lattice` (scale-out server) -- decision `docs/PRODUCT-LAYERS.md`;
 architecture plan `docs/PRODUCT-ARCHITECTURE.md` + execution checklist
 `docs/checklists/lattice-v1.md` (L-0 recorded during the watch window; no
-code slices started).
+code slices started). **Release ownership (owner directive 2026-10-16):**
+mote registry publication -> coordinate with the packages lane via relay
+when package-ready (owner-gated); lattice releases -> ops-owned GitHub
+Actions release set.
 Recent slices: **G-1 thread + sync smoke (2026-10-16)**: `probe_thread_sync`
 (the 45th probe) in both batteries -- spawn/join + 4-thread mutex counter
 (exact) + 4-thread atomic counter (exact) + channel contract; new finding

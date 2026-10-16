@@ -89,6 +89,12 @@ Consumer lane; repo private; findings bus-routed.
 
 ## Cross-cutting
 
+- [ ] **mote registry publication (when the package is ready):**
+  coordinate with the **packages lane via the relay bus** (item + sha256
+  + swap/verification gates, owner-gated) -- never a unilateral publish
+- [ ] **lattice releases:** the **ops-owned GitHub Actions release set**
+  (tag + assets + checksums); this lane supplies version + artifacts +
+  gate evidence per release
 - [ ] SESSION section 0/1 + READINESS updated per slice
 - [ ] every platform blocker bus-routed the moment it bites
 - [ ] P1-P6 invariant checks stay explicit: format identity (a
