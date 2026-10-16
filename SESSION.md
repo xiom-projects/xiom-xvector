@@ -1407,6 +1407,13 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 ## 1. NEXT TASKS (priority order)
 
 **HANDOFF STATE (end of 2026-10-16 session, 83rd pass; HEAD `bc53af7` + this wrap):**
+
+> **PAUSED on owner request 2026-10-16T23:19Z (owner away until 2026-10-17).**
+> All work stopped; the 3h doorbell cron was CANCELLED for the pause (no
+> wakeups overnight). On resume: re-arm a 2-4h doorbell (per section 16)
+> and start with section 1's ordered list -- the v0.64.6 Windows legs are
+> already green; the single pending pass is WSL (bash launchable?) for the
+> C-16 acceptance + WSL battery + the item closures, else in-lane G-2.
 - Compiler lane: **v0.64.6 RELEASED 2026-10-16T20:33Z, installed
   lane-local (Windows; sha256-verified `a32bf7fa`; old v0.64.5 kept at
   `out\toolchain-v0645`). Windows battery on it ALL GATES GREEN (51
