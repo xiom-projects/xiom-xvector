@@ -13,8 +13,11 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 - **As of:** 2026-10-16, 84th pass (L-3 router v1 + L-4 replica v1 + L-5
   move/drain landed; full Windows battery ALL GATES GREEN -- 51 probes x2;
   a durable reopen-then-write loss was found and fixed in-lane
-  (`probe_reopen_write`); C-16 fix integrated upstream, the v0.64.5 re-pin
-  still HELD until the candidate archive lands)
+  (`probe_reopen_write`); **v0.64.6 released + installed lane-local; the
+  Windows battery + the C-17/C-18 repros are green on it (C-16's fix is
+  shipped; its WSL acceptance leg + the WSL battery are deferred -- WSL
+  bash unavailable, owner-paused), so the re-pin close-out rides that
+  pass**)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
