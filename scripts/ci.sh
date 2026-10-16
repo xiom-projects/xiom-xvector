@@ -59,6 +59,7 @@ probe_batch_ops
 probe_thread_sync
 probe_mote_embedded
 probe_collection_move
+probe_router_2shards
 )
 
 failures=0

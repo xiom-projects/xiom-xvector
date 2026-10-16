@@ -71,16 +71,44 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-3 -- router v1 (stateless)
 
-- [ ] mapping file schema + loader (versioned JSON:
+- [x] mapping file schema + loader (versioned JSON:
   `{version, shards[], collections{}}`; refuse start on malformed)
-- [ ] router service: forward by collection; `/health`, `/version`,
+  **(done 2026-10-16)**: `src/api/router.xi` -- strict loader (missing/
+  garbage/bad ids/urls/duplicate shards/unknown refs -> `ok=false`,
+  requests 503); byte-level read + `file_size` guard; placement is
+  EXPLICIT (unmapped names -> 404)
+- [x] router service: forward by collection; `/health`, `/version`,
   aggregate `/stats` (admin scope); shards keep their own endpoints
-- [ ] stale-mapping behavior: on shard 404, re-read mapping + retry once
-- [ ] `probe_router_2shards`: create/upsert/get/search/delete/stats
+  **(done)**: forwards VERBATIM (client key included; shards re-check
+  independently -- defense in depth); router-owned `/health` + `/version`
+  (both surface `mapping_version`) + `/cluster/mapping` + `/cluster/stats`
+  (admin; a bare `/stats` with no collection is the same aggregate);
+  in-process transport v1 -- the socket hop waits on the `xiom.http`
+  client half (`REL-20261016-1129-xvector-2`)
+- [x] stale-mapping behavior: on shard 404, re-read mapping + retry once
+  **(done)**: a NEW generation is accepted only when every referenced
+  shard has a local context (otherwise refused, cache kept); retries once
+  only when the owner changed
+- [x] `probe_router_2shards`: create/upsert/get/search/delete/stats
   through the router == direct to the owning shard; unknown collection ->
-  404; mapping-version surfacing
-- [ ] routing fuzz (bad paths/collection names/mapping edge cases)
-- Gate: probes x2 + suite x2 + WSL spot; docs
+  404; mapping-version surfacing **(done)**: 72 checks -- loader refusal
+  matrix, byte-equal wire comparisons vs the owner shard, wrong-shard
+  isolation, REAL move + retry-on-404 (v1 -> v2), reload refusal, auth
+  matrix (router + shard), aggregate honesty; probe x2 green Windows
+- [x] routing fuzz (bad paths/collection names/mapping edge cases)
+  **(done -- inside the probe)**: 14 fuzz checks (paths/methods/framing/
+  bodies/oversize/hostile names), all well-formed statuses
+- Gate: probes x2 + suite x2 + WSL spot; docs. **Windows done (probe 72/72
+  x2 + service-family probes x2 + suite 177/177 x2); WSL spot HELD
+  2026-10-16 (owner resource guidance -- other lanes hold the machine --
+  AND C-16 would red the search legs until v0.64.6; run both together in
+  the re-pin pass)**
+- Note: **XVC-C-18 filed during this slice** (JSON object-key reads
+  through a `match` binding return garbage; repro
+  `docs/repro/xv-object-key-iter/`, bus `REL-20261016-1541-xvector`;
+  copy-out workaround shipped). P1-P6 re-check at L-3: format identity is
+  re-exercised via the L-2 artifact in the move section; the
+  served-home variant re-runs with the socket transport.
 
 ## L-4 -- replica v1 (async catch-up, manual promotion)
 

@@ -216,3 +216,64 @@ sealed segments must be compacted before export; the source must be
 non-empty; attach targets a freshly created collection (same dim/metric;
 name is the caller's choice). None of these blocks the move flow; L-5
 adds compaction-aware moves + the drain CLI.
+
+## 10. Cluster router (stateless, L-3)
+
+The lattice router (`src/api/router.xi`) sits in front of N single-writer
+shards and forwards every collection-scoped request to the owning shard.
+It holds a MAPPING, never data state (P4): restart it any time; run
+several behind an edge proxy.
+
+**Mapping file** (JSON; owned by admin tooling, read by routers; every
+edit bumps `version`):
+
+    {
+      "version": 2,
+      "shards": [
+        {"id": "s1", "url": "http://127.0.0.1:7711"},
+        {"id": "s2", "url": "http://127.0.0.1:7712"}
+      ],
+      "collections": {"docs": "s2", "logs": "s2"}
+    }
+
+Loader rules (refuse-start on any violation): `version` is an integer
+>= 1; `shards` is a non-empty array of `{id, url}` with unique valid ids
+(1..64 chars of `[A-Za-z0-9_.-]`; urls 1..256 chars); `collections` maps
+valid names to KNOWN shard ids. Placement is EXPLICIT: a collection is
+routable only when the mapping declares it -- record the shard first,
+then create the collection through the router (unmapped names answer 404
+`not_found`).
+
+**Surfaces:** the route set is forwarded verbatim (the client's key
+travels with the request -- shards re-check auth independently, defense
+in depth): `POST /collections`, `/collections/{n}/points`
+(GET/POST/DELETE), `POST /search` (knn/range/pagination/batch),
+`GET /stats?collection={n}`. Router-owned: `GET /health` and
+`GET /version` (public; both surface `mapping_version`), `GET /collections`
+(the mapped names), and admin-scope `GET /cluster/mapping` (the placement
+view) plus `GET /cluster/stats` (the aggregate; a bare `GET /stats` with
+no collection parameter is the same aggregate). `/metrics` stays
+per-shard (scrape the shards directly).
+
+**Stale mapping (the move window):** when a forwarded request returns
+404, the router re-reads the mapping file once. A NEW generation is
+accepted only when every referenced shard has a local context; the
+request is retried once -- but only when the owner actually changed.
+Otherwise the original 404 passes through unchanged. Clients see at most
+one retry.
+
+**Aggregation:** `/cluster/stats` walks each shard's own `/collections`
+and `/stats?collection=` endpoints using `internal_key` (the router's
+configured shard credential; empty = no key). Unreachable or
+unauthenticated shards report `reachable: false` with zeros -- never
+guessed numbers.
+
+**Transport (v1):** forwarding is IN-PROCESS (the router embeds shard
+service contexts); the mapping already carries per-shard `url`s for the
+socket hop, which lands with the `xiom.http` client half
+(`REL-20261016-1129-xvector-2`). Until then the router ships as a
+library + gates (`probe_router_2shards`), not as a standalone binary.
+
+**Non-goals (v1):** cross-collection batches in one `/search` body,
+automatic placement, failover; intra-collection scatter-gather is L-6
+(phase B).

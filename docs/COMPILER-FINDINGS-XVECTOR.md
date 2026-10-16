@@ -2,12 +2,15 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
 > **Coordination bus (2026-10-10):** cross-lane items live in the
-> private `xiom-lang/xiom-relays` repo. As of 2026-10-16 **two XVECTOR
-> findings are open, both on v0.64.5**: **XVC-C-16** (linux-x64 HTTP-service
+> private `xiom-lang/xiom-relays` repo. As of 2026-10-16 **three XVECTOR
+> findings are open, all on v0.64.5**: **XVC-C-16** (linux-x64 HTTP-service
 > search miscompile, found on WSL during the archive pass;
-> `REL-20261015-2142-xvector`) and **XVC-C-17** (imported-type module-level
+> `REL-20261015-2142-xvector`), **XVC-C-17** (imported-type module-level
 > var stores drop pointer fields; found building the G-1 sync smoke;
-> `REL-20261015-2216-xvector`). File new findings as relay items, not here.
+> `REL-20261015-2216-xvector`), and **XVC-C-18** (JSON object Map-key
+> reads through a `match` enum binding return garbage; found on Windows
+> during the L-3 router slice; `REL-20261016-1541-xvector`). File new
+> findings as relay items, not here.
 
 # Compiler findings from the XVECTOR lane
 
@@ -33,11 +36,12 @@ builds+runs exit 0); **XVC-C-15** was fixed in v0.64.4 (m271) and stays
 green on v0.64.5; **XVC-C-16** is the one OPEN item (v0.64.5 linux-x64
 HTTP-service search miscompile; Windows green).
 
-**Current status (compiler v0.64.5, 2026-10-16): two XVECTOR findings are
+**Current status (compiler v0.64.5, 2026-10-16): three XVECTOR findings are
 open (XVC-C-16 linux-x64 service search; XVC-C-17 imported-type global
-pointer-field stores); everything else is VERIFIED FIXED (C-13 m320,
-C-14 m278+m298, C-15 m271, phantom imports m266/m267).** 17
-findings total (C-01..C-17), each with a repro bundle under `docs/repro/`:
+pointer-field stores; XVC-C-18 object-key reads through a match binding);
+everything else is VERIFIED FIXED (C-13 m320, C-14 m278+m298, C-15 m271,
+phantom imports m266/m267).** 18 findings total (C-01..C-18), each with a
+repro bundle under `docs/repro/`:
 
 | Range | Status |
 |---|---|
@@ -123,6 +127,7 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-11 | **[FIXED v0.64.4 (m271 `f69b542e`); verified 2026-10-12]** **XVC-C-15: literal stores into `Vec[Float32]` slots skip numeric narrowing** -- `a[1] = 7.0` (Float64 literal) stores the raw low 32 bits of the f64 constant (**0.0**); `b[1] = 7` (Int literal) stores the raw integer bits as the f32 pattern (**9.80908925027372e-45**); struct-field stores (`vector.data[1] = 7.0`) corrupt the same way. A Float32 variable, an explicit `... as Float32`, and `push(...)` all convert correctly (`Vec[Float64]` slots are also fine). Silent data corruption: no warning, no clang error. Found by `probe_quantization`'s constant-dimension check (a `c[1] = 7.0` setup line made training see 0). | `docs/repro/xv-f32-slot-literal-write/probe.xi` (6-shape matrix: A/B/E corrupted pre-fix, C/F/G controls green; v0.64.3 Windows exit **3**; **v0.64.4: exit 0, Windows + WSL**). | None needed post-fix: the repro exits 0 and the explicit `as Float32` workaround in `probe_quantization` was dropped 2026-10-12 (23 checks green x2; the constant-dim assertion is the unguarded regression line). | silent wrong values wherever a float literal is stored into a float vector element -- feeds training/encoding paths garbage |
 | 2026-10-15 | **[OPEN on v0.64.5 linux-x64 only]** **XVC-C-16: the HTTP service `/search` path miscompiles on linux-x64** -- the WSL full battery went RED on 6 service/search gates (`probe_http_service` 6 failed checks, `probe_service_limits` 3, `probe_service_auth` 3, `probe_http_fuzz` 1, `probe_metrics` 3, `probe_http_server` 3) while everything else (suite 177/177 x2, 38 other probes x2, sbom 44 modules unsafe=0, bench smoke, kill matrix) is green; the Windows battery on the same tree is ALL GATES GREEN. Symptom: every `/search` request through `http_service_handle` misbehaves although the collection exists -- knn/offset/batch/empty-collection -> 404 `{"error":"not found"}`, `mode:"range"` with no pagination fields -> 400 `"range mode does not support pagination"`. Direct controls in the same program are GREEN under the failing compiler (`select_collection` Ok; `search_request_new` + `search_with_request` -> 2 hits with exact field readback; json extraction -> "docs"), and the failure reproduces with the compiler's BUNDLED stdlib => context-sensitive miscompile of the service module's search-handler lowering (XVC-C-08/C-09 family), not the stdlib tree. Bisect: linux green v0.64.4 / red v0.64.5 (m313-m333 window; m328-m333 pin-gate round a candidate). | `docs/repro/xv-http-service-linux/` (probe + README with the full A/B table): v0.64.4 linux (sha256 72a131cc) exit 0; v0.64.5 linux (246e5e82) exit 3; v0.64.5 windows (bd71e2d3) exit 0; `probe_http_service` 0 fails vs 6 fails | none -- the v0.64.5 re-pin is **HELD** (Windows battery green, WSL red); filed `REL-20261015-2142-xvector` (high) | WSL/linux acceptance of the service read path red until fixed; smoke-only impact (engine probes + suite green) |
 | 2026-10-16 | **[OPEN on v0.64.5 Windows + WSL]** **XVC-C-17: imported-type module-level var stores drop pointer fields** -- `var GA: mutex.SyncMutex = ...; GA = mutex.SyncMutex{ locked: <non-null> }` reads back `locked == null`; same with `GA = mutex_new()`. A LOCAL type with identical shapes keeps the pointer (and scalar fields persist in both cases). Found building the G-1 thread + sync smoke: the natural global-lock pattern silently breaks (stdlib `requires` aborts "contract violated" or, without checks, an unshared lock = data race). Ruled out: pointer value magnitude/source, local-local copies, helper-read paths. Trigger = imported-type global declaration + whole-struct store. Cross-ref: engine W2 "&mut struct FIELD writes miscompile" (`REL-20261015-1538-engine`); hypothesis = declared-layout vs store-layout mismatch (XVC-C-14 class). | `docs/repro/xv-global-ptr-field/` (probe + README): v0.64.5 Windows + WSL exit 1 (A/B drop, local-type controls pass). No v0.64.4 A/B possible (cannot compile the current stdlib tree; bundled lib predates `SyncMutex`) | lane ships the Int-handle workaround (validated: spinlock exact across 4 real threads; `tests/probes/probe_thread_sync.xi`); filed `REL-20261015-2216-xvector` (high) | blocks global lock/handle sharing; defers the G-1 channel cross-thread leg |
+| 2026-10-16 | **[OPEN on v0.64.5 windows-x64]** **XVC-C-18: JSON object Map-key reads through a `match` enum binding return garbage Strs** -- iterating `entries.keys[i]` where `entries` is bound by `match cv { Object(entries) => ... }` (the keys of a parsed JSON object) reads pointer-shaped garbage instead of the key text; a `Str` charset validator therefore rejects VALID keys (found in `router_mapping_load`, L-3 slice: a valid mapping was refused with "collection name invalid"). Extra datum: `name.len()` on the inferred local is rejected at COMPILE time (`error[T001]: cannot call 'len' on this expression` -- receiver type unresolved) while the same value still coerces into a `Str` parameter => silent garbage instead of a type error. Controls that read correctly: an explicitly-typed local, and copy-out of `entries.keys` into a local Vec before the loop. | `docs/repro/xv-object-key-iter/` (probe + README): v0.64.5 Windows prints `key=[1946864332608]` -> exit 1; expected `key=[docs]`/`[logs]` -> exit 0. No v0.64.4 A/B (tree incompatibility); suspected C-09/C-14/C-16 family, sort against the m339 wave | lane ships the copy-out workaround (`var ks = entries.keys; var name = ks[i];`) -- `probe_router_2shards` 72/72 green; filed `REL-20261016-1541-xvector` (high) | silent wrong string data + valid inputs refused wherever object keys are consumed through match bindings |
 
 ## Notes for the compiler lane
 
@@ -166,6 +171,12 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   then `out\repro_global_ptr.exe` (v0.64.5: exit 1 -- the imported-type
   global stores drop the pointer; the local-type controls pass; WSL
   identical). Workaround pattern in `tests/probes/probe_thread_sync.xi`.
+- Object-key read repro (XVC-C-18, OPEN on v0.64.5 Windows):
+  `docs/repro/xv-object-key-iter/probe.xi` --
+  `.\scripts\build.ps1 docs\repro\xv-object-key-iter\probe.xi -Name xv_object_key_iter`
+  then `out\xv_object_key_iter.exe` (v0.64.5: exit 1 -- prints
+  `key=[1946864332608]` garbage; workaround: copy `entries.keys` into a
+  local Vec first; `.len()` on the raw read is a compile-time T001).
 - Bump procedure when the next archive lands: re-run all repro bundles FIRST,
   then the suite x2 + the probes, then re-pin in `SESSION.md` (done for
   v0.64.2 on 2026-10-09 -- see the re-test section).
