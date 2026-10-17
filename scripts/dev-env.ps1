@@ -5,6 +5,12 @@
 # LATEST compiler / stdlib / packages to harden the ecosystem by real-world
 # use. Record the exact versions and lane hashes in SESSION.md at every wrap.
 #
+# PACKAGES POLICY (owner directive 2026-10-17): always run against the
+# NEWEST registry package versions -- `xiom pkg info <pkg>` for each
+# consumed package (xiom.wal/metrics/rate/http/vectors/ann), then install
+# the latest into THIS XIOM_HOME and the WSL ~/.xvector-home before the
+# batteries. Bug fixes land there first; our feedback drives the hardening.
+#
 # ISOLATION (2026-10-10): concurrent sessions on the build machine had the
 # shared toolchain state deleted mid-battery (the global
 # %LOCALAPPDATA%\xiom\packages home, and parts of %LOCALAPPDATA%\xiom.new

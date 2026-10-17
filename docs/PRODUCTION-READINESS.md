@@ -10,14 +10,12 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-16, 84th pass (L-3 router v1 + L-4 replica v1 + L-5
-  move/drain landed; full Windows battery ALL GATES GREEN -- 51 probes x2;
-  a durable reopen-then-write loss was found and fixed in-lane
-  (`probe_reopen_write`); **v0.64.6 released + installed lane-local; the
-  Windows battery + the C-17/C-18 repros are green on it (C-16's fix is
-  shipped; its WSL acceptance leg + the WSL battery are deferred -- WSL
-  bash unavailable, owner-paused), so the re-pin close-out rides that
-  pass**)
+- **As of:** 2026-10-17, 85th pass (**v0.64.6 re-pin COMPLETE on both
+  platforms** -- full batteries ALL GATES GREEN (51 probes x2 + suite
+  177/177 x2) on stdlib tree `7073a64` + packages `53cba79b`/xiom.http
+  0.1.8; the C-16/C-17/C-18 repros green on WSL + Windows; zero XVECTOR
+  findings open; thread items closed; L-3/L-4/L-5 lattice slices landed
+  with the durable reopen-then-write fix)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.

@@ -151,7 +151,7 @@ imports VERIFIED FIXED** (C-15 workaround dropped from probe_quantization);
 **XVC-C-13/C-14 + the thread gate re-tested (still red/open)**; the new
 hard-error import gate caught stale pre-swap imports in the bench harness +
 repro copies (repaired to `xiom.vectors`); first-arm sweep + full batteries
-green both platforms; verdicts + closures filed on the bus -> 78th-80th passes: D5 durability delta (kill matrix 6/6 Windows + 6/6 WSL), D6 retention + snapshots (`probe_snapshot` 27/27), D7 multi-segment read path (roll/union queries over active + sealed, tombstone shadowing, bit-exact compaction, opt-in auto-roll policy; `probe_multisegment` 27/27; two gate-caught fixes `2552824` request-path union bypass + `71af343` replay symmetry) -> **81st pass (2026-10-15): v0.64.5 archive re-verification** -- assets sha256-verified and installed lane-local both platforms; **THREAD GATE GREEN on BOTH platforms** (real spawn+join: 3 workers exact sums, worker id != main; marks `M3: join ok 42`; was 0xC0000005/SIGSEGV) -> G phase flips; **C-13 verified fixed** (65 both platforms; m320), **C-14 verified fixed** (bundle build+run 0 both platforms; m278+m298), C-15 + phantom controls stay green; repro sweep 19/19 OK; **Windows battery ALL GATES GREEN** (suite 177/177 x2 + sbom 44 modules unsafe=0 + 44 probes x2 + bench smoke + kill matrix); **WSL battery RED on 6 service/search gates: XVC-C-16** -- v0.64.5 linux-x64 miscompiles the HTTP service `/search` path (v0.64.4 linux + v0.64.5 windows green, bundled-stdlib repro => compiler not stdlib; repro `docs/repro/xv-http-service-linux/`; filed `REL-20261015-2142-xvector`; **v0.64.5 re-pin HELD**); C-13/C-14 items verified+closed on the bus, thread items stay `fixed` pending the C-16 fix per the archive-pass protocol. -> **16th Oct (82nd+):** L-1 mote polish (quickstart + `probe_mote_embedded`, cid-collision fix) + L-2 collection move (`export_collection`/`attach_segment` + segment integrity footer + `probe_collection_move`); reference study 04 (lattice mechanics); lattice-tier wishlist asks relayed; mote/lattice naming + architecture plan + release ownership; stdlib POSIX break filed+verified+closed; C-16 acked (v0.64.6 fixer wave), C-17 open; v0.64.5 re-pin HELD. -> **83rd pass (2026-10-16): README product-tier section** (mote/lattice codenames, usage, features, served quickstart; stale socket/durability/segment rows truthed-up, `bc53af7`); **L-3 ROUTER v1 LANDED** (`src/api/router.xi`: versioned mapping file + strict loader, verbatim forwarding by collection with client-key pass-through, `/health` `/version` `/cluster/mapping` `/cluster/stats` + bare-`/stats` aggregate, retry-on-404 stale-mapping gated on version change + context coverage, in-process transport; `probe_router_2shards` = 48th probe, 72 checks x2 Windows; service-family probes x2; suite 177/177 x2); **XVC-C-18 filed** (object-key reads through a `match` binding return garbage; repro `docs/repro/xv-object-key-iter/`; copy-out workaround; bus `REL-20261016-1541-xvector`); WSL legs HELD (owner resource guidance + C-16); doorbell re-armed (3h); **then L-5 LANDED same day** (`POST /cluster/move` + `/cluster/drain`, compaction-aware export via D7, mapping flip + atomic persist; `probe_move_under_load` 41 checks x2 = 49th probe; affected probes x2 + suite 177/177 x2 + full Windows battery green); **then L-4 LANDED same day** (file-ship replica catch-up + manual promotion runbook; `probe_replica` 24 checks x2 = 50th probe; `probe_reopen_write` 6 checks x2 = 51st probe after finding + fixing a durable reopen-then-write loss in `engine_enable_durable` -- the segment file is the durable frontier; full battery ALL GATES GREEN, 51 probes x2; website tier copy approved on the bus). -> **v0.64.6 RELEASED 20:33Z same day**: installed lane-local (win sha256 `a32bf7fa`); Windows battery ALL GATES GREEN on it (51 probes x2) + C-17 (extended: Semaphore multi-field) + C-18 repros green; WSL bash unavailable (`execvpe` failure) -> WSL legs + the `-1627`/`-1402`/finding closures deferred; `scripts/sbom.ps1` now records the lane-local compiler; pins refreshed (stdlib tree 6375e50 / pin b81430b; packages b0ba2a6).
+green both platforms; verdicts + closures filed on the bus -> 78th-80th passes: D5 durability delta (kill matrix 6/6 Windows + 6/6 WSL), D6 retention + snapshots (`probe_snapshot` 27/27), D7 multi-segment read path (roll/union queries over active + sealed, tombstone shadowing, bit-exact compaction, opt-in auto-roll policy; `probe_multisegment` 27/27; two gate-caught fixes `2552824` request-path union bypass + `71af343` replay symmetry) -> **81st pass (2026-10-15): v0.64.5 archive re-verification** -- assets sha256-verified and installed lane-local both platforms; **THREAD GATE GREEN on BOTH platforms** (real spawn+join: 3 workers exact sums, worker id != main; marks `M3: join ok 42`; was 0xC0000005/SIGSEGV) -> G phase flips; **C-13 verified fixed** (65 both platforms; m320), **C-14 verified fixed** (bundle build+run 0 both platforms; m278+m298), C-15 + phantom controls stay green; repro sweep 19/19 OK; **Windows battery ALL GATES GREEN** (suite 177/177 x2 + sbom 44 modules unsafe=0 + 44 probes x2 + bench smoke + kill matrix); **WSL battery RED on 6 service/search gates: XVC-C-16** -- v0.64.5 linux-x64 miscompiles the HTTP service `/search` path (v0.64.4 linux + v0.64.5 windows green, bundled-stdlib repro => compiler not stdlib; repro `docs/repro/xv-http-service-linux/`; filed `REL-20261015-2142-xvector`; **v0.64.5 re-pin HELD**); C-13/C-14 items verified+closed on the bus, thread items stay `fixed` pending the C-16 fix per the archive-pass protocol. -> **16th Oct (82nd+):** L-1 mote polish (quickstart + `probe_mote_embedded`, cid-collision fix) + L-2 collection move (`export_collection`/`attach_segment` + segment integrity footer + `probe_collection_move`); reference study 04 (lattice mechanics); lattice-tier wishlist asks relayed; mote/lattice naming + architecture plan + release ownership; stdlib POSIX break filed+verified+closed; C-16 acked (v0.64.6 fixer wave), C-17 open; v0.64.5 re-pin HELD. -> **83rd pass (2026-10-16): README product-tier section** (mote/lattice codenames, usage, features, served quickstart; stale socket/durability/segment rows truthed-up, `bc53af7`); **L-3 ROUTER v1 LANDED** (`src/api/router.xi`: versioned mapping file + strict loader, verbatim forwarding by collection with client-key pass-through, `/health` `/version` `/cluster/mapping` `/cluster/stats` + bare-`/stats` aggregate, retry-on-404 stale-mapping gated on version change + context coverage, in-process transport; `probe_router_2shards` = 48th probe, 72 checks x2 Windows; service-family probes x2; suite 177/177 x2); **XVC-C-18 filed** (object-key reads through a `match` binding return garbage; repro `docs/repro/xv-object-key-iter/`; copy-out workaround; bus `REL-20261016-1541-xvector`); WSL legs HELD (owner resource guidance + C-16); doorbell re-armed (3h); **then L-5 LANDED same day** (`POST /cluster/move` + `/cluster/drain`, compaction-aware export via D7, mapping flip + atomic persist; `probe_move_under_load` 41 checks x2 = 49th probe; affected probes x2 + suite 177/177 x2 + full Windows battery green); **then L-4 LANDED same day** (file-ship replica catch-up + manual promotion runbook; `probe_replica` 24 checks x2 = 50th probe; `probe_reopen_write` 6 checks x2 = 51st probe after finding + fixing a durable reopen-then-write loss in `engine_enable_durable` -- the segment file is the durable frontier; full battery ALL GATES GREEN, 51 probes x2; website tier copy approved on the bus). -> **v0.64.6 RELEASED 20:33Z same day**: installed lane-local (win sha256 `a32bf7fa`); Windows battery ALL GATES GREEN on it (51 probes x2) + C-17 (extended: Semaphore multi-field) + C-18 repros green; WSL bash unavailable (`execvpe` failure) -> WSL legs + the `-1627`/`-1402`/finding closures deferred; `scripts/sbom.ps1` now records the lane-local compiler; pins refreshed (stdlib tree 6375e50 / pin b81430b; packages b0ba2a6). -> **2026-10-17: WSL root-caused** (the default distro had become `docker-desktop`, which has no bash; Ubuntu works with `wsl -d Ubuntu`); v0.64.6 installed on WSL (linux sha `82a7417b`); C-16/C-17/C-18 repros GREEN on WSL; `-1937` custom-home retest clean; **full WSL + Windows batteries ALL GATES GREEN on stdlib `7073a64` + packages `53cba79b` (xiom.http 0.1.8 installed in both lane homes)**; all findings + thread items CLOSED on the bus; **v0.64.6 re-pin COMPLETE**.
 
 ---
 
@@ -242,9 +242,9 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.6 installed lane-local (Windows)** (`out\toolchain`; old v0.64.5 kept at `out\toolchain-v0645`); released 2026-10-16T20:33Z (tag `v0.64.6`, run 38962236697; assets sha256-verified: win `a32bf7fa`); carries m334-m346: **C-16 (m339) + C-17 (m337) + C-18 (m346) fixes; Windows battery ALL GATES GREEN on it (51 probes x2 + suite + sbom + bench + kill matrix); C-17 (extended) + C-18 repros green; WSL legs DEFERRED (bash unavailable in this environment; owner-paused) -- items `-1627`/`-1402` + the findings close with that pass; WSL toolchain still v0.64.5** | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `6375e50` (2026-10-16 -- **the tree the v0.64.6 Windows battery ran on**; waves 165-171 in flight); release pin `stdlib-v0.64.6` = `b81430b` (e72288f win64 fp128 + waves 151-154); v0.64.5-era pins (`ea1c312b` tree / `092dfa0` tag) historical | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib` -- WSL side unusable at the moment) |
-| packages | lane HEAD `b0ba2a6` (2026-10-16, **repin v0.64.6** -- 566 records, SHA256-verified archive `a32bf7fa` -- the same asset set this lane verified; lane consumes the registry, not this checkout); `xiom.ann` 0.2.0 live (swap owner-gated); `xiom.http` 0.1.6 consumed (native 507); `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
+| compiler | **v0.64.6 pinned -- re-pin COMPLETE both platforms (2026-10-17)**; Windows `out\toolchain` (sha256 `a32bf7fa`; old v0.64.5 at `out\toolchain-v0645`) + WSL `~/.xvector-toolchain` (linux sha `82a7417b`; old at `~/.xvector-toolchain-v0645`; **always target `wsl -d Ubuntu` -- the default distro is docker-desktop and has no bash**); **full batteries ALL GATES GREEN both platforms** (suite 177/177 x2 + 51 probes x2 + sbom 46 + bench + kill matrix); carries m334-m346: C-16 (m339) + C-17 (m337) + C-18 (m346) fixes verified on both platforms; findings + thread items closed | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| stdlib | lane HEAD `7073a64` (2026-10-17 -- **the tree the re-pin batteries ran on BOTH platforms**; latest-tree protocol enforced each pass); release pin `stdlib-v0.64.6` = `b81430b`; v0.64.5-era pins (`ea1c312b` tree / `092dfa0` tag) historical | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
+| packages | lane HEAD `53cba79b` (2026-10-17, eco-v0.1.194+ live; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.8 + xiom.vectors 0.1.0 + xiom.ann 0.2.0**; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
 | xvector | `bc53af7` + this pass's commits (L-3 wrap; rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
@@ -1414,21 +1414,19 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > and start with section 1's ordered list -- the v0.64.6 Windows legs are
 > already green; the single pending pass is WSL (bash launchable?) for the
 > C-16 acceptance + WSL battery + the item closures, else in-lane G-2.
-- Compiler lane: **v0.64.6 RELEASED 2026-10-16T20:33Z, installed
-  lane-local (Windows; sha256-verified `a32bf7fa`; old v0.64.5 kept at
-  `out\toolchain-v0645`). Windows battery on it ALL GATES GREEN (51
-  probes x2 + suite 177/177 x2 + sbom 46 modules + bench + kill matrix);
-  C-17 repro (extended with the Semaphore multi-field variant) and the
-  C-18 repro green; `scripts/sbom.ps1` fixed to record the lane-local
-  compiler (it read the global install before).** XVC-C-16's fix (m339) +
-  C-17 (m337) + C-18 (m346) all ship in the archive. **The WSL legs
-  (C-16 acceptance repro + the WSL battery + the C-17/WSL spot + the
-  `-1937` retest) are DEFERRED -- WSL bash cannot launch in this
-  environment (`execvpe(bash)` fails; owner paused) -- so items
-  `-1627`/`-1402` and the three finding items stay OPEN until that
-  pass.** Compiler-side queued follow-up: a second layout-sensitive
-  create-path corruption that survives the SFB flag (own bisect, v0.64.7
-  plan).
+- Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
+  Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
+  `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
+  WSL must be targeted as `wsl -d Ubuntu` -- the default distro became
+  `docker-desktop`, which has no bash; that was the "WSL broken" red
+  herring. **Full batteries ALL GATES GREEN BOTH platforms** (suite
+  177/177 x2 + 51 probes x2 + sbom 46 + bench + kill matrix) on stdlib
+  tree `7073a64` + packages checkout `53cba79b`; **C-16 acceptance repro
+  exit 0 (WSL), C-17 7/7 (both), C-18 exit 0 (both); `-1937` custom-home
+  retest clean; all three findings + thread items `-1627`/`-1402` closed
+  on the bus; `scripts/sbom.ps1` now records the lane-local compiler.**
+  Compiler-side queued follow-up: a second layout-sensitive create-path
+  corruption that survives the SFB flag (own bisect, v0.64.7 plan).
   **XVC-C-17** (imported-type global pointer-field drop; bus
   `REL-20261015-2216-xvector`) has the fix INTEGRATED upstream (m337); the
   lane re-verify awaits the next candidate build. **XVC-C-18 NEW** (JSON
@@ -1447,11 +1445,11 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
   updated). WSL legs HELD (owner resource guidance -- other lanes hold the
   machine -- plus C-16 would red the service/search legs until v0.64.6).
   Slice state: `docs/checklists/lattice-v1.md`.
-- **WSL-pending queue (run the moment WSL frees up):** (a)
-  `REL-20261010-1937` retest + close (custom `XIOM_HOME` install on WSL
-  must land in the home, no `C:Userslefte` tree; re `-1150-packages-5`);
-  (b) L-3 WSL spot (`probe_router_2shards` + suite; document C-16 reds as
-  C-16, not L-3); (c) full WSL battery with the v0.64.6 pass.
+- **WSL queue: CLEARED (2026-10-17).** `-1937` retested clean (installs to
+  the custom home, no `C:Userslefte` tree; item already closed); the L-3
+  WSL spot + the full WSL battery are green on v0.64.6; use
+  `wsl -d Ubuntu` for every WSL command (the default distro is
+  docker-desktop).
 - Product tier: `xvector-mote` / `xvector-lattice` named + planned; README
   carries the tier story (codenames, usage, features, served quickstart).
   Mote publication -> packages lane via relay when package-ready; lattice
@@ -1464,20 +1462,19 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
   rely on it).
 
 **ORDERED NEXT WORK:**
-1. WSL pending-pass (the single remaining blocker; the v0.64.6 Windows
-   legs are already green): when WSL launches -- install v0.64.6 into
-   `~/.xvector-toolchain` (sha256 the linux asset from the same release),
-   retest + close `REL-20261010-1937`; run
-   `docs/repro/xv-http-service-linux` (expect exit 0), the C-17 repro +
-   the `probe_router_2shards` spot, then the FULL WSL battery
-   (`bash scripts/ci.sh`); on all-green: verify+close `-1627`/`-1402` +
-   the three finding items (`-2142`/`-2216`/`-1541-xvector`), finish the
-   re-pin close-out (OWNER-HANDOFF row + READINESS), signed commit +
-   relay push.
-2. WSL-pending queue above (the moment WSL frees up; do not fight other
-   lanes for the machine).
-3. In-lane: **G-2** (in-process concurrency / `XVECTORD_THREADS`), then
-   Q-a2b / M-P per the standing queue below; L-6 (phase B) after.
+1. ~~WSL pending-pass~~ **DONE 2026-10-17** (re-pin complete: both
+   batteries green on the latest trees; all findings + thread items
+   closed on the bus; pins recorded above).
+2. In-lane: **G-2** (in-process concurrency / `XVECTORD_THREADS`) -- the
+   channel cross-thread leg is now UNBLOCKED (C-17 fixed; retire the
+   Int-handle workaround per the G-2 plan) -- then Q-a2b / M-P per the
+   standing queue below; L-6 (phase B) after.
+3. **Latest-tree protocol (owner directive 2026-10-17): always run against
+   the newest stdlib checkout + newest registry packages** (pull
+   `E:\xiom-lang\stdlib` + `E:\xiom-packages\packages`; `xiom pkg info`
+   each consumed package and install the latest into BOTH lane homes
+   before the batteries; record the hashes/versions in section 0 at every
+   wrap).
 
 **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 flagship plan) +
 `docs/requirements/production-v1.md` + `docs/checklists/production-v1.md`.
@@ -2891,16 +2888,15 @@ the work order. Consumer lane: never edit E:\xiom-lang\stdlib,
 E:\xiom-lang\xiom, E:\xiom-packages\packages. Repo stays PRIVATE; no
 pushes except the private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
-STATE: **v0.64.6 RELEASED 2026-10-16T20:33Z, installed lane-local
-(Windows, sha256-verified `a32bf7fa`); Windows battery ALL GATES GREEN on
-it (51 probes x2 + suite 177/177 x2 + sbom 46 modules + bench + kill
-matrix); the C-17 repro (now incl. the Semaphore multi-field variant) and
-the C-18 repro are GREEN -- the m339/m337/m346 fixes are confirmed on
-Windows**; L-0..L-5 ALL LANDED; **the WSL legs are the single remaining
-blocker: WSL bash does not launch in this environment (`execvpe(bash)`
-fails; owner-paused), so the C-16 acceptance repro, the WSL battery, the
-`-1937` retest + close, and the `-1627`/`-1402` + finding-item closures
-all ride the WSL pass** (section 1 step 1). Do NOT fight for WSL.
+STATE: **v0.64.6 re-pin COMPLETE on BOTH platforms (2026-10-17)** --
+Windows (sha `a32bf7fa`) + WSL (linux `82a7417b`; target `wsl -d Ubuntu`,
+the default distro is docker-desktop and has no bash); full batteries ALL
+GATES GREEN both platforms (suite 177/177 x2 + 51 probes x2 + sbom 46 +
+bench + kill matrix) on stdlib tree `7073a64` + packages `53cba79b`
+(xiom.http 0.1.8 installed both lane homes); C-16/C-17/C-18 repros green
+both platforms; all findings + thread items closed on the bus; L-0..L-5
+ALL LANDED. **Next: G-2** (channel cross-thread leg unblocked by C-17;
+retire the Int-handle workaround), then Q-a2b / M-P; L-6 after.
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
@@ -2916,10 +2912,13 @@ Do this, in order:
    re -1150-packages-5); run the L-3 WSL spot (probe_router_2shards +
    suite; C-16 reds are expected -- document as C-16, not L-3); full WSL
    battery with the v0.64.6 pass.
-3) In-lane: G-2 (in-process concurrency / `XVECTORD_THREADS`), then Q-a2b
-   / M-P per section 1's queue; L-6 (phase B) after. Router follow-up
-   when the xiom.http client half lands: the socket transport replaces
-   the in-process forward at the
+3) In-lane: G-2 (in-process concurrency / `XVECTORD_THREADS`; the channel
+   cross-thread leg is unblocked, retire the Int-handle workaround), then
+   Q-a2b / M-P per section 1's queue; L-6 (phase B) after. **Protocol:
+   always pull the newest stdlib + packages and install the latest
+   registry versions into both lane homes before gates (record hashes at
+   the wrap).** Router follow-up when the xiom.http client half lands: the
+   socket transport replaces the in-process forward at the
    `router_forward_direct` seam.
 4) Keep a 2-4h doorbell armed (C-16/C-17/C-18 + archives + the
    WSL-pending queue). If the machine is contended, keep deferring WSL
