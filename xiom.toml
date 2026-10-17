@@ -32,4 +32,4 @@ xiom.vectors = "0.1.0"
 # embeddable protocol core). Consumption gates: probe_package_orbitdb /
 # probe_package_pulse.
 xiom.orbitdb = "0.2.1"
-xiom.pulse = "0.2.0"
+xiom.pulse = "0.2.1"
