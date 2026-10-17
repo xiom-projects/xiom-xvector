@@ -95,8 +95,21 @@ fn first_hit_id(body: Str) -> Int {
       var k: Int = i + needle.len();
       var end = k;
       while end < b.len() && b[end] != 44 && b[end] != 125 { end = end + 1; }
-      var r = parse_int_at(b, k);
-      if r.ok && r.pos <= end { return r.value; }
+      // Local digit parse: self-contained so the repro does not depend on
+      // the stdlib parse surface (it moved between waves; v0.64.6 rebuild).
+      var v: Int = 0;
+      var got: Bool = false;
+      while k < end {
+        var c = b[k];
+        if c >= 48 && c <= 57 {
+          v = v * 10 + ((c as Int) - 48);
+          got = true;
+          k = k + 1;
+        } else {
+          k = end;
+        }
+      }
+      if got { return v; }
       return -1;
     }
     i = i + 1;
