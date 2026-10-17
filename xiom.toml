@@ -25,7 +25,7 @@ xiom.metrics = "0.2.0"
 xiom.rate = "0.2.0"
 # Latest-tree protocol (owner directive 2026-10-17): bump to the newest
 # registry version each pass; 0.1.8 is live (hook + version seams).
-xiom.http = "0.1.8"
+xiom.http = "0.1.9"
 xiom.vectors = "0.1.0"
 # Embedded/lite tier products (new names, live 2026-10-17): ORBITDB
 # Satellite (embedded engine, zero registry deps) and PULSE Beacon (the
