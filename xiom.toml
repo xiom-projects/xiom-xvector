@@ -23,5 +23,13 @@ source-roots = [
 xiom.wal = "0.1.0"
 xiom.metrics = "0.2.0"
 xiom.rate = "0.2.0"
-xiom.http = "0.1.6"
+# Latest-tree protocol (owner directive 2026-10-17): bump to the newest
+# registry version each pass; 0.1.8 is live (hook + version seams).
+xiom.http = "0.1.8"
 xiom.vectors = "0.1.0"
+# Embedded/lite tier products (new names, live 2026-10-17): ORBITDB
+# Satellite (embedded engine, zero registry deps) and PULSE Beacon (the
+# embeddable protocol core). Consumption gates: probe_package_orbitdb /
+# probe_package_pulse.
+xiom.orbitdb = "0.2.1"
+xiom.pulse = "0.2.0"

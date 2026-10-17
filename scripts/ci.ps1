@@ -52,6 +52,8 @@ $probes = @(
   "probe_package_rate",
   "probe_package_http",
   "probe_package_vectors",
+  "probe_package_orbitdb",
+  "probe_package_pulse",
   "probe_http_server",
   "probe_json_fast",
   "probe_quantization",
