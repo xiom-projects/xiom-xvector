@@ -36,7 +36,11 @@ packages/xiom-vector/
 ## Vector + distance surface -- the `xiom.vectors` package (2026-10-10 atomic swap)
 The local `types/dense_vector` module was retired in the swap; these
 names now come from the registry package (extraction pins verified
-byte-identical; `docs/XIOM-VECTORS-EVAL.md`).
+byte-identical; `docs/XIOM-VECTORS-EVAL.md`). Package-internal `src/`
+modules import the vendored `src/primitives.xi` (`module
+xiom.vector.primitives`, same surface) so a carve of `src/` into the package
+does not self-import; consumers, probes and the suite keep importing
+`xiom.vectors` (SESSION.md section 1 item 0).
 Implemented: `Vector`, `new/set/get`, `vector_dot`, `vector_magnitude` (normalize/add/sub/scale pending).
 `Vector { data: Vec[Float32]; dimension: UInt }` -- the fundamental value type.
 - `Vector.new(dimension)` `requires: dimension > 0` `ensures: result.data.len() == dimension`

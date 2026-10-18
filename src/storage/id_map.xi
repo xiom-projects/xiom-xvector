@@ -3,8 +3,6 @@
 
 module xiom.vector.storage.id_map
 
-use xiom.core.ids;
-
 // Maps a logical VectorId to its physical location (segment + offset). This
 // indirection lets compaction relocate a point between segments without
 // changing its stable id. Phase 5 replaces the linear scan with a hash index.

@@ -20,7 +20,7 @@ module xiom.vector.api.json_fast
 // modes over an accept/reject + mutation matrix.
 
 use xiom.string.slice;
-use xiom.vectors;
+use xiom.vector.primitives;
 
 pub type FastUpsert = {
   ids: Vec[Int];

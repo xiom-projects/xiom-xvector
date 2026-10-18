@@ -11,7 +11,7 @@ module xiom.vector.query.search_request
 // Rewritten against the real extracted types (the pre-extraction file
 // carried inline mirrors).
 
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.payload.filter_ast;
 
 pub enum SearchMode {

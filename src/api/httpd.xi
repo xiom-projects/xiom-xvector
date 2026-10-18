@@ -21,7 +21,7 @@ use xiom.string.slice;
 use xiom.os.env;
 use xiom.net;
 use xiom.net.socket;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
 use xiom.vector.api.http_service;

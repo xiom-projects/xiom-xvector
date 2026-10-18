@@ -40,7 +40,7 @@ use xiom.convert;
 use xiom.num.float;
 use xiom.hash;
 use xiom.string.slice;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
 use xiom.vector.index.quantize;

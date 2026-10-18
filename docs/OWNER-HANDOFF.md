@@ -11,8 +11,9 @@ repository stays private; nothing below happens until the owner greenlights.
 - **Candidate:** `v1.0.0-rc.1` (annotated tag, local, no push). `VERSION` =
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
 - **Batteries (at the candidate pin, v0.64.7):** suite 177/177 x2 + SBOM/unsafe
-  gate (46 modules) + 53 probes x2 + bench smoke + kill matrix on Windows
-  **and** WSL -- ALL GATES GREEN (2026-10-18).
+  gate (47 modules) + 53 probes x2 + bench smoke + kill matrix on Windows
+  **and** WSL -- ALL GATES GREEN (2026-10-18, library-gate slice: Windows
+  full battery + WSL spot).
 - **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **88 %**
   today (81 % at the candidate; "hardened core"; remaining gaps are the
   gated durability primitives, concurrency, and release-runner activation,

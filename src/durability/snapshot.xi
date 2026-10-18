@@ -25,7 +25,7 @@ use xiom.string.split;
 use xiom.string.trim;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.durability.wal;
 use xiom.vector.durability.wal_file;
 

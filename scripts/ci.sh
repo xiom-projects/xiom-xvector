@@ -75,6 +75,12 @@ if ! bash scripts/run-suite.sh 2 240; then
   echo "ci: SUITE FAILED"
 fi
 
+echo "ci: library type-check (src as package, xiom.vectors absent)"
+if ! bash scripts/libcheck.sh 120; then
+  failures=$((failures + 1))
+  echo "ci: LIBCHECK FAILED"
+fi
+
 echo "ci: sbom + unsafe gate"
 if ! bash scripts/sbom.sh; then
   failures=$((failures + 1))
@@ -105,5 +111,5 @@ if [ "$failures" -ne 0 ]; then
   echo "ci: FAILED ($failures gate(s) red)"
   exit 1
 fi
-echo "ci: ALL GATES GREEN (suite x2 + sbom + ${#probes[@]} probes x2 + bench smoke + kill matrix)"
+echo "ci: ALL GATES GREEN (suite x2 + library type-check + sbom + ${#probes[@]} probes x2 + bench smoke + kill matrix)"
 exit 0

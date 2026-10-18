@@ -242,10 +242,10 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.7 pinned -- re-pin COMPLETE both platforms (2026-10-18)**; Windows `out\toolchain` (sha256 `16a436c4`; old v0.64.6 at `out\toolchain-v0646`) + WSL `~/.xvector-toolchain` (linux sha `153f0cc9`; old at `~/.xvector-toolchain-v0646`; **always target `wsl -d Ubuntu`**); release 2026-10-17T22:59Z (run 39076930839; linux-arm64 target NEW); **full batteries ALL GATES GREEN both platforms** (suite 177/177 x2 + 53 probes x2 + sbom 46 + bench + kill matrix); C-16/C-17/C-18 repros green both platforms; findings closed | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `6727526` (2026-10-18 -- **the tree the v0.64.7 batteries ran on BOTH platforms**; 44 commits past the v0.64.6 tag; release pin `stdlib-v0.64.7` = `1271dd5`); latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
-| packages | lane HEAD `2e7c5524` (2026-10-18; lane consumes the registry, not this checkout); **latest set installed both homes + declared in `xiom.toml`: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.2.1 (Beacon; `probe_package_pulse`)**; **pulse 0.2.1 artifact bug accepted upstream: reports `PULSE_PACKAGE_VERSION = "0.2.0"` -- `REL-20261017-2102-xvector`; 0.2.2 fix queued (our probe = close evidence)**; **MOTE PUBLISHED 2026-10-18: `xiom.vectors` 0.2.0 live in eco-v0.1.198** (sha256 `130427a5...`; owner-greenlit; carve from `c858ec1`; the carve's library-mode findings are in section 1 item 0); `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `bc53af7` + this pass's commits (L-3 wrap; rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| compiler | **v0.64.7 pinned -- re-pin COMPLETE both platforms (2026-10-18)**; Windows `out\toolchain` (sha256 `16a436c4`; old v0.64.6 at `out\toolchain-v0646`) + WSL `~/.xvector-toolchain` (linux sha `153f0cc9`; old at `~/.xvector-toolchain-v0646`; **always target `wsl -d Ubuntu`**); release 2026-10-17T22:59Z (run 39076930839; linux-arm64 target NEW); **full batteries ALL GATES GREEN both platforms** (suite 177/177 x2 + 53 probes x2 + sbom 46 + bench + kill matrix; this pass's library-gate battery: sbom 47, libcheck 47/47); C-16/C-17/C-18 repros green both platforms; findings closed | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| stdlib | lane HEAD `15495aa` (2026-10-18 -- **the tree the library-gate batteries ran on BOTH platforms**; release pin `stdlib-v0.64.7` = `1271dd5`); latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
+| packages | lane HEAD `0574c0d6` (2026-10-18; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.2.1 declared / 0.3.0 installed (Beacon; 0.3.0 live 2026-10-18 -- adoption pending)**; the 0.2.1/0.2.2 pulse version-identity note is superseded by 0.3.0; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
+| xvector | `995aa26` + this pass's library-gate commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -1423,6 +1423,26 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > `1807615e`), with a **recommendation to add a library type-check gate to
 > our CI**. Next: that gate + the portable fixes, then G-2b accept-loop
 > threads; the rc.1 release-notes refresh is still owed.
+>
+> **2026-10-18 (library-gate slice, this pass): ITEM 0 COMPLETE.** Ported
+> the carve's four fixes -- `src/primitives.xi` (`module
+> xiom.vector.primitives`, vendored 0.1.0 surface) with all 15 internal
+> imports switched off the public module; the dead `use xiom.core.ids;`
+> removed from `storage/id_map.xi`; `core.shim` imported in
+> `collection/schema.xi` for the contract; the `xiom.http` dependency
+> confirmed. Added `scripts/libcheck.ps1` + `libcheck.sh`, wired into
+> `ci.ps1`/`ci.sh`: per-module `--check` against a carve manifest
+> (`xiom.vectors` removed) PLUS an explicit import guard. Negative-tested
+> both ways -- the guard is authoritative because a module that also imports
+> the vendored primitives type-checked green while still importing the
+> public module (the installed package can satisfy the undeclared `use`).
+> Evidence: **Windows battery ALL GATES GREEN** (suite 177/177 x2 + libcheck
+> 47/47 + sbom 47 modules unsafe=0 + 53 probes x2 + bench smoke + kill
+> matrix); **WSL spot green** (libcheck 47/47 + suite 177/177 x2 +
+> `probe_vector_store` x2 + `probe_mote_embedded` x2) on v0.64.7, stdlib
+> `15495aa`, packages `0574c0d6`. Latest registry packages installed in BOTH
+> lane homes (`xiom.vectors` 0.2.0, `xiom.pulse` 0.3.0; manifest pins
+> unchanged for this slice). Next: G-2b accept-loop threads.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
@@ -1471,24 +1491,14 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
   rely on it).
 
 **ORDERED NEXT WORK:**
-0. **Library type-check gate + the carve's portable fixes (FIRST).** The
-   packages-lane carve (mote publication) exposed four gaps our batteries
-   never see -- probes run root programs and the 177/177 suite mirrors
-   types rather than compiling `src/` as a library:
-   (a) package-internal modules cannot `use xiom.vectors;` -- adopt the
-   carve's structure (a primitives module for the internal imports; keep
-   the public `xiom.vectors` module for consumers);
-   (b) delete the dangling `use xiom.core.ids;` in `src/storage/id_map.xi`
-   (no such module; unused);
-   (c) add the missing `xiom.vector.core.shim` import for
-   `is_valid_dimension` used in a contract in `src/collection/schema.xi`;
-   (d) keep the `xiom.http` dep declared (`api/http_service.xi` imports
-   `xiom.http.status`).
-   Then add a **library type-check gate** to `scripts/ci.ps1`/`ci.sh`
-   (type-check `src/` in package/library mode; the carve's 45-module tree
-   type-checks GREEN is the target shape) so the next carve cannot find
-   these. Reference: package commit `1807615e`, bus
-   `REL-20261018-1520-xvector`.
+0. ~~Library type-check gate + the carve's portable fixes~~ **DONE
+   2026-10-18** (this pass; evidence in the header note above):
+   `src/primitives.xi` vendored + 15 internal imports switched; dead
+   `xiom.core.ids` import removed; `core.shim` import added in
+   `collection/schema.xi`; `xiom.http` dep confirmed;
+   `scripts/libcheck.ps1`/`libcheck.sh` gate every `src/` module in package
+   mode and enforce the internal-import rule (wired into both CIs). Reference:
+   package carve commit `6933b2b3`, bus `REL-20261018-1520-xvector`.
 1. ~~WSL pending-pass~~ **DONE 2026-10-17** (re-pin complete: both
    batteries green on the latest trees; all findings + thread items
    closed on the bus; pins recorded above).
@@ -3049,4 +3059,79 @@ WSL spot before any wrap; one verified slice at a time; signed commits;
 keep edits scoped (a backstop session may share the tree); check free
 memory before trusting reds; bench loops hard-capped; toolchain/package
 homes are lane-local on purpose.
+```
+
+## 18. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-18; supersedes 17)
+
+> **NOTE:** the library-gate slice (section 1 item 0) is DONE. The carve's
+> four fixes are ported; `scripts/libcheck.ps1`/`libcheck.sh` type-check every
+> `src/` module against a carve manifest and enforce the internal-import rule,
+> wired into both CIs. Windows full battery + WSL spot are green. Immediate
+> work: **G-2b accept-loop threads**; the release-notes refresh is still owed.
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first: section 0 is
+the state, section 1 the handoff + ordered next work, THIS section the work
+order. Consumer lane: never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE; no pushes except the private
+xiom-relays bus. Identity "Lefteris Notas <lefterisnotas@gmail.com>";
+conventional commits, DCO -s.
+
+STATE (2026-10-18, after the library-gate slice): HEAD = the library-gate
+commit (parent 995aa26; 8+ commits ahead of origin). Compiler v0.64.7 pinned
+BOTH platforms (win sha 16a436c4 / linux 153f0cc9; WSL via `wsl -d Ubuntu` --
+the default distro is docker-desktop and has no bash). This slice: Windows
+full battery ALL GATES GREEN (suite 177/177 x2 + libcheck 47/47 + sbom 47
+modules unsafe=0 + 53 probes x2 + bench smoke + kill matrix); WSL spot green
+(libcheck 47/47 + suite 177/177 x2 + probe_vector_store x2 +
+probe_mote_embedded x2) on stdlib 15495aa + packages 0574c0d6.
+`xiom.vectors` 0.2.0 (MOTE, eco-v0.1.198) and `xiom.pulse` 0.3.0 are installed
+in BOTH lane homes; the manifest still pins vectors 0.1.0 + pulse 0.2.1
+(pulse 0.3.0 adoption pending). L-0..L-5 all landed; G-1 COMPLETE; MOTE
+PUBLISHED. Open: XVC-C-19 (v0.64.7 compiler HANG on module-level
+function-call/allocating `var` initializers; repro docs/repro/xv-global-init-hang/,
+bus REL-20261018-1518-xvector; never put call/allocate initializers at module
+level). The rc.1 GitHub release set remains owner-gated (repo private); the
+release-notes refresh is OWED.
+
+Do this, in order:
+1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
+   merge --ff-only; python tools/relay.py view --lane xvector. Handle
+   anything new; watch for a compiler archive answering XVC-C-19, pulse 0.3.0
+   follow-ups, and packages-lane carve/mote follow-ups.
+2) **G-2b accept-loop threads** (`XVECTORD_THREADS`: accept in one thread,
+   handle per connection in workers, ALL engine calls under one coarse
+   mutex). Gates: existing service probes + probe_http_fuzz x2 unchanged; a
+   NEW concurrency probe (N clients x deterministic ops -> exact results);
+   quick_bench QPS delta; graceful shutdown joins. Then Q-a2b / M-P; L-6
+   (phase B) after. XVC-C-19 blocks module-level container globals, NOT the
+   engine mutex (imported-type global set in main; scalar/null literals only).
+3) **Release notes refresh** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md` is dated
+   2026-10-09; the owner reviews it before the rc.1 GitHub release): cover
+   D5-D7 durability, SQ, filters/planner, multi-segment, lattice L-1..L-5,
+   threads G-1, the package adoptions, the 53-probe batteries, the mote
+   publication, the library type-check gate, and lattice release ownership.
+4) **Pulse 0.3.0 adoption** (installed both homes; manifest 0.2.1): bump
+   `xiom.toml`, re-run `probe_package_pulse` (the stateful HookCtx seam may
+   need probe updates), then record the pin.
+5) Keep a 2-4h doorbell armed (C-19 archive, pulse 0.3.0, trees, asks).
+6) Latest-tree protocol EVERY pass: pull E:\xiom-lang\stdlib +
+   E:\xiom-packages\packages; `xiom pkg info` each consumed package
+   (wal/metrics/rate/http/vectors/ann/orbitdb/pulse) and install the latest
+   into BOTH lane homes before gates; record hashes in section 0 at the wrap.
+
+Standing owner items: rc.1 GitHub release greenlight (OWNER-HANDOFF ready);
+ann-swap greenlight. Discipline: struct literals list every field; locals
+initialized; Str by value (XVC-C-13); json.json_* qualified; bodies as
+BYTES; copy nested map/vec data into locals before iterating (XVC-C-18);
+NO module-level initializers that call or allocate (XVC-C-19); src/ modules
+import `xiom.vector.primitives`, NEVER `xiom.vectors` (run
+`scripts/libcheck.ps1` or `scripts/libcheck.sh` before a carve/wrap; the
+import guard is the authoritative check -- negative-test it if edited); the
+SBOM gate scans the literal token "unsafe" in comments too; suite x2 + WSL
+spot before any wrap; one verified slice at a time; signed commits; keep
+edits scoped (a backstop session may share the tree); check free memory
+before trusting reds; bench loops hard-capped; toolchain/package homes are
+lane-local on purpose.
 ```

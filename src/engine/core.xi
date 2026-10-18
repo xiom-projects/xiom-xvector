@@ -15,7 +15,7 @@ use xiom.vector.core.shim;
 use xiom.io;
 use xiom.convert;
 use xiom.string.slice;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.storage.vector_store;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;

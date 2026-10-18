@@ -7,7 +7,7 @@ module xiom.vector.query.search_service
 // filtered). Extracted from the consolidated engine (post-AUDIT module
 // tree).
 
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.storage.vector_store;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
