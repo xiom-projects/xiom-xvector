@@ -1449,6 +1449,14 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > violation). The slice was reverted; repro
 > `docs/repro/xv-global-engine-mutation/`, bus `REL-20261018-1815-xvector`
 > (high). Next: Q-a2b / M-P; the release-notes refresh is still owed.
+>
+> **2026-10-18 19:45Z: PAUSE for the night.** Tree clean at `4c8058a` +
+> this note (10 commits ahead of origin; repo stays private). G-2b remains
+> BLOCKED on XVC-C-20 (bus `REL-20261018-1815-xvector`; repro
+> `docs/repro/xv-global-engine-mutation/`; the threaded slice was reverted).
+> Doorbell CANCELLED for the pause. Next session: section 18 -- Q-a2b / M-P,
+> then the release-notes refresh; watch the bus for a compiler archive
+> answering XVC-C-19/C-20 before re-opening G-2b.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
