@@ -32,7 +32,10 @@ cd "$repo_root"
 
 timeout_sec="${1:-120}"
 src="$repo_root/src"
-work="$repo_root/out/libcheck"
+# The work tree lives OUTSIDE the repo: the compiler catalogs every .xi it
+# finds under the project, so an out/libcheck copy would be scanned as a
+# duplicate module set by every later build.
+work="${TMPDIR:-/tmp}/xvector-libcheck"
 
 if [ ! -d "$src" ]; then
   echo "libcheck: FAILED -- src/ missing"
