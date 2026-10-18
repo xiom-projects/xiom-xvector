@@ -35,7 +35,10 @@ Set-Location $repoRoot
 . "$PSScriptRoot/lib.ps1"
 
 $src = Join-Path $repoRoot "src"
-$work = Join-Path $repoRoot "out/libcheck"
+# The work tree lives OUTSIDE the repo: the compiler catalogs every .xi it
+# finds under the project, so an out/libcheck copy would be scanned as a
+# duplicate module set by every later build.
+$work = Join-Path ([System.IO.Path]::GetTempPath()) "xvector-libcheck"
 if (-not (Test-Path -LiteralPath $src)) { Write-Host "libcheck: FAILED -- src/ missing"; exit 1 }
 
 # Package-import guard (the carve rule): src/ modules are package-internal and
