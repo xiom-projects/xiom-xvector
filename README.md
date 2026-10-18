@@ -78,6 +78,7 @@ fn main() -> Int {
 
 ```
 src/
+|-- primitives.xi             vendored xiom.vectors surface (package-internal imports; carve portability)
 |-- core/shim.xi              xiom-core stand-ins (CoreError/ids/metrics/predicates)
 |-- error.xi                  VectorError taxonomy (-> CoreError)
 |-- ids.xi                    PointId + reuse of core Collection/Vector/SegmentId

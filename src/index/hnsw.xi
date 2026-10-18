@@ -31,7 +31,7 @@ module xiom.vector.index.hnsw
 // max(k, ef). Results are `Vec[Neighbor]` with USER ids.
 
 use xiom.num.float;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.storage.vector_store;
 
 // Fixed layer capacity (levels 0..7; p(level >= l) ~ ml^-l, so > 3 is rare).

@@ -137,6 +137,17 @@ src/
     `-- metrics.xi        histogram + service counters + log ring    [NEW 2026-10-09]
 ```
 
+**Carve portability (2026-10-18).** The dense-vector primitive surface is
+provided to consumers by the registry `xiom.vectors` package and vendored
+package-internally as `src/primitives.xi` (`module xiom.vector.primitives`,
+byte-identical to the registry 0.1.0 surface except the module declaration).
+Every `src/` module imports the vendored module, never `xiom.vectors`, so
+carving `src/` into the package cannot self-import; `scripts/libcheck.ps1` /
+`scripts/libcheck.sh` enforce the import rule and type-check every module in
+package mode (SESSION.md section 1 item 0). The `types/*` and
+`query/topk_heap.xi` entries in the tree above are the historical extraction
+plan, retired by the registry swap.
+
 ### Dependency direction
 
 Higher layers depend on lower layers; there are no upward dependencies:
@@ -152,7 +163,8 @@ engine.core -> { core.shim, query.search_service -> storage.vector_store /
 index.flat_index -> query.search_service (delegates exact scan)
 index.hnsw -> types.{dense_vector, neighbor, metric} + storage.vector_store
                (graph codec; no query dependency)
-index.quantize -> xiom.vectors (distances, magnitude, TopKHeap) +
+index.quantize -> xiom.vector.primitives (vendored; registry xiom.vectors
+               for consumers) (distances, magnitude, TopKHeap) +
                storage.vector_store (SQ8 training + codec + query tables +
                the two-tier scan; returns QuantHit, no query dependency;
                reference study 02 Q-a, gates tests/probes/probe_quantization)
@@ -167,7 +179,7 @@ durability -> xiom.wal (registry package 0.1.0; record-vocabulary
              alignment + D5 migration target; docs/XIOM-WAL-ADOPTION.md)
 payload.filter_eval -> payload.filter_ast -> payload.payload
 durability.manifest_file -> durability.wal_file (shared byte parsers) +
-                            xiom.vectors metric codes + index.ann_index (stable codes)
+                            xiom.vector.primitives metric codes + index.ann_index (stable codes)
 everything fallible -> core.shim (CoreError; the local stand-in until the
                        xiom.core porter flow maps it onto the package)
 ```

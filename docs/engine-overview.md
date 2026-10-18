@@ -31,6 +31,11 @@ durably.
 | **Durability** | `durability/write_ahead_events` | Vector events on the shared core WAL. |
 | **Errors/Ids** | `error`, `ids` | Typed failures + identity (bridged to `xiom-core`). |
 
+The value types and distance kernels come from the registry `xiom.vectors`
+package for consumers; `src/primitives.xi` (`module xiom.vector.primitives`)
+is the vendored package-internal copy every `src/` module imports, so carving
+`src/` into the package does not self-import (SESSION.md section 1 item 0).
+
 The **substrate** below all of this is `xiom-core` (see
 [`core-vs-vector.md`](core-vs-vector.md)).
 

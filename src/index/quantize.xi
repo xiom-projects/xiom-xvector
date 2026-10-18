@@ -28,7 +28,7 @@ module xiom.vector.index.quantize
 // bounded and pinned by `probe_quantization` (study 02 error story).
 
 use xiom.math;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.storage.vector_store;
 
 pub type SQ8 = {

@@ -76,6 +76,10 @@ Write-Host "ci: suite x$SuiteRuns"
 & "$PSScriptRoot/run-suite.ps1" -Runs $SuiteRuns
 if ($LASTEXITCODE -ne 0) { $failures = $failures + 1; Write-Host "ci: SUITE FAILED" }
 
+Write-Host "ci: library type-check (src as package, xiom.vectors absent)"
+& "$PSScriptRoot/libcheck.ps1"
+if ($LASTEXITCODE -ne 0) { $failures = $failures + 1; Write-Host "ci: LIBCHECK FAILED" }
+
 Write-Host "ci: sbom + unsafe gate"
 & "$PSScriptRoot/sbom.ps1"
 if ($LASTEXITCODE -ne 0) { $failures = $failures + 1; Write-Host "ci: SBOM FAILED" }
@@ -107,5 +111,5 @@ if ($failures -ne 0) {
   Write-Host "ci: FAILED ($failures gate(s) red)"
   exit 1
 }
-Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + sbom + $($probes.Count) probes x$ProbeRuns + bench smoke + kill matrix)"
+Write-Host "ci: ALL GATES GREEN (suite x$SuiteRuns + library type-check + sbom + $($probes.Count) probes x$ProbeRuns + bench smoke + kill matrix)"
 exit 0

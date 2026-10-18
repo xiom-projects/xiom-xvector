@@ -12,7 +12,7 @@ module xiom.vector.engine
 
 use xiom.vector.engine.core;
 use xiom.vector.core.shim;
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.vector.index.ann_index;
 use xiom.vector.durability.wal;
 use xiom.vector.payload.payload;

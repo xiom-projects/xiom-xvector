@@ -8,7 +8,7 @@ module xiom.vector.storage.vector_store
 // module tree).
 
 use xiom.num.float;
-use xiom.vectors;
+use xiom.vector.primitives;
 
 pub type VectorIndex = {
   vectors: Vec[Vector];

@@ -3,8 +3,9 @@
 
 module xiom.vector.collection.schema
 
-use xiom.vectors;
+use xiom.vector.primitives;
 use xiom.core.contracts;
+use xiom.vector.core.shim;
 
 // The immutable description of a collection: its vector dimension, distance
 // metric, normalization policy, and the payload fields eligible for filtering.
