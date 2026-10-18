@@ -1442,7 +1442,13 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > `probe_vector_store` x2 + `probe_mote_embedded` x2) on v0.64.7, stdlib
 > `15495aa`, packages `0574c0d6`. Latest registry packages installed in BOTH
 > lane homes (`xiom.vectors` 0.2.0, `xiom.pulse` 0.3.0; manifest pins
-> unchanged for this slice). Next: G-2b accept-loop threads.
+> unchanged for this slice). **G-2b attempt (same day, doorbell pass):
+> BLOCKED on XVC-C-20** -- the threaded accept loop was implemented and the
+> server started, but a module-level `VectorEngine` global loses mutations
+> through `&mut` (create Ok, count 0, second create Ok; upsert contract
+> violation). The slice was reverted; repro
+> `docs/repro/xv-global-engine-mutation/`, bus `REL-20261018-1815-xvector`
+> (high). Next: Q-a2b / M-P; the release-notes refresh is still owed.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
@@ -1504,16 +1510,19 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
    closed on the bus; pins recorded above).
 2. In-lane: **G-1 is COMPLETE (2026-10-18)** -- natural module-level globals
    + the cross-thread mailbox leg are green x2 both platforms; the
-   Int-handle workaround is retired. **Next: G-2b accept-loop threads**
-   (`XVECTORD_THREADS`: accept in one thread, handle per connection in
-   workers, ALL engine calls under one coarse mutex; gates = existing
-   service probes + `probe_http_fuzz` x2 unchanged, a NEW concurrency probe
-   (N clients x deterministic ops -> exact results), quick_bench QPS delta,
-   graceful shutdown joins). Then Q-a2b / M-P per the standing queue below;
-   L-6 (phase B) after.
-   Note: **XVC-C-19 OPEN** (v0.64.7 global-initializer compiler hang) -- it
-   blocks module-level container globals, NOT G-2b's engine mutex (which is
-   an imported-type global set in main; scalar/null literals only).
+   Int-handle workaround is retired. **G-2b accept-loop threads: BLOCKED
+   2026-10-18 on XVC-C-20.** The threaded design was implemented and the
+   server started, but mutations through `&mut` on a module-level
+   `VectorEngine` global do not persist (create Ok, count 0, second create
+   also Ok; upsert contract violation), so every request after setup saw an
+   empty engine. Slice reverted; repro `docs/repro/xv-global-engine-mutation/`;
+   bus `REL-20261018-1815-xvector` (high). Do NOT retry until the compiler
+   keeps large imported-type global state (or ships a supported sharing
+   handle). **Next: Q-a2b / M-P** per the standing queue below; the release
+   notes refresh; L-6 (phase B) after.
+   Note: **XVC-C-19 OPEN** (v0.64.7 global-initializer hang; container
+   globals) and **XVC-C-20 OPEN** (large aggregate global mutation loss);
+   G-1's small `SyncMutex`/`AtomicInt` globals remain green.
 3. **Latest-tree protocol (owner directive 2026-10-17): always run against
    the newest stdlib checkout + newest registry packages** (pull
    `E:\xiom-lang\stdlib` + `E:\xiom-packages\packages`; `xiom pkg info`
@@ -3067,7 +3076,9 @@ homes are lane-local on purpose.
 > four fixes are ported; `scripts/libcheck.ps1`/`libcheck.sh` type-check every
 > `src/` module against a carve manifest and enforce the internal-import rule,
 > wired into both CIs. Windows full battery + WSL spot are green. Immediate
-> work: **G-2b accept-loop threads**; the release-notes refresh is still owed.
+> work: **G-2b is BLOCKED on XVC-C-20** (2026-10-18: engine-global mutation
+> loss; slice reverted, repro filed); next is **Q-a2b / M-P**, then the
+> release-notes refresh (still owed).
 
 ```
 You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
@@ -3092,26 +3103,30 @@ in BOTH lane homes; the manifest still pins vectors 0.1.0 + pulse 0.2.1
 PUBLISHED. Open: XVC-C-19 (v0.64.7 compiler HANG on module-level
 function-call/allocating `var` initializers; repro docs/repro/xv-global-init-hang/,
 bus REL-20261018-1518-xvector; never put call/allocate initializers at module
-level). The rc.1 GitHub release set remains owner-gated (repo private); the
-release-notes refresh is OWED.
+level) and **XVC-C-20 NEW** (module-level `VectorEngine` global loses
+mutations through `&mut`; repro docs/repro/xv-global-engine-mutation/; bus
+REL-20261018-1815-xvector; **G-2b blocked**, threaded slice implemented and
+reverted). The rc.1 GitHub release set remains owner-gated (repo private);
+the release-notes refresh is OWED.
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
    merge --ff-only; python tools/relay.py view --lane xvector. Handle
    anything new; watch for a compiler archive answering XVC-C-19, pulse 0.3.0
    follow-ups, and packages-lane carve/mote follow-ups.
-2) **G-2b accept-loop threads** (`XVECTORD_THREADS`: accept in one thread,
-   handle per connection in workers, ALL engine calls under one coarse
-   mutex). Gates: existing service probes + probe_http_fuzz x2 unchanged; a
-   NEW concurrency probe (N clients x deterministic ops -> exact results);
-   quick_bench QPS delta; graceful shutdown joins. Then Q-a2b / M-P; L-6
-   (phase B) after. XVC-C-19 blocks module-level container globals, NOT the
-   engine mutex (imported-type global set in main; scalar/null literals only).
+2) **G-2b is BLOCKED (XVC-C-20)** -- do NOT retry the threaded accept loop.
+   The engine cannot be shared through a module-level global on v0.64.7
+   (mutations through `&mut` are lost; see docs/repro/xv-global-engine-mutation/).
+   Watch the bus for a compiler archive answering XVC-C-19/C-20; only then
+   re-open G-2b. **Next in-lane: Q-a2b (SQ two-tier rescore on sealed scans)
+   or M-P per section 1's queue**, then the release notes; L-6 (phase B)
+   after.
 3) **Release notes refresh** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md` is dated
    2026-10-09; the owner reviews it before the rc.1 GitHub release): cover
    D5-D7 durability, SQ, filters/planner, multi-segment, lattice L-1..L-5,
    threads G-1, the package adoptions, the 53-probe batteries, the mote
    publication, the library type-check gate, and lattice release ownership.
+   Note the G-2b/XVC-C-20 status honestly.
 4) **Pulse 0.3.0 adoption** (installed both homes; manifest 0.2.1): bump
    `xiom.toml`, re-run `probe_package_pulse` (the stateful HookCtx seam may
    need probe updates), then record the pin.
