@@ -40,13 +40,14 @@ verification completed 2026-10-17 -- the WSL repros are green (C-16
 acceptance exit 0) and the full WSL battery is ALL GATES GREEN on
 stdlib tree `7073a64`; the v0.64.6 re-pin is COMPLETE.**
 
-**Current status (compiler v0.64.6, 2026-10-17): ZERO XVECTOR findings
-open -- all three shipped fixes are VERIFIED on BOTH platforms: C-16
-(m339, linux clang SFB pass; WSL acceptance repro exit 0), C-17 (m337;
-7/7 incl. the Semaphore multi-field variant), C-18 (m346; garbage-key
-repro green). Full batteries ALL GATES GREEN both platforms on stdlib
-tree `7073a64`; the v0.64.6 re-pin is COMPLETE. Everything else VERIFIED
-FIXED (C-13 m320, C-14 m278+m298, C-15 m271, phantom imports m266/m267).** 18 findings total (C-01..C-18), each with a
+**Current status (compiler v0.64.7, 2026-10-18): ZERO XVECTOR findings
+open -- all three shipped fixes stay VERIFIED on BOTH platforms: C-16
+(m339, linux clang SFB pass; WSL acceptance repro exit 0 on v0.64.7),
+C-17 (m337; 7/7 incl. the Semaphore multi-field variant on v0.64.7),
+C-18 (m346; garbage-key repro green on v0.64.7). Full batteries ALL
+GATES GREEN both platforms on stdlib tree `6727526`; the v0.64.7 re-pin
+is COMPLETE. Everything else VERIFIED FIXED (C-13 m320, C-14 m278+m298,
+C-15 m271, phantom imports m266/m267).** 18 findings total (C-01..C-18), each with a
 repro bundle under `docs/repro/`:
 
 | Range | Status |
