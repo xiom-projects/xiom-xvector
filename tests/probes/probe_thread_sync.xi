@@ -1,23 +1,23 @@
 // Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// G-1 thread + sync smoke (v0.64.5: the real-spawn thread gate is GREEN, so
-// the lane gets its first cross-thread acceptance in CI). Promotes the
-// docs/repro/xv-thread-abi acceptance and adds the sync smoke:
+// G-1 thread + sync smoke (upgraded on v0.64.7 -- XVC-C-17 verified fixed):
 //   1) spawn/join: 3 workers return exact values; a worker's OS thread id
 //      differs from main; available_parallelism() >= 1.
-//   2) mutex-guarded shared counter: 4 workers x 500 increments through the
-//      real spinlock (xiom.sync.mutex) -> exact total, no lost updates.
-//   3) atomic counter: 4 workers x 500 atomic_fetch_add -> exact total.
-//   4) channel contract (same-thread): bounded capacity, FIFO order, close
-//      semantics. The CROSS-THREAD producer/consumer leg is deferred: the
-//      channel is a Vec-backed value with no handle form and no internal
-//      lock, so sharing it across real threads needs the XVC-C-17 fix
-//      (or an explicit lock around a future handle-based channel).
-// NOTE (XVC-C-17, REL-20261015-2216-xvector): module-level vars whose type
-// is an IMPORTED struct drop pointer fields on assignment, so the shared
-// handles travel as Int globals and are reconstructed as local handles
-// inside each worker (validated pattern; see docs/repro/xv-global-ptr-field).
+//   2) mutex-guarded shared counter: 4 workers x 500 increments through a
+//      REAL module-level imported-type SyncMutex global (the natural
+//      pattern; the Int-handle workaround is RETIRED -- C-17 fixed).
+//   3) atomic counter: 4 workers x 500 atomic_fetch_add on a module-level
+//      AtomicInt global -> exact total.
+//   4) channel contract (same-thread): bounded capacity, FIFO order, close.
+//   5) CROSS-THREAD producer/consumer: 2 real producer threads x 200
+//      handoffs through a scalar single-slot mailbox guarded by the shared
+//      module-level spinlock (natural imported-type global). Scalars only:
+//      a module-level container initializer (channel_new / Vec::new at load
+//      time) hangs the v0.64.7 compiler and would also allocate before
+//      runtime init, so the cross-thread CHANNEL leg stays blocked on a
+//      stdlib channel handle form; the scalar mailbox proves the same
+//      contract (exact totals + per-producer FIFO + cross-thread lock).
 // Exit = failed checks (0 = green).
 
 module probe_thread_sync
@@ -29,11 +29,15 @@ use xiom.sync.channel;
 use xiom.io;
 use xiom.convert;
 
-// Shared state (Int handles; see the XVC-C-17 note above).
-var G_LOCKP: Int = 0;      // address of the SyncMutex owner flag
-var G_ATOM_ADDR: Int = 0;  // address of the AtomicInt cell
-var G_COUNT: Int = 0;      // guarded by the spinlock
-var G_ITERS: Int = 500;    // per-worker iterations
+// Shared state: NATURAL imported-type globals (C-17 fix under test).
+// Scalars / null-only literals: global initializers must not allocate.
+var G_M: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
+var G_ATOM: atomics.AtomicInt = atomics.AtomicInt{ ptr: null };
+var G_SLOT: Int = 0;
+var G_FULL: Bool = false;
+var G_COUNT: Int = 0;
+var G_ITERS: Int = 500;
+var G_SENT_PER: Int = 200;
 
 fn check(ok: Bool, name: Str, fails: Int) -> Int {
   if ok { io.println("  [PASS] " + name); return fails; }
@@ -47,17 +51,14 @@ fn work_twenty() -> Int { return 20; }
 fn work_thirty() -> Int { return 30; }
 fn work_whoami() -> Int { return current_thread_id(); }
 
-// ---- part 2: mutex-guarded counter -----------------------------------------
+// ---- part 2: mutex-guarded counter (natural global handle) ----------------
 
 fn bump_locked() -> Int {
-  var p: *Int = null;
-  unsafe { p = G_LOCKP as *Int; }
-  var m = mutex.SyncMutex{ locked: p };
   var i: Int = 0;
   while i < G_ITERS {
-    mutex.mutex_lock(&mut m);
+    mutex.mutex_lock(&mut G_M);
     G_COUNT = G_COUNT + 1;
-    mutex.mutex_unlock(&mut m);
+    mutex.mutex_unlock(&mut G_M);
     i = i + 1;
   }
   return 0;
@@ -66,16 +67,37 @@ fn bump_locked() -> Int {
 // ---- part 3: atomic counter ------------------------------------------------
 
 fn bump_atomic() -> Int {
-  var p: *Int = null;
-  unsafe { p = G_ATOM_ADDR as *Int; }
-  var a = atomics.AtomicInt{ ptr: p };
   var i: Int = 0;
   while i < G_ITERS {
-    atomics.atomic_fetch_add(&mut a, 1);
+    atomics.atomic_fetch_add(&mut G_ATOM, 1);
     i = i + 1;
   }
   return 0;
 }
+
+// ---- part 5: cross-thread single-slot mailbox producers --------------------
+
+fn produce_worker(worker: Int) -> Int {
+  var n: Int = 0;
+  while n < G_SENT_PER {
+    var v = worker * 1000 + n;
+    var placed: Bool = false;
+    while !placed {
+      mutex.mutex_lock(&mut G_M);
+      if !G_FULL {
+        G_SLOT = v;
+        G_FULL = true;
+        placed = true;
+      }
+      mutex.mutex_unlock(&mut G_M);
+    }
+    n = n + 1;
+  }
+  return 0;
+}
+
+fn produce_a() -> Int { return produce_worker(1); }
+fn produce_b() -> Int { return produce_worker(2); }
 
 fn main() -> Int {
   io.println("=== xvector probe: thread + sync smoke (G-1) ===");
@@ -116,55 +138,45 @@ fn main() -> Int {
     + convert.int_to_string(main_id) + ")", fails);
   fails = check(available_parallelism() >= 1, "available_parallelism >= 1", fails);
 
-  // Part 2: mutex-guarded counter (4 x 500 = 2000).
-  var m0 = mutex.mutex_new();
-  unsafe { G_LOCKP = m0.locked as Int; }
+  // Part 2: mutex-guarded counter (4 x 500 = 2000) through the GLOBAL handle.
+  G_M = mutex.mutex_new();
   G_COUNT = 0;
-  fails = check(G_LOCKP != 0, "sync setup: spinlock handle installed", fails);
-  if G_LOCKP != 0 {
-    var a = spawn(bump_locked);
-    var b = spawn(bump_locked);
-    var c = spawn(bump_locked);
-    var d = spawn(bump_locked);
-    var ja: Int = -1;
-    var jb: Int = -1;
-    var jc: Int = -1;
-    var jd: Int = -1;
-    match a.join() { Ok(v) => { ja = v; } Err(_) => {} }
-    match b.join() { Ok(v) => { jb = v; } Err(_) => {} }
-    match c.join() { Ok(v) => { jc = v; } Err(_) => {} }
-    match d.join() { Ok(v) => { jd = v; } Err(_) => {} }
-    var expected = G_ITERS * 4;
-    io.println("  mutex counter: " + convert.int_to_string(G_COUNT) + " (expect "
-      + convert.int_to_string(expected) + "), joins " + convert.int_to_string(ja + jb + jc + jd));
-    fails = check(G_COUNT == expected, "mutex: 4 workers x 500 -> exact total, no lost updates", fails);
-  }
+  fails = check(!mutex.mutex_is_locked(&G_M), "sync setup: module-level SyncMutex global (unlocked)", fails);
+  var a = spawn(bump_locked);
+  var b = spawn(bump_locked);
+  var c = spawn(bump_locked);
+  var d = spawn(bump_locked);
+  var ja: Int = -1;
+  var jb: Int = -1;
+  var jc: Int = -1;
+  var jd: Int = -1;
+  match a.join() { Ok(v) => { ja = v; } Err(_) => {} }
+  match b.join() { Ok(v) => { jb = v; } Err(_) => {} }
+  match c.join() { Ok(v) => { jc = v; } Err(_) => {} }
+  match d.join() { Ok(v) => { jd = v; } Err(_) => {} }
+  var expected = G_ITERS * 4;
+  io.println("  mutex counter: " + convert.int_to_string(G_COUNT) + " (expect "
+    + convert.int_to_string(expected) + "), joins " + convert.int_to_string(ja + jb + jc + jd));
+  fails = check(G_COUNT == expected, "mutex: 4 workers x 500 on the global handle -> exact total", fails);
 
-  // Part 3: atomic counter (4 x 500 = 2000).
-  var at0 = atomics.atomic_int_new(0);
-  unsafe { G_ATOM_ADDR = at0.ptr as Int; }
-  fails = check(G_ATOM_ADDR != 0, "sync setup: atomic cell installed", fails);
-  if G_ATOM_ADDR != 0 {
-    var e = spawn(bump_atomic);
-    var f = spawn(bump_atomic);
-    var g = spawn(bump_atomic);
-    var h = spawn(bump_atomic);
-    match e.join() { Ok(_) => {} Err(_) => {} }
-    match f.join() { Ok(_) => {} Err(_) => {} }
-    match g.join() { Ok(_) => {} Err(_) => {} }
-    match h.join() { Ok(_) => {} Err(_) => {} }
-    var p: *Int = null;
-    unsafe { p = G_ATOM_ADDR as *Int; }
-    var av = atomics.AtomicInt{ ptr: p };
-    var aval = atomics.atomic_load(&av);
-    var aexpected = G_ITERS * 4;
-    io.println("  atomic counter: " + convert.int_to_string(aval) + " (expect "
-      + convert.int_to_string(aexpected) + ")");
-    fails = check(aval == aexpected, "atomics: 4 workers x 500 fetch_add -> exact total", fails);
-  }
+  // Part 3: atomic counter (4 x 500 = 2000) through the GLOBAL cell.
+  G_ATOM = atomics.atomic_int_new(0);
+  fails = check(atomics.atomic_load(&G_ATOM) == 0, "sync setup: module-level AtomicInt global installed", fails);
+  var e = spawn(bump_atomic);
+  var f = spawn(bump_atomic);
+  var g = spawn(bump_atomic);
+  var h = spawn(bump_atomic);
+  match e.join() { Ok(_) => {} Err(_) => {} }
+  match f.join() { Ok(_) => {} Err(_) => {} }
+  match g.join() { Ok(_) => {} Err(_) => {} }
+  match h.join() { Ok(_) => {} Err(_) => {} }
+  var aval = atomics.atomic_load(&G_ATOM);
+  var aexpected = G_ITERS * 4;
+  io.println("  atomic counter: " + convert.int_to_string(aval) + " (expect "
+    + convert.int_to_string(aexpected) + ")");
+  fails = check(aval == aexpected, "atomics: 4 workers x 500 fetch_add -> exact total", fails);
 
-  // Part 4: channel contract (same-thread; the cross-thread leg is blocked
-  // by XVC-C-17 -- see the header note).
+  // Part 4: channel contract (same-thread).
   var ch = channel.channel_new[Int](4);
   fails = check(channel.channel_capacity(&ch) == 4 && channel.channel_len(&ch) == 0,
     "channel: new(cap=4) -> cap 4, empty", fails);
@@ -203,6 +215,47 @@ fn main() -> Int {
   match send_after_close { Ok(_) => {} Err(_) => { err_ok = true; } }
   fails = check(none_ok && err_ok && channel.channel_is_closed(&ch),
     "channel: close -> recv None, send Err", fails);
+
+  // Part 5: CROSS-THREAD producer/consumer (2 x 200 scalar mailbox handoffs,
+  // coarse lock; the channel's cross-thread leg awaits a handle form).
+  G_SLOT = 0;
+  G_FULL = false;
+  var pa = spawn(produce_a);
+  var pb = spawn(produce_b);
+  var total: Int = 0;
+  var seen_a: Int = 0;
+  var seen_b: Int = 0;
+  var order_ok: Bool = true;
+  while total < G_SENT_PER * 2 {
+    var recv_v: Int = -1;
+    var have = false;
+    mutex.mutex_lock(&mut G_M);
+    if G_FULL {
+      recv_v = G_SLOT;
+      G_FULL = false;
+      have = true;
+    }
+    mutex.mutex_unlock(&mut G_M);
+    if have {
+      total = total + 1;
+      var worker = recv_v / 1000;
+      var seq = recv_v - worker * 1000;
+      if worker == 1 {
+        if seq != seen_a { order_ok = false; }
+        seen_a = seen_a + 1;
+      } else if worker == 2 {
+        if seq != seen_b { order_ok = false; }
+        seen_b = seen_b + 1;
+      } else {
+        order_ok = false;
+      }
+    }
+  }
+  match pa.join() { Ok(_) => {} Err(_) => {} }
+  match pb.join() { Ok(_) => {} Err(_) => {} }
+  fails = check(total == G_SENT_PER * 2 && seen_a == G_SENT_PER && seen_b == G_SENT_PER && order_ok,
+    "mailbox: cross-thread 2x200 handoffs under one global lock (exact + per-producer FIFO)", fails);
+  fails = check(!G_FULL, "mailbox: fully drained (no slot held after 400 handoffs)", fails);
 
   io.println("");
   io.println("probe_thread_sync: " + convert.int_to_string(fails) + " failed checks");
