@@ -10,12 +10,12 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-17, 85th pass (**v0.64.6 re-pin COMPLETE on both
-  platforms** -- full batteries ALL GATES GREEN (51 probes x2 + suite
-  177/177 x2) on stdlib tree `7073a64` + packages `53cba79b`/xiom.http
-  0.1.8; the C-16/C-17/C-18 repros green on WSL + Windows; zero XVECTOR
-  findings open; thread items closed; L-3/L-4/L-5 lattice slices landed
-  with the durable reopen-then-write fix)
+- **As of:** 2026-10-18, 86th pass (**v0.64.7 re-pin COMPLETE on both
+  platforms** -- full batteries ALL GATES GREEN (53 probes x2 + suite
+  177/177 x2) on stdlib `6727526` + packages `2e7c5524`; C-16/C-17/C-18
+  repros green on WSL + Windows; zero XVECTOR findings open; the embedded
+  tier packages orbitdb 0.2.1 + pulse 0.2.1 are consumed and gated;
+  L-3/L-4/L-5 lattice slices landed with the durable reopen-then-write fix)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
