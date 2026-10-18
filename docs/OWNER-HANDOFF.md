@@ -10,14 +10,15 @@ repository stays private; nothing below happens until the owner greenlights.
 
 - **Candidate:** `v1.0.0-rc.1` (annotated tag, local, no push). `VERSION` =
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
-- **Batteries (at the candidate):** suite 171/171 x2 + SBOM/unsafe gate +
-  32 probes x2 + bench smoke on Windows **and** WSL -- ALL GATES GREEN.
+- **Batteries (at the candidate pin, v0.64.7):** suite 177/177 x2 + SBOM/unsafe
+  gate (46 modules) + 53 probes x2 + bench smoke + kill matrix on Windows
+  **and** WSL -- ALL GATES GREEN (2026-10-18).
 - **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **88 %**
   today (81 % at the candidate; "hardened core"; remaining gaps are the
   gated durability primitives, concurrency, and release-runner activation,
   all documented).
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
-  (44 modules, `unsafe` = 0, compiler v0.64.2, stdlib pin).
+  (46 modules, `unsafe` = 0, compiler v0.64.7, stdlib pin).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
   fidelity pinned by `probe_reference_oracle`.
 
@@ -50,6 +51,13 @@ repository stays private; nothing below happens until the owner greenlights.
 7. **Feedback loop:** file compiler/stdlib findings back through
    `docs/RELAY-COMPILER.md` / `docs/STDLIB-WISHLIST-XVECTOR.md` (they are
    written for the sibling lanes).
+
+**Registry publish (mote tier):** the packages lane has the PREP item
+(`REL-20261018-1520-xvector`): freeze pin `c858ec1` + proposed candidate
+`xiom.vectors` 0.2.0 (engine + in-process HTTP; lattice modules excluded),
+carve/validate running now, **publish held for your greenlight** (then it
+ships in the next eco batch). The npm-style registry artifact is separate
+from the GitHub release set below.
 
 ## 3. Gated pivots (re-check on every lane pass)
 
