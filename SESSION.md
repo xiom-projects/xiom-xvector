@@ -2900,9 +2900,12 @@ full batteries ALL GATES GREEN both platforms (suite 177/177 x2 + 53
 probes x2 + sbom 46 + bench + kill matrix) on stdlib tree `6727526`
 (pin tag `1271dd5`) + packages `2e7c5524` (xiom.http 0.1.9; orbitdb 0.2.1
 + pulse 0.2.1 gated); C-16/C-17/C-18 repros green both platforms; all
-findings + thread items closed; L-0..L-5 ALL LANDED. **Next: G-2**
-(channel cross-thread leg unblocked by C-17; retire the Int-handle
-workaround), then Q-a2b / M-P; L-6 after.
+findings + thread items closed; L-0..L-5 ALL LANDED. **G-1 COMPLETE
+2026-10-18** (natural module-level globals + cross-thread mailbox leg; the
+Int-handle workaround is retired). **Next: G-2b accept-loop threads**
+(`XVECTORD_THREADS`; coarse engine mutex; new concurrency probe; graceful
+shutdown). **XVC-C-19 OPEN** (v0.64.7 global-init compiler hang; repro
+`docs/repro/xv-global-init-hang/`). Then Q-a2b / M-P; L-6 after.
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
