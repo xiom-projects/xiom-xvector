@@ -36,7 +36,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open), G-2 accept-loop threads, scale tuning |
+| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open); **G-2 accept-loop threads BLOCKED on XVC-C-20** (2026-10-18: module-level engine global loses mutations through `&mut`; repro filed, slice reverted), scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
@@ -239,10 +239,14 @@ same-thread channel FIFO/close contract; the channel CROSS-THREAD leg is
 blocked on XVC-C-17 (imported-type global pointer-field drop;
 `REL-20261015-2216-xvector`). The engine is still single-threaded and each
 call targets one active collection.
-Remaining: G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`),
-concurrent readers / write serialization model, scale tuning beyond the
-baseline (`docs/G-PHASE-PLAN.md` slice order); the channel handle form
-(wished) re-opens the channel's own cross-thread leg.
+Remaining: G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`) --
+**BLOCKED 2026-10-18 on XVC-C-20** (the engine cannot be shared through a
+module-level global: mutations through `&mut` do not persist; repro
+`docs/repro/xv-global-engine-mutation/`, bus `REL-20261018-1815-xvector`;
+the implemented slice was reverted). Concurrent readers / write
+serialization model, scale tuning beyond the baseline
+(`docs/G-PHASE-PLAN.md` slice order); the channel handle form (wished)
+re-opens the channel's own cross-thread leg.
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -1231,7 +1235,22 @@ extraction with the packages lane.
   module-level function-call/allocating `var` initializers (shape-sensitive;
   repro `docs/repro/xv-global-init-hang/`); a channel handle form is wished
   to stdlib so the channel's cross-thread leg can be lock-guarded. G-2
-  (accept-loop threads) is next.
+  (accept-loop threads) was next.
+
+- **2026-10-18 (doorbell pass -- G-2b attempted, BLOCKED):** the threaded
+  accept loop (`XVECTORD_THREADS`, 4 workers, coarse engine mutex, bounded
+  in-flight, graceful worker joins) was implemented and the server started
+  cleanly, but every request after setup hit an empty engine. Root cause
+  (new **XVC-C-20**): mutations through `&mut` on a module-level
+  `VectorEngine` global do not persist -- `engine_create_named` returns Ok,
+  `engine_collection_count` reads 0, a second create with the same name also
+  returns Ok, and the next upsert violates the active-collection contract.
+  Workarounds rejected: a global `Vec[VectorEngine]` holder crashes before
+  `main` (XVC-C-19 family); the heap-cell pointer form needs `unsafe` casts
+  (SBOM gate). Repro `docs/repro/xv-global-engine-mutation/`; filed
+  `REL-20261018-1815-xvector` (high); the slice was reverted. Also fixed the
+  library gate's work dir to TEMP so its copy is not cataloged as project
+  modules by later builds (47/47 still green).
 
 ## Update rule
 

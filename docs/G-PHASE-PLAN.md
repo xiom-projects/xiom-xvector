@@ -95,6 +95,18 @@ Ordered candidate slices, each gated:
   deterministic ops -> exact results), quick_bench QPS delta recorded
   (expect no regression; gains only for pipelined clients), graceful
   shutdown joins.
+  **BLOCKED 2026-10-18 on XVC-C-20.** The accept-loop/worker code was
+  implemented and the threaded server started, but mutations through
+  `&mut` on the module-level `VectorEngine` global do not persist
+  (`engine_create_named` returns Ok, `engine_collection_count` stays 0,
+  the next upsert violates the active-collection contract), so every
+  request after setup saw an empty engine. The slice is reverted.
+  Repro: `docs/repro/xv-global-engine-mutation/`; bus
+  `REL-20261018-1815-xvector` (high). Workarounds rejected: a global
+  `Vec[VectorEngine]` holder crashes before `main` (XVC-C-19 family);
+  the heap-cell pointer form needs `unsafe` casts (SBOM gate forbids).
+  Do not retry until the compiler keeps large imported-type global state
+  (or ships a supported Send/Sync sharing handle).
 - G-3 read snapshots (readers never block writers): requires the
   runtime-enforced sharing story (Send/Sync) + a snapshot handle
   definition; design only after G-2 numbers show the mutex bottleneck.
@@ -134,7 +146,8 @@ Ordered candidate slices, each gated:
 ## 6. Slice order recommendation
 
 P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1
-COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2**
-(flag-gated accept loop; NEXT) -> G-4 ->
+COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2 BLOCKED
+on XVC-C-20** (2026-10-18; engine global mutation loss) -> Q-a2b / M-P
+(the non-G queue) while watching for the compiler fix -> G-4 ->
 (evaluate G-3) -> sharding harness story. Owner-facing claims use the v1
 wording until the post-gate slices are green.
