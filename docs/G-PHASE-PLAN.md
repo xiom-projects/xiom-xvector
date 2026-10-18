@@ -8,16 +8,18 @@ reader model, consistency notes"; `docs/PRODUCTION-PLAN.md`). Gates:
 nothing here ships without its slice gates; **the runtime thread gate is
 GREEN as of v0.64.5 (2026-10-15; both platforms; acceptance
 `docs/repro/xv-thread-abi` -- exit 0, 3 workers exact sums, worker id !=
-main, marks `M3: join ok 42`)**. **G-1 has landed its thread + sync legs
-(2026-10-16):** `tests/probes/probe_thread_sync.xi` (the 45th probe, in
-both batteries) runs the spawn/join acceptance + a mutex-guarded counter
-+ an atomic counter -- all exact across real threads on Windows + WSL
-(5/5 stress runs); the channel cross-thread producer/consumer leg is
-BLOCKED on XVC-C-17 (imported-type global stores drop pointer fields;
-`REL-20261015-2216-xvector`) -- same-thread channel FIFO/close contract
-checks are in the probe. The v0.64.5 archive re-pin itself is HELD on the
-unrelated XVC-C-16 (v0.64.5 linux-x64 HTTP-service search miscompile;
-`REL-20261015-2142-xvector`).
+main, marks `M3: join ok 42`)**. **G-1 is COMPLETE (2026-10-18, v0.64.7):**
+`tests/probes/probe_thread_sync.xi` (in both batteries) runs spawn/join +
+a mutex-guarded counter + an atomic counter through NATURAL module-level
+imported-type globals (XVC-C-17 fixed -- the Int-handle workaround is
+retired) and a cross-thread producer/consumer leg (2 real producers x 200
+handoffs through a scalar single-slot mailbox under the shared spinlock;
+exact totals + per-producer FIFO) -- 14 checks green x2 on Windows + WSL.
+The channel keeps its same-thread contract checks; its CROSS-THREAD leg
+waits on a handle form (stdlib wishlist `REL-20261018-1518-xvector-2`)
+because a module-level container initializer currently hangs the compiler
+(XVC-C-19, `REL-20261018-1518-xvector`, repro
+`docs/repro/xv-global-init-hang/`).
 
 ## 1. Runtime reality (as of 2026-10-16, compiler v0.64.5)
 
@@ -80,12 +82,12 @@ Ordered candidate slices, each gated:
 - G-1 thread + sync smoke -- **LANDED 2026-10-16 (thread + counter legs)**:
   4 workers x mutex-guarded counter = exact; 4 workers x atomic fetch_add
   = exact; spawn/join acceptance promoted into `tests/probes/` + both
-  batteries (`probe_thread_sync`, 45th probe; Windows 5/5 stress + WSL
-  green). Channel producer/consumer: same-thread FIFO/close contract is
-  pinned in the probe; the CROSS-THREAD leg is blocked on XVC-C-17
-  (`REL-20261015-2216-xvector` -- imported-type global stores drop pointer
-  fields; the channel has no handle form). Re-open the leg when C-17 is
-  fixed.
+  batteries; Windows 5/5 stress + WSL green). Channel producer/consumer:
+  the same-thread FIFO/close contract is pinned in the probe; the
+  CROSS-THREAD leg is proved through a scalar mailbox under the shared
+  spinlock (2x200 exact) -- a channel handle form is wished to stdlib
+  (`REL-20261018-1518-xvector-2`); module-level container initializers
+  currently hang the compiler (XVC-C-19).
 - G-2 accept-loop threads BEHIND A FLAG (`XVECTORD_THREADS`): accept in
   one thread, handle per connection in workers, ALL engine calls under
   one mutex (coarse, correct-first). Gates: `probe_http_fuzz` + service
@@ -132,7 +134,7 @@ Ordered candidate slices, each gated:
 ## 6. Slice order recommendation
 
 P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1
-LANDED** (`probe_thread_sync` in both batteries; channel cross-thread leg
-blocked on XVC-C-17) -> **G-2** (flag-gated accept loop) -> G-4 ->
+COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2**
+(flag-gated accept loop; NEXT) -> G-4 ->
 (evaluate G-3) -> sharding harness story. Owner-facing claims use the v1
 wording until the post-gate slices are green.

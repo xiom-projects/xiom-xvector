@@ -36,7 +36,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 40 | buildable | G-1 sync smoke, G-2 accept-loop threads, scale tuning (thread gate CLOSED 2026-10-15; the v0.64.5 linux service red XVC-C-16 is unrelated) |
+| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open), G-2 accept-loop threads, scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
@@ -239,10 +239,10 @@ same-thread channel FIFO/close contract; the channel CROSS-THREAD leg is
 blocked on XVC-C-17 (imported-type global pointer-field drop;
 `REL-20261015-2216-xvector`). The engine is still single-threaded and each
 call targets one active collection.
-Remaining: G-1 channel cross-thread leg (on XVC-C-17), G-2 flag-gated
-accept-loop threads (`XVECTORD_THREADS`), concurrent readers / write
-serialization model, scale tuning beyond the baseline
-(`docs/G-PHASE-PLAN.md` slice order).
+Remaining: G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`),
+concurrent readers / write serialization model, scale tuning beyond the
+baseline (`docs/G-PHASE-PLAN.md` slice order); the channel handle form
+(wished) re-opens the channel's own cross-thread leg.
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -1221,6 +1221,17 @@ extraction with the packages lane.
   run carried a transient clang-spawn flake on `probe_wal_file` (`clang
   failed with exit code -1`; retry x2 green; machine healthy -- the clean
   re-run above is the wrap signature).
+
+- **2026-10-18 (G-1 completion, v0.64.7):** `probe_thread_sync` upgraded
+  to the natural module-level `SyncMutex`/`AtomicInt` globals (XVC-C-17 fix
+  confirmed; the Int-handle workaround is retired) and a cross-thread
+  producer/consumer leg (2 real producers x 200 scalar-mailbox handoffs
+  under the shared spinlock, exact totals + per-producer FIFO) -- 14 checks
+  green x2 both platforms. **XVC-C-19 filed**: v0.64.7 hangs the compiler on
+  module-level function-call/allocating `var` initializers (shape-sensitive;
+  repro `docs/repro/xv-global-init-hang/`); a channel handle form is wished
+  to stdlib so the channel's cross-thread leg can be lock-guarded. G-2
+  (accept-loop threads) is next.
 
 ## Update rule
 
