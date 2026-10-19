@@ -194,6 +194,11 @@ Consumer lane; repo private; findings bus-routed.
 
 ## Cross-cutting
 
+- [x] **Station web UI (read-only MVP)** -- LANDED 2026-10-19: `/ui` static
+  admin + `GET /collections/{n}/sample` (active-store, bounded,
+  deterministic stride) + Canvas 2D seeded random projection + search hit
+  highlighting; `probe_ui` (55th). Editor / three.js-WebGL / HNSW graph
+  view later; `docs/UI.md`.
 - [ ] **Homes/replicas on shared/network filesystems are unsupported**
   (ops rule; sqlite documents WAL as unsafe on network FS -- reference
   study 04): local disks only, document in OPERATIONS at L-5

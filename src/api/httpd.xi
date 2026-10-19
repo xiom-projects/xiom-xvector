@@ -154,6 +154,81 @@ fn send_all(fd: Int, data: &Vec[UInt8]) -> Bool {
   return r.is_ok;
 }
 
+fn bytes_to_str(b: &Vec[UInt8], from: Int, to: Int) -> Str {
+  var acc = Vec[UInt8].new();
+  var i: Int = from;
+  while i < to {
+    acc.push(b[i]);
+    i = i + 1;
+  }
+  return Str::from_utf8(&acc);
+}
+
+// ---- Station UI static route ----------------------------------------------
+
+fn ui_response(status: Int, ctype: Str, body: &Vec[UInt8], head_only: Bool) -> Vec[UInt8] {
+  var head = "HTTP/1.1 " + convert.int_to_string(status) + " ";
+  if status == 200 { head = head + "OK"; } else { head = head + "Not Found"; }
+  head = head + "\r\nContent-Type: " + ctype
+    + "\r\nContent-Length: " + convert.int_to_string(body.len())
+    + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
+  var out = slice.str_bytes(head);
+  if !head_only {
+    var i: Int = 0;
+    while i < body.len() {
+      out.push(body[i]);
+      i = i + 1;
+    }
+  }
+  return out;
+}
+
+// Serve /ui (fixed allowlist: ui/index.html) from disk. Returns None for
+// non-UI requests so the API path is untouched. The static page is public;
+// every API call it makes still enforces auth/scopes.
+fn httpd_ui_response(raw: &Vec[UInt8]) -> Option[Vec[UInt8]] {
+  var sp1: Int = -1;
+  var sp2: Int = -1;
+  var i: Int = 0;
+  while i < raw.len() && sp2 < 0 {
+    if raw[i] == 32u8 {
+      if sp1 < 0 { sp1 = i; } else { sp2 = i; }
+    }
+    i = i + 1;
+  }
+  if sp1 < 0 || sp2 < 0 { return None; }
+  let method = bytes_to_str(raw, 0, sp1);
+  if method != "GET" && method != "HEAD" { return None; }
+  var end = sp2;
+  var k = sp1 + 1;
+  while k < sp2 {
+    if raw[k] == 63u8 { end = k; break; }
+    k = k + 1;
+  }
+  let path = bytes_to_str(raw, sp1 + 1, end);
+  var is_ui = path == "/ui" || path == "/ui/" || path == "/ui/index.html";
+  if !is_ui {
+    let pb = slice.str_bytes(path);
+    var under_ui = pb.len() >= 4 && pb[0] == 47u8 && pb[1] == 117u8 && pb[2] == 105u8 && pb[3] == 47u8;
+    if !under_ui { return None; }
+    let msg = slice.str_bytes("unknown UI path");
+    return Some(ui_response(404, "text/plain; charset=utf-8", &msg, method == "HEAD"));
+  }
+  var dir = "ui";
+  match env.var_opt("XVECTORD_UI_DIR") {
+    Some(d) => { if d.len() > 0 { dir = d; } }
+    None => {}
+  }
+  let file = dir + "/index.html";
+  match io.read_file_bytes(file) {
+    Ok(body) => { return Some(ui_response(200, "text/html; charset=utf-8", &body, method == "HEAD")); }
+    Err(_) => {
+      let msg = slice.str_bytes("UI not found; set XVECTORD_UI_DIR or ship ui/index.html");
+      return Some(ui_response(404, "text/plain; charset=utf-8", &msg, method == "HEAD"));
+    }
+  }
+}
+
 // Serve exactly one accepted connection. Returns 0 = served, 1 = served +
 // quit requested, -1 = empty/error. Exposed so the probe can drive the exact
 // same per-connection path the serve loop uses.
@@ -166,6 +241,15 @@ pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
   if raw.len() == 0 {
     socket.socket_close(client);
     return -1;
+  }
+  match httpd_ui_response(&raw) {
+    Some(resp) => {
+      let ok = send_all(client, &resp);
+      socket.socket_close(client);
+      if ok { return 0; }
+      return -1;
+    }
+    None => {}
   }
   let quit = has_token(&raw, "x-xvector-quit");
   let resp = http_service_handle_cfg(eng, &raw, &cfg);
@@ -209,15 +293,22 @@ fn httpd_worker() -> Int {
   let raw = httpd_read_request(client);
   var rc: Int = -1;
   if raw.len() > 0 {
-    let quit = has_token(&raw, "x-xvector-quit");
-    var cfg = service_config_default();
-    let _n = service_config_from_env(&mut cfg);
-    mutex.mutex_lock(&mut G_ENGINE_LOCK);
-    let resp = http_service_handle_cfg(&mut G_ENGINE, &raw, &cfg);
-    mutex.mutex_unlock(&mut G_ENGINE_LOCK);
-    if send_all(client, &resp) {
-      rc = 0;
-      if quit { rc = 1; }
+    match httpd_ui_response(&raw) {
+      Some(resp) => {
+        if send_all(client, &resp) { rc = 0; }
+      }
+      None => {
+        let quit = has_token(&raw, "x-xvector-quit");
+        var cfg = service_config_default();
+        let _n = service_config_from_env(&mut cfg);
+        mutex.mutex_lock(&mut G_ENGINE_LOCK);
+        let resp = http_service_handle_cfg(&mut G_ENGINE, &raw, &cfg);
+        mutex.mutex_unlock(&mut G_ENGINE_LOCK);
+        if send_all(client, &resp) {
+          rc = 0;
+          if quit { rc = 1; }
+        }
+      }
     }
   }
   socket.socket_close(client);
@@ -449,6 +540,7 @@ pub fn httpd_serve_cfg(bind: Str, port: Int, threads_cfg: Int) -> Int {
   }
   io.println("xvectord: listening on http://" + bind + ":" + convert.int_to_string(port));
   io.println("xvectord: endpoints /health /collections /stats /search (quit: header X-Xvector-Quit: 1)");
+  io.println("xvectord: ui /ui (XVECTORD_UI_DIR overrides ui/index.html)");
   io.flush_stdout();
   if threads > 1 {
     io.println("xvectord: threads=" + convert.int_to_string(threads) + " (coarse engine mutex)");

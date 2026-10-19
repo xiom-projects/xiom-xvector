@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XVector Station -- Admin</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121a2e;
+    --panel-2: #0f1626;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #5eead4;
+    --accent-2: #38bdf8;
+    --hit: #fbbf24;
+    --sel: #f472b6;
+    --bad: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, #16233f 0%, var(--bg) 55%);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: rgba(11, 16, 32, .85); backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-size: 17px; letter-spacing: .2px; }
+  .brand span { color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+  label { color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+  select, input, textarea, button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 9px; font: inherit; outline: none;
+  }
+  select:focus, input:focus, textarea:focus, button:focus-visible { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(56,189,248,.15); }
+  button { cursor: pointer; background: #17223a; }
+  button:hover { border-color: #334155; background: #1b2946; }
+  button.primary { background: var(--accent); color: #06231f; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.05); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 16px; padding: 16px 20px 28px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .panel h2 { margin: 0; padding: 11px 14px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .canvas-wrap { position: relative; padding: 10px; }
+  canvas { width: 100%; height: min(72vh, 720px); display: block; border-radius: 8px; cursor: crosshair; }
+  .canvas-note { position: absolute; left: 20px; bottom: 18px; color: var(--muted); font-size: 11px; pointer-events: none; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 11px; }
+  aside { display: grid; gap: 16px; align-content: start; }
+  .body { padding: 12px 14px; display: grid; gap: 10px; }
+  .kv { display: grid; grid-template-columns: 86px 1fr; gap: 6px 10px; font-size: 13px; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  textarea { width: 100%; min-height: 58px; resize: vertical; font-family: var(--mono); font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  .hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 230px; overflow: auto; }
+  .hits li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); cursor: pointer; }
+  .hits li:hover { border-color: #334155; }
+  .hits li.hit { border-color: rgba(251,191,36,.45); }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .status { padding: 8px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; min-height: 34px; }
+  .status.err { color: var(--bad); }
+  .empty { padding: 18px 14px; color: var(--muted); }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); padding: 0 14px 10px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } aside { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 640px) { aside { grid-template-columns: 1fr; } header { position: static; } .controls { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="dot" aria-hidden="true"></span>
+    <b>XVector Station</b>
+    <span>vector explorer &middot; read-only</span>
+  </div>
+  <div class="controls">
+    <label>Collection
+      <select id="collection" aria-label="Collection"></select>
+    </label>
+    <label>Sample
+      <select id="limit" aria-label="Sample size">
+        <option>200</option><option selected>500</option><option>1000</option><option>2000</option>
+      </select>
+    </label>
+    <label>API key
+      <input id="apikey" type="password" autocomplete="off" placeholder="optional" aria-label="API key">
+    </label>
+    <button id="refresh" class="primary">Refresh</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel" aria-label="Vector projection">
+    <h2>Projection <span id="projmeta" class="badge" style="margin-left:8px">random 2D</span></h2>
+    <div class="canvas-wrap">
+      <canvas id="plot" aria-label="2D projection of sampled vectors"></canvas>
+      <div class="canvas-note">Random projection of the sampled vectors; hover to inspect, click to select.</div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>sampled</span>
+      <span><i style="background:var(--hit)"></i>search hit</span>
+      <span><i style="background:var(--sel)"></i>selected</span>
+      <span id="legend-count" class="muted"></span>
+    </div>
+    <div id="status" class="status" aria-live="polite">Start the station and pick a collection.</div>
+  </section>
+
+  <aside>
+    <section class="panel" aria-label="Collection stats">
+      <h2>Stats</h2>
+      <div class="body">
+        <div id="stats" class="kv"><div>collection</div><div class="muted">--</div></div>
+        <div class="row">
+          <button id="use-selected" disabled>Use selected as query</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Search">
+      <h2>Search</h2>
+      <div class="body">
+        <textarea id="query" placeholder="query vector, e.g. 0.1, 0.2, 0.3, 0.4" aria-label="Query vector"></textarea>
+        <div class="row">
+          <label style="flex:0 0 90px">top_k
+            <input id="topk" type="number" min="1" max="100" value="10">
+          </label>
+          <button id="search" class="primary">Search</button>
+        </div>
+        <ul id="hits" class="hits" aria-label="Search hits"></ul>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Selected point">
+      <h2>Selected point</h2>
+      <div class="body">
+        <div id="selected" class="mono muted">none</div>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    collections: [],
+    name: null,
+    points: [],
+    proj: null,
+    hits: new Map(),
+    selected: null,
+    hover: null,
+    seed: 1,
+    limit: 500,
+    dim: 0,
+    total: 0,
+    sampled: 0,
+    queryXY: null,
+    key: sessionStorage.getItem("xv-api-key") || "",
+  };
+
+  const canvas = $("plot");
+  const ctx = canvas.getContext("2d");
+  const statusEl = $("status");
+
+  function setStatus(msg, isErr = false) {
+    statusEl.textContent = msg;
+    statusEl.classList.toggle("err", !!isErr);
+  }
+
+  function headers(json = false) {
+    const h = {};
+    if (json) h["Content-Type"] = "application/json";
+    if (state.key) h["X-API-Key"] = state.key;
+    return h;
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { ...headers(!!opts.body), ...(opts.headers || {}) } });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text;
+      try { const j = JSON.parse(text); if (j.error) msg = j.error; } catch (_) {}
+      throw new Error(`${res.status} ${msg || res.statusText}`);
+    }
+    try { return JSON.parse(text); } catch (_) { return text; }
+  }
+
+  const nameOf = (c) => (typeof c === "string" ? c : (c && c.name) || "");
+
+  function parseVector(s) {
+    return s.trim().split(/[,\s]+/).filter(Boolean).map((x) => {
+      const n = Number(x);
+      if (!Number.isFinite(n)) throw new Error(`bad number: ${x}`);
+      return n;
+    });
+  }
+
+  // Deterministic PRNG for the random projection (seed is shown in the UI).
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function normalize(v) {
+    let s = 0;
+    for (const x of v) s += x * x;
+    s = Math.sqrt(s) || 1;
+    return v.map((x) => x / s);
+  }
+
+  function buildProjection(points, seed) {
+    const dim = points[0] && points[0].vector ? points[0].vector.length : 0;
+    const n = points.length;
+    const mean = new Array(dim).fill(0);
+    for (const p of points) for (let j = 0; j < dim; j++) mean[j] += p.vector[j];
+    if (n) for (let j = 0; j < dim; j++) mean[j] /= n;
+    const rnd = mulberry32(seed >>> 0);
+    const r1 = Array.from({ length: dim }, () => rnd() * 2 - 1);
+    const r2 = Array.from({ length: dim }, () => rnd() * 2 - 1);
+    const a = normalize(r1), b = normalize(r2);
+    const proj = points.map((p) => {
+      let x = 0, y = 0;
+      for (let j = 0; j < dim; j++) {
+        const v = p.vector[j] - mean[j];
+        x += v * a[j]; y += v * b[j];
+      }
+      return { id: p.id, x, y };
+    });
+    const xs = proj.map((p) => p.x), ys = proj.map((p) => p.y);
+    const minX = xs.length ? Math.min(...xs) : -1, maxX = xs.length ? Math.max(...xs) : 1;
+    const minY = ys.length ? Math.min(...ys) : -1, maxY = ys.length ? Math.max(...ys) : 1;
+    return { mean, a, b, proj, minX, maxX, minY, maxY, spanX: (maxX - minX) || 1, spanY: (maxY - minY) || 1 };
+  }
+
+  function projectQuery(v, proj) {
+    let x = 0, y = 0;
+    for (let j = 0; j < proj.mean.length; j++) {
+      const d = (v[j] || 0) - proj.mean[j];
+      x += d * proj.a[j]; y += d * proj.b[j];
+    }
+    return { x, y };
+  }
+
+  function plotGeometry() {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const cssW = canvas.clientWidth || 800, cssH = canvas.clientHeight || 520;
+    if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
+      canvas.width = Math.floor(cssW * dpr);
+      canvas.height = Math.floor(cssH * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: cssW, h: cssH, pad: 36 };
+  }
+
+  function mapXY(x, y, p, g) {
+    const px = g.pad + ((x - p.minX) / p.spanX) * (g.w - g.pad * 2);
+    const py = g.h - g.pad - ((y - p.minY) / p.spanY) * (g.h - g.pad * 2);
+    return { x: px, y: py };
+  }
+
+  function draw() {
+    const g = plotGeometry();
+    ctx.clearRect(0, 0, g.w, g.h);
+    // plot frame + grid
+    ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1;
+    ctx.strokeRect(g.pad, g.pad, g.w - g.pad * 2, g.h - g.pad * 2);
+    ctx.strokeStyle = "#16213a";
+    for (let i = 1; i < 5; i++) {
+      const x = g.pad + ((g.w - g.pad * 2) * i) / 5;
+      const y = g.pad + ((g.h - g.pad * 2) * i) / 5;
+      ctx.beginPath(); ctx.moveTo(x, g.pad); ctx.lineTo(x, g.h - g.pad); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(g.pad, y); ctx.lineTo(g.w - g.pad, y); ctx.stroke();
+    }
+    ctx.fillStyle = "#64748b"; ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText("projection 1", g.pad, g.h - 10);
+    ctx.save(); ctx.translate(12, g.pad + 76); ctx.rotate(-Math.PI / 2); ctx.fillText("projection 2", 0, 0); ctx.restore();
+
+    if (!state.proj || state.proj.proj.length === 0) {
+      ctx.fillStyle = "#94a3b8"; ctx.font = "14px system-ui, sans-serif";
+      ctx.fillText("No sampled points yet.", g.pad + 16, g.pad + 32);
+      return;
+    }
+
+    // search hits first (under the dots) as amber halos
+    for (const p of state.proj.proj) {
+      if (!state.hits.has(p.id)) continue;
+      const q = mapXY(p.x, p.y, state.proj, g);
+      ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(251,191,36,.8)"; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // points
+    for (const p of state.proj.proj) {
+      const q = mapXY(p.x, p.y, state.proj, g);
+      const isSel = state.selected !== null && p.id === state.selected;
+      const isHover = state.hover !== null && p.id === state.hover;
+      ctx.beginPath(); ctx.arc(q.x, q.y, isSel ? 4.5 : isHover ? 4 : 2.4, 0, Math.PI * 2);
+      ctx.fillStyle = isSel ? "#f472b6" : state.hits.has(p.id) ? "#fbbf24" : "#5eead4";
+      ctx.globalAlpha = isSel || isHover || state.hits.has(p.id) ? 1 : 0.82;
+      ctx.fill(); ctx.globalAlpha = 1;
+    }
+
+    // query crosshair
+    if (state.queryXY) {
+      const q = mapXY(state.queryXY.x, state.queryXY.y, state.proj, g);
+      ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(q.x - 9, q.y); ctx.lineTo(q.x + 9, q.y); ctx.moveTo(q.x, q.y - 9); ctx.lineTo(q.x, q.y + 9); ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x, q.y, 12, 0, Math.PI * 2); ctx.globalAlpha = .45; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = "#38bdf8"; ctx.font = "11px system-ui, sans-serif"; ctx.fillText("query", q.x + 13, q.y - 9);
+    }
+
+    // hover tooltip
+    if (state.hover !== null && state.proj) {
+      const p = state.proj.proj.find((x) => x.id === state.hover);
+      if (p) {
+        const q = mapXY(p.x, p.y, state.proj, g);
+        const label = `id ${p.id}`;
+        ctx.font = "11px ui-monospace, monospace";
+        const tw = ctx.measureText(label).width + 12;
+        const tx = Math.min(q.x + 10, g.w - tw - 6), ty = Math.max(q.y - 24, 6);
+        ctx.fillStyle = "rgba(15,22,38,.95)"; ctx.strokeStyle = "#334155";
+        ctx.beginPath(); ctx.roundRect(tx, ty, tw, 20, 6); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#e2e8f0"; ctx.fillText(label, tx + 6, ty + 14);
+      }
+    }
+  }
+
+  function nearest(evt) {
+    if (!state.proj || state.proj.proj.length === 0) return null;
+    const r = canvas.getBoundingClientRect();
+    const mx = evt.clientX - r.left, my = evt.clientY - r.top;
+    const g = { w: r.width, h: r.height, pad: 36 };
+    let best = null, bestD = 100;
+    for (const p of state.proj.proj) {
+      const q = mapXY(p.x, p.y, state.proj, g);
+      const d = Math.hypot(q.x - mx, q.y - my);
+      if (d < bestD) { bestD = d; best = p.id; }
+    }
+    return best;
+  }
+
+  function renderStats(st) {
+    const rows = [
+      ["collection", st.name || state.name || "--"],
+      ["dim", st.dim != null ? st.dim : state.dim],
+      ["metric", st.metric || "--"],
+      ["index", st.index || "--"],
+      ["points", st.points != null ? st.points : state.total],
+      ["sampled", state.sampled],
+      ["scope", "active store"],
+    ];
+    $("stats").innerHTML = rows.map(([k, v]) => `<div>${k}</div><div class="mono">${String(v)}</div>`).join("");
+  }
+
+  function renderSelected() {
+    const p = state.points.find((x) => x.id === state.selected);
+    $("selected").innerHTML = p
+      ? `<div>id ${p.id}</div><div style="margin-top:6px;color:var(--muted)">[${p.vector.map((x) => Number(x).toFixed(4)).join(", ")}]</div>`
+      : "none";
+    $("use-selected").disabled = !p;
+  }
+
+  function renderHits() {
+    const list = $("hits");
+    if (!state.hits.size) { list.innerHTML = '<li class="muted" style="cursor:default">no search yet</li>'; return; }
+    const arr = [...state.hits.entries()].sort((a, b) => a[1] - b[1]);
+    list.innerHTML = arr.map(([id, dist]) => `<li class="hit" data-id="${id}"><span>id ${id}</span><span class="muted mono">${Number(dist).toFixed(5)}</span></li>`).join("");
+    list.querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => selectPoint(Number(li.dataset.id))));
+  }
+
+  function selectPoint(id) {
+    state.selected = id;
+    renderSelected(); draw();
+  }
+
+  async function loadCollections() {
+    try {
+      const data = await api("/collections");
+      const arr = (data && data.collections) || [];
+      state.collections = arr.map(nameOf).filter(Boolean);
+      const sel = $("collection");
+      const prev = state.name;
+      sel.innerHTML = state.collections.map((n) => `<option value="${n}">${n}</option>`).join("");
+      if (!state.collections.length) {
+        state.name = null;
+        state.points = []; state.proj = null; state.hits.clear(); state.selected = null;
+        renderStats({}); renderSelected(); renderHits(); draw();
+        setStatus("No collections yet. Create one via POST /collections.", true);
+        return;
+      }
+      state.name = state.collections.includes(prev) ? prev : state.collections[0];
+      sel.value = state.name;
+      await loadSample();
+    } catch (e) {
+      setStatus(`Collections: ${e.message}`, true);
+    }
+  }
+
+  async function loadSample() {
+    if (!state.name) return;
+    state.limit = Number($("limit").value) || 500;
+    state.seed = (Math.floor(Math.random() * 0x7fffffff) + 1) >>> 0;
+    try {
+      setStatus(`Loading ${state.name} sample...`);
+      const data = await api(`/collections/${encodeURIComponent(state.name)}/sample?limit=${state.limit}&seed=${state.seed}`);
+      state.points = data.points || [];
+      state.dim = data.dim || (state.points[0] ? state.points[0].vector.length : 0);
+      state.total = data.total || 0;
+      state.sampled = data.sampled || state.points.length;
+      state.proj = buildProjection(state.points, state.seed);
+      state.hits.clear(); state.selected = null; state.hover = null; state.queryXY = null;
+      $("projmeta").textContent = `random 2D · seed ${state.seed}`;
+      $("legend-count").textContent = `${state.sampled} of ${state.total} active points`;
+      renderStats({ name: state.name, dim: state.dim, points: state.total });
+      renderSelected(); renderHits(); draw();
+      try {
+        const st = await api(`/stats?collection=${encodeURIComponent(state.name)}`);
+        renderStats(st);
+      } catch (_) { /* stats is optional */ }
+      setStatus(`Loaded ${state.sampled} sampled point${state.sampled === 1 ? "" : "s"} from ${state.name}.`);
+    } catch (e) {
+      setStatus(`Sample: ${e.message}`, true);
+    }
+  }
+
+  async function runSearch() {
+    if (!state.name) { setStatus("Pick a collection first.", true); return; }
+    let vec;
+    try { vec = parseVector($("query").value); } catch (e) { setStatus(e.message, true); return; }
+    if (!vec.length) { setStatus("Enter a query vector.", true); return; }
+    if (state.dim && vec.length !== state.dim) { setStatus(`Query has ${vec.length} values; collection dim is ${state.dim}.`, true); return; }
+    const topk = Math.max(1, Math.min(100, Number($("topk").value) || 10));
+    try {
+      setStatus("Searching...");
+      const data = await api("/search", {
+        method: "POST",
+        body: JSON.stringify({ collection: state.name, vector: vec, top_k: topk }),
+      });
+      const hits = data.hits || [];
+      state.hits = new Map(hits.map((h) => [Number(h.id), Number(h.distance)]));
+      state.queryXY = state.proj ? projectQuery(vec, state.proj) : null;
+      renderHits(); draw();
+      setStatus(`Search returned ${hits.length} hit${hits.length === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setStatus(`Search: ${e.message}`, true);
+    }
+  }
+
+  // ---- events ----
+  $("collection").addEventListener("change", (e) => { state.name = e.target.value; loadSample(); });
+  $("limit").addEventListener("change", () => loadSample());
+  $("refresh").addEventListener("click", () => loadCollections());
+  $("apikey").value = state.key;
+  $("apikey").addEventListener("change", (e) => {
+    state.key = e.target.value.trim();
+    if (state.key) sessionStorage.setItem("xv-api-key", state.key);
+    else sessionStorage.removeItem("xv-api-key");
+    loadCollections();
+  });
+  $("search").addEventListener("click", runSearch);
+  $("use-selected").addEventListener("click", () => {
+    const p = state.points.find((x) => x.id === state.selected);
+    if (p) $("query").value = p.vector.join(", ");
+  });
+  canvas.addEventListener("mousemove", (e) => {
+    const id = nearest(e);
+    if (id !== state.hover) { state.hover = id; draw(); }
+  });
+  canvas.addEventListener("mouseleave", () => { if (state.hover !== null) { state.hover = null; draw(); } });
+  canvas.addEventListener("click", (e) => { const id = nearest(e); if (id !== null) selectPoint(id); });
+  window.addEventListener("resize", draw);
+
+  loadCollections();
+})();
+</script>
+</body>
+</html>

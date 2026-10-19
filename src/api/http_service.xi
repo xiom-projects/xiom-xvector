@@ -1600,5 +1600,61 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
     return handle_stats(eng, req.query, -1);
   }
+  // Station UI sample: bounded active-store ids + vectors (read scope by
+  // default). Feeds the /ui scatter; not a full export path.
+  if segs.len() == 3 && segs[0] == "collections" && segs[2] == "sample" {
+    if !(req.method == "GET") { return jerror(405, "method not allowed"); }
+    var sname = segs[1];
+    var ssel = select_collection(eng, sname);
+    match ssel {
+      Ok(_) => {}
+      Err(_) => { return jerror(404, "unknown collection"); }
+    }
+    var slimit: Int = 500;
+    match query_param(req.query, "limit") {
+      Some(sv) => {
+        var sb = slice.str_bytes(sv);
+        var sr = parse_int_at(sb, 0);
+        if sr.ok && sr.pos == sb.len() && sb.len() > 0 { slimit = sr.value; }
+      }
+      None => {}
+    }
+    if slimit < 1 { slimit = 1; }
+    if slimit > 2000 { slimit = 2000; }
+    var sseed: Int = 0;
+    match query_param(req.query, "seed") {
+      Some(sv2) => {
+        var sb2 = slice.str_bytes(sv2);
+        var sr2 = parse_int_at(sb2, 0);
+        if sr2.ok && sr2.pos == sb2.len() && sb2.len() > 0 { sseed = sr2.value; }
+      }
+      None => {}
+    }
+    let sample = engine_sample(eng, slimit, sseed);
+    var sout = json.json_object_new();
+    sout = json.json_set(sout, "collection", json.json_string(sname));
+    sout = json.json_set(sout, "dim", json.json_number(eng.dimension as Float64));
+    sout = json.json_set(sout, "total", json.json_number(engine_size(eng) as Float64));
+    sout = json.json_set(sout, "sampled", json.json_number(sample.len() as Float64));
+    sout = json.json_set(sout, "scope", json.json_string("active"));
+    var sarr = json.json_array_new();
+    var si: Int = 0;
+    while si < sample.len() {
+      let sp = sample[si];
+      var varr = json.json_array_new();
+      var vi: Int = 0;
+      while vi < sp.vector.dimension {
+        varr = json.json_array_push(varr, json.json_number(sp.vector.data[vi] as Float64));
+        vi = vi + 1;
+      }
+      var po = json.json_object_new();
+      po = json.json_set(po, "id", json.json_number(sp.id as Float64));
+      po = json.json_set(po, "vector", varr);
+      sarr = json.json_array_push(sarr, po);
+      si = si + 1;
+    }
+    sout = json.json_set(sout, "points", sarr);
+    return http_response(200, sout);
+  }
   return jerror(404, "unknown route");
 }

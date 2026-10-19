@@ -390,3 +390,18 @@ the never-persisted renumbered block and the segment developed a gap
 that the next merge stopped at. Fixed in the engine: the segment file
 IS the durable frontier, and the first commit re-sends the block.
 Regression line: `probe_reopen_write` (in both batteries).
+
+## 13. Station web UI (read-only, `/ui`)
+
+`xvectord` serves a dependency-free admin page at
+`http://<bind>:<port>/ui` (static `ui/index.html`;
+`XVECTORD_UI_DIR` overrides the directory). It browses collections, samples
+active-store vectors via
+`GET /collections/{n}/sample?limit=N&seed=S` (limit 1..2000; deterministic
+stride; sealed segments are not included yet), renders a seeded random 2D
+projection on Canvas, and runs `/search` with hit highlighting. The page is
+public on the bind; API calls still enforce `XVECTOR_API_KEYS` and scopes --
+use TLS/ingress for remote access and a read key. This increment is
+read-only; `probe_ui` gates the route, HEAD trim, sample bounds, and the
+graceful quit/join. See [`UI.md`](UI.md) for features, limits, and the
+three.js/WebGL + editor roadmap.

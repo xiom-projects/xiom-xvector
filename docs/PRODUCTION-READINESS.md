@@ -39,10 +39,10 @@ the code merely exists. Blockers are named; blocked work still scores.
 | G | Concurrency & scalability | 10 | 65 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg); **G-2 COMPLETE 2026-10-19 on v0.64.8** (threaded accept loop behind `XVECTORD_THREADS`; bounded in-flight, one coarse engine mutex, graceful joins; `probe_concurrency` 54th, green x2 both); C-19 fixed on v0.64.8; remaining G-3 read snapshots / G-4 metrics-under-concurrency / scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
-| J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
+| J | Ecosystem & release engineering | 8 | 62 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow (read-only station UI landed) |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x95 + 0.08x100 +
-0.08x100 + 0.10x65 + 0.05x88 + 0.09x94 + 0.08x60 = **90.32 -> 90 %**.
+0.08x100 + 0.10x65 + 0.05x88 + 0.09x94 + 0.08x62 = **90.48 -> 90 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -1269,6 +1269,15 @@ extraction with the packages lane.
   points; worker-served quit; shutdown join) green x2 both platforms;
   service family + fuzz green x2; full battery at the wrap. Next: Q-a2b/M-P,
   L-6.
+
+- **2026-10-19 (station web UI MVP):** `xvectord` serves a dependency-free
+  read-only admin at `/ui` (collection picker, seeded random 2D projection of
+  an active-store sample, hover/click inspector, `/search` hit highlighting,
+  stats). New bounded `GET /collections/{n}/sample` (1..2000, deterministic
+  stride, `scope:"active"`); `probe_ui` is the 55th probe (route, HEAD trim,
+  unknown-path 404, sample bounds/exactness, quit/join); a headless-Edge
+  screenshot verified the rendered page with 60 demo points. J +2 (62) --
+  read-only station UI landed; editor/three.js-WebGL remains.
 
 ## Update rule
 

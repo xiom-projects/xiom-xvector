@@ -66,6 +66,7 @@ probe_move_under_load
 probe_replica
 probe_reopen_write
 probe_concurrency
+probe_ui
 )
 
 failures=0
