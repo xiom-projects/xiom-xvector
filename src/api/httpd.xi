@@ -21,6 +21,10 @@ use xiom.string.slice;
 use xiom.os.env;
 use xiom.net;
 use xiom.net.socket;
+use xiom.thread;
+use xiom.sync.mutex;
+use xiom.sync.atomics;
+use xiom.mem;
 use xiom.vector.primitives;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
@@ -32,6 +36,22 @@ use xiom.vector.durability.wal_segment;
 // (generous for benchmark fits; the service's own max_request_bytes --
 // XVECTOR_MAX_REQUEST_BYTES, applied in httpd_once -- is the real cap).
 const MAX_REQUEST_BYTES: Int = 33554432;
+
+// ---- G-2b threaded serve: shared state ------------------------------------
+// Module-level imported-type globals (the G-1 pattern). The engine holder is
+// zeroed at load time by a non-allocating intrinsic; XVC-C-20 is fixed on
+// v0.64.8, so `&mut G_ENGINE` aliases the global storage (aggregate globals
+// resolve to @symbol). The acceptor installs the engine before any worker
+// exists; workers reach it only under G_ENGINE_LOCK. Scalar/null-only
+// initializers elsewhere.
+var G_ENGINE: VectorEngine = mem.zeroed[VectorEngine]();
+var G_ENGINE_LOCK: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
+var G_FD_LOCK: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
+var G_INFLIGHT: atomics.AtomicInt = atomics.AtomicInt{ ptr: null };
+var G_QUIT: atomics.AtomicBool = atomics.AtomicBool{ ptr: null };
+var G_FD: Int = -1;
+var G_FD_READY: Bool = false;
+var G_THREADS: Int = 1;
 
 // Byte index of CRLFCRLF (end of headers) or -1.
 fn header_end(b: &Vec[UInt8]) -> Int {
@@ -156,12 +176,186 @@ pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
   return 0;
 }
 
+// ---- G-2b worker side -----------------------------------------------------
+
+// Take the pending client fd from the single-slot mailbox. The acceptor
+// places one fd and waits for a worker to take it before accepting again, so
+// at most one fd is ever pending; workers then process their own connection
+// concurrently (socket I/O outside the engine lock).
+fn take_client() -> Int {
+  var fd: Int = -1;
+  var got: Bool = false;
+  while !got {
+    mutex.mutex_lock(&mut G_FD_LOCK);
+    if G_FD_READY {
+      fd = G_FD;
+      G_FD = -1;
+      G_FD_READY = false;
+      got = true;
+    }
+    mutex.mutex_unlock(&mut G_FD_LOCK);
+    if !got { thread.yield_now(); }
+  }
+  return fd;
+}
+
+// One connection in a worker thread: read + send outside the coarse engine
+// lock; the service call (the only engine access) inside it. Returns 0 =
+// served, 1 = served + quit requested, -1 = empty/error.
+fn httpd_worker() -> Int {
+  let client = take_client();
+  if client < 0 { return -1; }
+  let _to = socket.socket_set_timeout(client, 30000);
+  let raw = httpd_read_request(client);
+  var rc: Int = -1;
+  if raw.len() > 0 {
+    let quit = has_token(&raw, "x-xvector-quit");
+    var cfg = service_config_default();
+    let _n = service_config_from_env(&mut cfg);
+    mutex.mutex_lock(&mut G_ENGINE_LOCK);
+    let resp = http_service_handle_cfg(&mut G_ENGINE, &raw, &cfg);
+    mutex.mutex_unlock(&mut G_ENGINE_LOCK);
+    if send_all(client, &resp) {
+      rc = 0;
+      if quit { rc = 1; }
+    }
+  }
+  socket.socket_close(client);
+  let _dec = atomics.atomic_fetch_sub(&mut G_INFLIGHT, 1);
+  if rc == 1 { atomics.atomic_bool_store(&mut G_QUIT, true); }
+  return rc;
+}
+
+// ---- G-2b acceptor side ---------------------------------------------------
+
+// Accept in this thread, handle each connection in a worker, join every
+// worker on shutdown (graceful). Bounded in-flight work = G_THREADS. The
+// listener is poll()ed with a short timeout so a worker-observed quit is
+// noticed without needing a wake connection.
+fn httpd_serve_threads(listener: Int) -> Int {
+  var running: Bool = true;
+  var poll_fds = Vec[Int].new();
+  poll_fds.push(listener);
+  var handles = Vec[JoinHandle[Int]].new();
+  while running {
+    if atomics.atomic_bool_load(&G_QUIT) { running = false; break; }
+    var at_cap: Bool = true;
+    while at_cap {
+      if atomics.atomic_bool_load(&G_QUIT) {
+        running = false;
+        at_cap = false;
+      } else if atomics.atomic_load(&G_INFLIGHT) < G_THREADS {
+        at_cap = false;
+      } else {
+        thread.yield_now();
+      }
+    }
+    if !running { break; }
+    var ready: Bool = false;
+    match socket.socket_poll_read(&poll_fds, 200) {
+      Ok(fds) => { if fds.len() > 0 { ready = true; } }
+      Err(_) => {}
+    }
+    if !ready { continue; }
+    let ar = socket.socket_accept(listener);
+    if ar.is_err {
+      if atomics.atomic_bool_load(&G_QUIT) { running = false; break; }
+      io.println("xvectord: accept failed: " + ar.error);
+      io.flush_stdout();
+      var j0: Int = 0;
+      while j0 < handles.len() {
+        let h0 = handles[j0];
+        match h0.join() { Ok(_) => {} Err(_) => {} }
+        j0 = j0 + 1;
+      }
+      socket.socket_close(listener);
+      return 1;
+    }
+    if atomics.atomic_bool_load(&G_QUIT) {
+      socket.socket_close(ar.value);
+      running = false;
+      break;
+    }
+    let client = ar.value;
+    mutex.mutex_lock(&mut G_FD_LOCK);
+    G_FD = client;
+    G_FD_READY = true;
+    mutex.mutex_unlock(&mut G_FD_LOCK);
+    let _inc = atomics.atomic_fetch_add(&mut G_INFLIGHT, 1);
+    let h = spawn(httpd_worker);
+    handles.push(h);
+    var taken: Bool = false;
+    while !taken {
+      mutex.mutex_lock(&mut G_FD_LOCK);
+      if !G_FD_READY { taken = true; }
+      mutex.mutex_unlock(&mut G_FD_LOCK);
+      if !taken { thread.yield_now(); }
+    }
+    // Reap finished workers so handles/result buffers stay bounded.
+    if handles.len() >= G_THREADS * 2 {
+      var alive = Vec[JoinHandle[Int]].new();
+      var i: Int = 0;
+      while i < handles.len() {
+        let hh = handles[i];
+        if hh.is_finished() {
+          match hh.join() { Ok(_) => {} Err(_) => {} }
+        } else {
+          alive.push(hh);
+        }
+        i = i + 1;
+      }
+      handles = alive;
+    }
+  }
+  // Graceful shutdown: every connection (including the quit one) completes.
+  if atomics.atomic_bool_load(&G_QUIT) {
+    io.println("xvectord: quit requested; shutting down");
+    io.flush_stdout();
+  }
+  var j: Int = 0;
+  while j < handles.len() {
+    let hh = handles[j];
+    match hh.join() { Ok(_) => {} Err(_) => {} }
+    j = j + 1;
+  }
+  socket.socket_close(listener);
+  return 0;
+}
+
 pub fn httpd_serve(bind: Str, port: Int) -> Int {
+  // G-2b: XVECTORD_THREADS opts into the threaded accept loop (default 1 =
+  // the original sequential path). In-flight work is bounded by this count;
+  // every engine call serializes on one coarse mutex.
+  var threads: Int = 1;
+  let vt = env.var_opt("XVECTORD_THREADS");
+  match vt {
+    Some(tv) => {
+      var t: Int = 0;
+      if parse_port(tv, &mut t) { threads = t; }
+    }
+    None => {}
+  }
+  return httpd_serve_cfg(bind, port, threads);
+}
+
+// Explicit-threads seam (the env wrapper above and the concurrency probe).
+pub fn httpd_serve_cfg(bind: Str, port: Int, threads_cfg: Int) -> Int {
+  var threads: Int = threads_cfg;
+  if threads < 1 { threads = 1; }
+  if threads > 64 { threads = 64; }
+  G_THREADS = threads;
+  G_ENGINE_LOCK = mutex.mutex_new();
+  G_FD_LOCK = mutex.mutex_new();
+  G_INFLIGHT = atomics.atomic_int_new(0);
+  G_QUIT = atomics.atomic_bool_new(false);
+  G_FD = -1;
+  G_FD_READY = false;
+
   // Durable home (M-D5, opt-in): XVECTORD_WAL=<checkpoint path> enables
   // fsync-on-ack via the delta segment <path>.seg; XVECTORD_MANIFEST is
   // optional. Without XVECTORD_WAL the server runs in-memory (no durability
   // claim) -- exactly the benchmark/server default before D5.
-  var eng = engine_new();
+  G_ENGINE = engine_new();
   var wal_path: Str = "";
   var seg_path: Str = "";
   let vw = env.var_opt("XVECTORD_WAL");
@@ -176,7 +370,7 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
           Some(m) => { if m.len() > 0 { manifest = m; } }
           None => {}
         }
-        eng = open_durable(wal_path, seg_path, manifest, 1, DistanceMetric.Euclidean);
+        G_ENGINE = open_durable(wal_path, seg_path, manifest, 1, DistanceMetric.Euclidean);
         io.println("xvectord: durable home " + wal_path + " (segment " + seg_path + ")");
         // Auto-checkpoint policy (M-D6): a compact+swap every N commits
         // bounds recovery time and the checkpoint size. 0 / absent = off
@@ -191,7 +385,7 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
           None => {}
         }
         if every > 0 {
-          let _pol = engine_set_checkpoint_policy(&mut eng, every);
+          let _pol = engine_set_checkpoint_policy(&mut G_ENGINE, every);
           io.println("xvectord: auto-checkpoint every " + convert.int_to_string(every) + " commits");
         }
       }
@@ -223,7 +417,7 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
     if s_dir.len() == 0 {
       io.println("xvectord: XVECTORD_SEAL_EVERY ignored (set XVECTORD_SEAL_DIR or XVECTORD_WAL)");
     } else {
-      match engine_set_seal_policy(&mut eng, seal_every, s_dir) {
+      match engine_set_seal_policy(&mut G_ENGINE, seal_every, s_dir) {
         Ok(_) => {
           io.println("xvectord: auto-roll every " + convert.int_to_string(seal_every) + " points into " + s_dir);
         }
@@ -256,34 +450,41 @@ pub fn httpd_serve(bind: Str, port: Int) -> Int {
   io.println("xvectord: listening on http://" + bind + ":" + convert.int_to_string(port));
   io.println("xvectord: endpoints /health /collections /stats /search (quit: header X-Xvector-Quit: 1)");
   io.flush_stdout();
-  var running: Bool = true;
-  while running {
-    let ar = socket.socket_accept(fd);
-    if ar.is_err {
-      io.println("xvectord: accept failed: " + ar.error);
-      io.flush_stdout();
-      socket.socket_close(fd);
-      return 1;
+  if threads > 1 {
+    io.println("xvectord: threads=" + convert.int_to_string(threads) + " (coarse engine mutex)");
+    io.flush_stdout();
+    let trc = httpd_serve_threads(fd);
+    if trc != 0 { return trc; }
+  } else {
+    var running: Bool = true;
+    while running {
+      let ar = socket.socket_accept(fd);
+      if ar.is_err {
+        io.println("xvectord: accept failed: " + ar.error);
+        io.flush_stdout();
+        socket.socket_close(fd);
+        return 1;
+      }
+      let rc = httpd_once(&mut G_ENGINE, ar.value);
+      if rc == 1 {
+        running = false;
+        io.println("xvectord: quit requested; shutting down");
+        io.flush_stdout();
+      }
     }
-    let rc = httpd_once(&mut eng, ar.value);
-    if rc == 1 {
-      running = false;
-      io.println("xvectord: quit requested; shutting down");
-      io.flush_stdout();
-    }
+    socket.socket_close(fd);
   }
-  socket.socket_close(fd);
   if wal_path.len() > 0 {
     // Clean shutdown (M-D6): a full compact+swap (bounded checkpoint,
     // crash-safe ordering, segment rotation). On failure fall back to the
     // plain whole-file persist; the delta segment stays intact either way.
-    match engine_checkpoint_swap(&mut eng) {
+    match engine_checkpoint_swap(&mut G_ENGINE) {
       Ok(lsn) => {
         io.println("xvectord: checkpoint swap committed (frontier "
           + convert.int_to_string(lsn) + "); segment rotated");
       }
       Err(_) => {
-        let ck = http_service_shutdown(&eng, wal_path);
+        let ck = http_service_shutdown(&G_ENGINE, wal_path);
         let _rot = segment_reset(seg_path);
         if ck {
           io.println("xvectord: checkpoint persisted (swap unavailable); segment rotated");

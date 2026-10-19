@@ -6,9 +6,11 @@
 **Status:** release candidate, prepared 2026-10-09 and refreshed 2026-10-19.
 The repository stays private and the public GitHub release is the owner's
 action; nothing in this document authorizes a push. The candidate is pinned
-to compiler v0.64.7 on both platforms; a v0.64.8 cut is GO upstream but was
-still in its stdlib gate at refresh time, so if it lands before the tag the
-candidate is re-pinned and the batteries are re-run first.
+to compiler v0.64.8 on both platforms (released 2026-10-19T17:49Z; v0.64.7
+kept as rollback). The v0.64.8 re-pin re-ran the XVC-C-19/C-20 repros and
+the full batteries before this note; the stdlib registry publish for 0.64.8
+is blocked upstream (`publisher_not_mapped`), but the compiler archive is
+live and self-contained.
 
 ## What this is
 
@@ -65,13 +67,16 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   `replica_lag` in `/stats`); L-5 online `POST /cluster/move` + drain,
   compaction-aware and gated under load. L-6 (intra-collection scatter-
   gather, phase B) remains queued.
-- **Concurrency (G-1).** Real `xiom.thread.spawn[T]` + `JoinHandle.join`
-  acceptance and a cross-thread producer/consumer leg over module-level
-  `SyncMutex`/`AtomicInt` globals are green on Windows + WSL; the previous
-  Int-handle workaround is retired. G-2b (threaded accept loop,
-  `XVECTORD_THREADS`) is **not in this candidate** -- it is blocked on the
-  compiler defect below; the shipped engine and service are single-writer /
-  single-threaded.
+- **Concurrency (G-1 + G-2b).** Real `xiom.thread.spawn[T]` +
+  `JoinHandle.join` acceptance and a cross-thread producer/consumer leg over
+  module-level `SyncMutex`/`AtomicInt` globals are green on Windows + WSL;
+  the previous Int-handle workaround is retired. **G-2b is in this
+  candidate**: `XVECTORD_THREADS` enables the threaded accept loop (accept
+  in one thread, per-connection workers, bounded in-flight, all engine calls
+  under one coarse mutex, graceful `JoinHandle` joins; the default remains
+  the sequential path). A new concurrency probe (4 clients x 8 deterministic
+  ops -> exact 32 points; worker-served quit; shutdown join) is green x2 on
+  both platforms. XVC-C-19 and XVC-C-20 are verified fixed on v0.64.8.
 - **Packages + carve safety.** The registry tier is consumed and gated:
   `xiom.wal` 0.1.0, `xiom.metrics` 0.2.0, `xiom.rate` 0.2.0,
   `xiom.http` 0.1.9, `xiom.vectors` 0.2.0 (the MOTE package), `xiom.ann`
@@ -86,45 +91,41 @@ registry package) and **xvector-lattice** (served daemon + stateless router
 
 ## Verification evidence (at this candidate)
 
-- **Toolchain:** XIOM Compiler v0.64.7 pinned and sha256-verified on both
-  platforms (Windows `16a436c4`, Linux `153f0cc9`); stdlib tree `15495aa`
-  (release pin `stdlib-v0.64.7` = `1271dd5`); packages checkout `ca41d483`.
-  WSL legs target `wsl -d Ubuntu`.
-- **Full batteries:** conformance suite **177/177 x2**, **53 probes x2**,
-  SBOM/unsafe gate (**47 modules, unsafe = 0**), the library type-check gate
-  (**47/47**), bench smoke, and the kill matrix. Windows full battery was
-  ALL GATES GREEN on v0.64.7 (stdlib `15495aa`, packages `0574c0d6`,
-  `4df7086`); the WSL full battery was green on the same v0.64.7 candidate
-  (stdlib `6727526`, packages `2e7c5524`), and every subsequent slice
-  re-ran the suite, library gate, and affected probes on both platforms
-  (package adoptions: pulse 0.3.1, vectors 0.2.0; library gate;
-  XVC-C-20 repro).
+- **Toolchain:** XIOM Compiler v0.64.8 pinned and sha256-verified on both
+  platforms (Windows `c31d9c46`, Linux `a8c003c0`; v0.64.7 kept as
+  rollback); stdlib tree `8b1ddd7` (release pin tag `stdlib-v0.64.8` =
+  `0bf5b75`, asset sha256 `6ea77968...`; registry publish blocked upstream
+  `publisher_not_mapped`); packages checkout `ca41d483`. WSL legs target
+  `wsl -d Ubuntu`.
+- **Full batteries:** Windows **ALL GATES GREEN** at the v0.64.8 pin
+  (suite 177/177 x2, 54 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
+  kill matrix); WSL suite 177/177 x2 + libcheck 47/47 + SBOM 47/0 + the
+  G-2b concurrency spot are green (the full WSL probe sweep is re-run with
+  the station-UI slice). The new 54th probe is the G-2b concurrency gate;
+  the service family and `probe_http_fuzz` are unchanged and green x2.
+  Quick bench on v0.64.8: flat 62us/op (~16.1k qps at the quick group
+  size), HNSW ef=32 recall 1.000 / 281us/op (~3.6k qps), recovery 1.0 s.
 - **Benchmark report:** `docs/BENCHMARKS.md` (methodology + committed
   baseline; the reference oracle pins kernel fidelity at Float32-ulp scale).
 - **Security checklist:** `docs/SECURITY.md` (threat model, secure defaults,
   no-unsafe audit) + `docs/sbom-v1.0.0-rc.1.json` (refreshed: 47 modules,
-  unsafe = 0, compiler v0.64.7).
-- **Repro bundles:** `docs/repro/` -- XVC-C-13, C-14, C-16, C-17, and C-18
-  are verified fixed on v0.64.6/.7; C-15 and the phantom controls stay
-  green. Two findings remain relevant: **XVC-C-19** (v0.64.7 hangs on
-  module-level function-call / allocating `var` initializers; shipped code
-  avoids the shape; `docs/repro/xv-global-init-hang/`) and **XVC-C-20**
-  (module-level `VectorEngine` global lost mutations through `&mut`; fixed
-  on compiler main `56d362a31`, no v0.64.7 re-cut yet;
-  `docs/repro/xv-global-engine-mutation/`).
+  unsafe = 0, compiler v0.64.8).
+- **Repro bundles:** `docs/repro/` -- XVC-C-13, C-14, C-16, C-17, C-18 are
+  verified fixed on v0.64.6/.7; C-15 and the phantom controls stay green.
+  **XVC-C-19** (module-level initializer hang) and **XVC-C-20** (module-level
+  aggregate global mutation loss) were verified fixed on v0.64.8 on both
+  platforms; the repros stay as regression gates. No XVECTOR compiler
+  findings remain open.
 - **Bus:** results, findings, and consumer test-backs are filed on the
   private `xiom-lang/xiom-relays` bus (see SESSION section 0 for the ids).
 
 ## Known limitations (honest)
 
-- **Single-threaded engine/service in this candidate.** G-2b (threaded
-  accept loop) is blocked on XVC-C-20: the compiler fix is on main but not
-  in the v0.64.7 archive, so sharing the engine across worker threads cannot
-  be verified. The accept loop remains sequential; concurrency claims beyond
-  the G-1 primitives are not made.
-- **XVC-C-19 compiler hang** on module-level call/allocating initializers.
-  Lane policy forbids that shape; module-level globals are scalar/null
-  literals or compiler-tested zero intrinsics only.
+- **Concurrency is correct-first.** The threaded path is flag-gated
+  (`XVECTORD_THREADS`; default sequential) and all engine calls serialize on
+  one coarse mutex. G-3 read snapshots and G-4 metrics-under-concurrency are
+  future work; scale tuning continues. XVC-C-19/C-20 are verified fixed on
+  v0.64.8; the repros stay as regression gates.
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
 - **Q-a2b is not in the candidate:** SQ8 is gated for training/scan/rescore
@@ -166,9 +167,9 @@ package-internal (not a consumer API). The `XVECTORD_*` environment knobs
 
 ## Next (post-rc.1 queue)
 
-1. Re-pin to the v0.64.8 archive when it ships; re-run the C-20 repro
-   (expect count 1 / second create Err) and the full batteries.
-2. Re-open G-2b (threaded accept loop, coarse engine mutex, graceful joins)
-   on that archive, then Q-a2b and L-6 phase B.
+1. Q-a2b (two-tier rescore on sealed scans) then M-P; L-6 phase B after.
+2. Keep the repros and the latest-tree protocol running at each archive;
+   the v0.64.8 stdlib registry publish is blocked upstream
+   (`publisher_not_mapped`) -- the compiler archive is live and re-pinned.
 3. Continue scale tuning and the release-notes/artefact refresh at each
    archive pass.

@@ -242,10 +242,10 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.7 pinned -- re-pin COMPLETE both platforms (2026-10-18)**; Windows `out\toolchain` (sha256 `16a436c4`; old v0.64.6 at `out\toolchain-v0646`) + WSL `~/.xvector-toolchain` (linux sha `153f0cc9`; old at `~/.xvector-toolchain-v0646`; **always target `wsl -d Ubuntu`**); release 2026-10-17T22:59Z (run 39076930839; linux-arm64 target NEW); **full batteries ALL GATES GREEN both platforms** (suite 177/177 x2 + 53 probes x2 + sbom 46 + bench + kill matrix; this pass's library-gate battery: sbom 47, libcheck 47/47); C-16/C-17/C-18 repros green both platforms; findings closed | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `15495aa` (2026-10-18 -- **the tree the library-gate batteries ran on BOTH platforms**; release pin `stdlib-v0.64.7` = `1271dd5`); latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
+| compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite/libcheck/SBOM + concurrency spot green -- the full WSL probe sweep is combined with the station-UI slice); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| stdlib | lane HEAD `8b1ddd7` (2026-10-19, advanced during the v0.64.8 pass); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `995aa26` + this pass's library-gate commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `11a5cdc` + this pass's v0.64.8/G-2b commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -1484,6 +1484,25 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > findings summary and OWNER-HANDOFF were truthed up. v0.64.8 cut is GO
 > upstream (stdlib gate in progress; no archive yet). Machine load was 100%
 > from other lanes: docs-only pass, no heavy gates.
+>
+> **2026-10-19 18:00Z (doorbell): v0.64.8 RE-PIN + XVC-C-20 VERIFIED + G-2b
+> LANDED.** v0.64.8 installed lane-local both platforms (win `c31d9c46`,
+> linux `a8c003c0`; v0.64.7 kept as rollback). The C-20 repro is GREEN on
+> both: `count after create = 1`, second create `Err` (exit 0). The threaded
+> accept loop was re-applied (`XVECTORD_THREADS`: accept in one thread,
+> bounded in-flight workers, one coarse engine mutex, graceful `JoinHandle`
+> joins) and a new 54th probe (`probe_concurrency`: 4 clients x 8
+> deterministic upserts/searches, exact 32 points, worker-served quit,
+> shutdown join) is GREEN x2 Windows + WSL; the existing service family +
+> `probe_http_fuzz` are GREEN x2. Quick bench (v0.64.8): flat 62us/op
+> (~16.1k qps at the quick group size), HNSW ef=32 recall 1.000 / 281us/op
+> (~3.6k qps), recovery 1.0 s. **XVC-C-19 is ALSO VERIFIED FIXED on
+> v0.64.8** -- the module-level-initializer repro builds+runs (`main
+> started` / `vec global ok`) on both platforms; no XVECTOR compiler
+> findings remain open. Windows full battery ALL GATES GREEN; WSL
+> suite/libcheck/SBOM + concurrency spot green; the full WSL probe sweep is
+> combined with the station-UI slice (section 0).
+> Release notes were refreshed earlier today and are updated for G-2b.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
@@ -1545,23 +1564,19 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
    closed on the bus; pins recorded above).
 2. In-lane: **G-1 is COMPLETE (2026-10-18)** -- natural module-level globals
    + the cross-thread mailbox leg are green x2 both platforms; the
-   Int-handle workaround is retired. **G-2b accept-loop threads: BLOCKED
-   2026-10-18 on XVC-C-20.** The threaded design was implemented and the
-   server started, but mutations through `&mut` on a module-level
-   `VectorEngine` global do not persist (create Ok, count 0, second create
-   also Ok; upsert contract violation), so every request after setup saw an
-   empty engine. Slice reverted; repro `docs/repro/xv-global-engine-mutation/`;
-   bus `REL-20261018-1815-xvector` (high). Do NOT retry until the compiler
-   keeps large imported-type global state (or ships a supported sharing
-   handle). **Next: Q-a2b / M-P** per the standing queue below; the release
-   notes refresh; L-6 (phase B) after.
-   Note: **XVC-C-19 OPEN** (v0.64.7 global-initializer hang; container
-   globals) and **XVC-C-20 FIXED on compiler main `56d362a31`** (2026-10-18;
-   no v0.64.7 re-cut -- the repro is still red on the pinned archive). G-2b
-   re-opens only after the next archive: re-pin, re-run the repro, then the
-   threaded slice. G-1's small `SyncMutex`/`AtomicInt` globals remain green.
-   **Pulse 0.3.1 ADOPTED 2026-10-19** (manifest 0.3.1; exact identity +
-   HookCtx + fallback seam + HEAD trim; 16/16 x2 both platforms).
+   Int-handle workaround is retired. **G-2b accept-loop threads: COMPLETE
+   2026-10-19 on v0.64.8.** XVC-C-20 was verified fixed on the archive
+   (`count after create = 1`, second create Err, both platforms); the
+   threaded accept loop is re-applied behind `XVECTORD_THREADS` (accept in
+   one thread, bounded in-flight workers, one coarse engine mutex, graceful
+   `JoinHandle` joins) and the new `probe_concurrency` (54th) is green x2
+   both platforms; the service family + `probe_http_fuzz` are unchanged and
+   green x2. **Next: Q-a2b / M-P** per the standing queue below; L-6
+   (phase B) after. Note: **XVC-C-19 and XVC-C-20 are VERIFIED FIXED on
+   v0.64.8**; no XVECTOR compiler findings remain open (the repros stay as
+   regression gates). **Pulse 0.3.1 ADOPTED 2026-10-19** (manifest 0.3.1;
+   exact identity + HookCtx + fallback seam + HEAD trim; 16/16 x2 both
+   platforms).
 3. **Latest-tree protocol (owner directive 2026-10-17): always run against
    the newest stdlib checkout + newest registry packages** (pull
    `E:\xiom-lang\stdlib` + `E:\xiom-packages\packages`; `xiom pkg info`
@@ -3140,41 +3155,39 @@ probe_mote_embedded x2) on stdlib 15495aa + packages 0574c0d6.
 in BOTH lane homes; the manifest pins vectors 0.1.0 + **pulse 0.3.1
 (ADOPTED 2026-10-19: exact identity + HookCtx + fallback + HEAD trim,
 16/16 x2 both platforms)**.
-L-0..L-5 all landed; G-1 COMPLETE; MOTE PUBLISHED. Open: XVC-C-19
-(v0.64.7 compiler HANG on module-level function-call/allocating `var`
-initializers; repro docs/repro/xv-global-init-hang/, bus
-REL-20261018-1518-xvector; never put call/allocate initializers at module
-level) and **XVC-C-20 FIXED on compiler main 56d362a31 (2026-10-18; no
-v0.64.7 re-cut)** -- repro docs/repro/xv-global-engine-mutation/, bus
-REL-20261018-1815-xvector; **G-2b stays blocked until the next archive**,
-then re-pin -> repro -> re-open the threaded slice. The rc.1 GitHub release
-set remains owner-gated (repo private); the release-notes refresh is OWED.
+L-0..L-5 all landed; G-1 COMPLETE; MOTE PUBLISHED. **Compiler v0.64.8 is
+pinned both platforms** (win `c31d9c46` / linux `a8c003c0`; v0.64.7
+rollback kept); XVC-C-20 verified fixed (repro green both); **G-2b threaded
+accept loop COMPLETE** (54th probe green x2 both; Windows full battery ALL
+GATES GREEN; WSL suite/libcheck/SBOM + concurrency spot green; the full WSL
+probe sweep is combined with the station-UI slice). **No XVECTOR compiler
+findings are open** (XVC-C-19 and C-20 were verified fixed on v0.64.8; the
+repros stay as regression gates). The rc.1
+GitHub release set remains owner-gated (repo private); the release-notes
+refresh is DONE (refreshed 2026-10-19 and updated for G-2b/v0.64.8).
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
    merge --ff-only; python tools/relay.py view --lane xvector. Handle
-   anything new; watch for a compiler archive answering XVC-C-19/C-20
-   (C-20 is fixed on main 56d362a31; the next archive is the re-pin trigger),
-   pulse 0.3.1 follow-ups, and packages-lane carve/mote follow-ups.
-2) **G-2b is BLOCKED on the XVC-C-20 archive** -- the compiler fix landed on
-   main `56d362a31` (2026-10-18) but there is no v0.64.7 re-cut; the repro is
-   still red on the pinned archive. Do NOT retry until the next archive:
-   re-pin (both platforms), re-run `docs/repro/xv-global-engine-mutation/`
-   (expected count 1 / second create Err), then re-implement the threaded
-   slice. **Next in-lane: Q-a2b (SQ two-tier rescore on sealed scans) or M-P
-   per section 1's queue**, then the release notes; L-6 (phase B) after.
-3) **Release notes refresh** (`docs/RELEASE-NOTES-v1.0.0-rc.1.md` is dated
-   2026-10-09; the owner reviews it before the rc.1 GitHub release): cover
-   D5-D7 durability, SQ, filters/planner, multi-segment, lattice L-1..L-5,
-   threads G-1, the package adoptions, the 53-probe batteries, the mote
-   publication, the library type-check gate, and lattice release ownership.
-   Note the G-2b/XVC-C-20 status honestly.
+   anything new; watch for a compiler archive answering XVC-C-19, pulse
+   follow-ups, and packages-lane carve/mote follow-ups. (XVC-C-20 is
+   verified fixed on v0.64.8; no archive watch needed.)
+2) **G-2b is COMPLETE (v0.64.8)** -- do not re-implement. Next in-lane:
+   **Q-a2b (SQ two-tier rescore on sealed scans)** or M-P per section 1's
+   queue; L-6 (phase B) after. Keep the threaded path flag-gated
+   (`XVECTORD_THREADS`, default sequential) and `probe_concurrency` in both
+   batteries.
+3) **Release notes refresh: DONE 2026-10-19** -- `docs/RELEASE-NOTES-v1.0.0-rc.1.md`
+   was refreshed from the 2026-10-09 draft (D5-D7, SQ8 Q-a1/Q-a2a,
+   filters/planner, lattice L-1..L-5, G-1, package tiers, 177/53/47
+   evidence) and updated for the v0.64.8 pin + G-2b landing. Owner review
+   before the rc.1 GitHub release.
 4) **Pulse 0.3.1 adoption: DONE 2026-10-19** -- `xiom.toml` pin 0.3.1;
    `probe_package_pulse` gates the exact identity + HookCtx pre->after
    mutation, limiter 429 short-circuit, idempotent clear, the 0.3.1
    unmatched-route fallback seam, and the HEAD wire trim (loopback);
    16/16 x2 Windows + WSL. Recorded in section 0.
-5) Keep a 2-4h doorbell armed (C-20 archive trigger, trees, asks).
+5) Keep a 2-4h doorbell armed (C-19 archive watch, trees, asks).
 6) Latest-tree protocol EVERY pass: pull E:\xiom-lang\stdlib +
    E:\xiom-packages\packages; `xiom pkg info` each consumed package
    (wal/metrics/rate/http/vectors/ann/orbitdb/pulse) and install the latest
@@ -3184,7 +3197,8 @@ Standing owner items: rc.1 GitHub release greenlight (OWNER-HANDOFF ready);
 ann-swap greenlight. Discipline: struct literals list every field; locals
 initialized; Str by value (XVC-C-13); json.json_* qualified; bodies as
 BYTES; copy nested map/vec data into locals before iterating (XVC-C-18);
-NO module-level initializers that call or allocate (XVC-C-19); src/ modules
+XVC-C-19 is fixed on v0.64.8 (module-level initializers are allowed again;
+keep the repro as a regression gate); src/ modules
 import `xiom.vector.primitives`, NEVER `xiom.vectors` (run
 `scripts/libcheck.ps1` or `scripts/libcheck.sh` before a carve/wrap; the
 import guard is the authoritative check -- negative-test it if edited); the

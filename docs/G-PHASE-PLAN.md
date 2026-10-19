@@ -87,7 +87,7 @@ Ordered candidate slices, each gated:
   CROSS-THREAD leg is proved through a scalar mailbox under the shared
   spinlock (2x200 exact) -- a channel handle form is wished to stdlib
   (`REL-20261018-1518-xvector-2`); module-level container initializers
-  currently hang the compiler (XVC-C-19).
+  hung the v0.64.7 compiler (XVC-C-19, fixed on v0.64.8).
 - G-2 accept-loop threads BEHIND A FLAG (`XVECTORD_THREADS`): accept in
   one thread, handle per connection in workers, ALL engine calls under
   one mutex (coarse, correct-first). Gates: `probe_http_fuzz` + service
@@ -95,22 +95,15 @@ Ordered candidate slices, each gated:
   deterministic ops -> exact results), quick_bench QPS delta recorded
   (expect no regression; gains only for pipelined clients), graceful
   shutdown joins.
-  **BLOCKED 2026-10-18 on XVC-C-20.** The accept-loop/worker code was
-  implemented and the threaded server started, but mutations through
-  `&mut` on the module-level `VectorEngine` global do not persist
-  (`engine_create_named` returns Ok, `engine_collection_count` stays 0,
-  the next upsert violates the active-collection contract), so every
-  request after setup saw an empty engine. The slice is reverted.
-  Repro: `docs/repro/xv-global-engine-mutation/`; bus
-  `REL-20261018-1815-xvector` (high). Workarounds rejected: a global
-  `Vec[VectorEngine]` holder crashes before `main` (XVC-C-19 family);
-  the heap-cell pointer form needs `unsafe` casts (SBOM gate forbids).
-  Do not retry until the compiler keeps large imported-type global state
-  (or ships a supported Send/Sync sharing handle).
-  **Update 2026-10-18:** the compiler fixed this on main `56d362a31` (the
-  `&x` Ident path resolves module globals: aggregate -> `@symbol`, scalar ->
-  slot, pointer -> stored pointer); no v0.64.7 re-cut. On the next archive:
-  re-pin both platforms, re-run the repro, then re-open this slice.
+  **COMPLETE 2026-10-19 on v0.64.8.** The v0.64.7 attempt was blocked on
+  XVC-C-20 (module-level engine global lost mutations); the compiler fixed
+  it on main `56d362a31` and shipped it in v0.64.8. Re-pinned both
+  platforms, re-ran the repro (count 1 / second create Err), re-applied the
+  threaded accept loop (`XVECTORD_THREADS`; bounded in-flight workers, one
+  coarse engine mutex, graceful `JoinHandle` joins), and added
+  `probe_concurrency` (4 clients x 8 deterministic ops -> exact 32 points;
+  worker-served quit; shutdown joins) -- green x2 both platforms; the
+  existing service probes + `probe_http_fuzz` are unchanged and green x2.
 - G-3 read snapshots (readers never block writers): requires the
   runtime-enforced sharing story (Send/Sync) + a snapshot handle
   definition; design only after G-2 numbers show the mutex bottleneck.
@@ -150,9 +143,8 @@ Ordered candidate slices, each gated:
 ## 6. Slice order recommendation
 
 P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1
-COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2 blocked
-pending the XVC-C-20 archive** (fixed on compiler main `56d362a31`,
-2026-10-18; no re-cut yet) -> Q-a2b / M-P
-(the non-G queue) while watching for the compiler fix -> G-4 ->
+COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2
+COMPLETE** (2026-10-19 on v0.64.8; threaded accept loop + concurrency
+probe x2 both) -> Q-a2b / M-P (the non-G queue) -> G-4 ->
 (evaluate G-3) -> sharding harness story. Owner-facing claims use the v1
 wording until the post-gate slices are green.

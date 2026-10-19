@@ -67,7 +67,8 @@ $probes = @(
   "probe_router_2shards",
   "probe_move_under_load",
   "probe_replica",
-  "probe_reopen_write"
+  "probe_reopen_write",
+  "probe_concurrency"
 )
 
 $failures = 0

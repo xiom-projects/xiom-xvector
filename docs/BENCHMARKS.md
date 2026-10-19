@@ -48,6 +48,11 @@ honesty rule from `docs/PRODUCTION-PLAN.md` §5).
 > **Archive note (2026-10-12):** the bench smoke (quick) re-ran green on the
 > v0.64.4 lane-local toolchain (77th pass); the full baseline numbers below
 > remain the 2026-10-11 v0.64.3 measurement (no re-baseline this pass).
+>
+> **Archive note (2026-10-19):** v0.64.8 re-pin + G-2b. Quick smoke:
+> flat 62us/op (~16.1k qps at the quick group size), HNSW ef=32 recall
+> 1.000 / 281us/op (~3.6k qps), recovery 1.0 s. The medium baseline below
+> is unchanged; the quick smoke is a gate, not the published baseline.
 
 - **Host:** DESKTOP-0OJEN1F -- AMD Ryzen 9 3950X (16C/32T), 128 GB RAM,
   Windows 11 Pro 26200. WSL2 (kernel 6.6.87.2-microsoft-standard-WSL2) for

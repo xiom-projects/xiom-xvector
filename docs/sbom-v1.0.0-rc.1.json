@@ -1,13 +1,13 @@
 {
   "project": "xiom.xvector",
   "version": "1.0.0-rc.1",
-  "compiler": "XIOM Compiler v0.64.7",
-  "stdlib_pin": "9b88b46",
+  "compiler": "XIOM Compiler v0.64.8",
+  "stdlib_pin": "8b1ddd7",
   "registry_dependencies": [],
   "unsafe_blocks_in_src": 0,
   "modules": [
     { "path": "src/api/http_service.xi", "sha256": "8d4cdef25fdbc93e4d8e3674c0896e763b8a10721bd4a176e099df90bf417ea1" },
-    { "path": "src/api/httpd.xi", "sha256": "8a2cce6a5d3de389b95fa868ef7ccd09c7e0068540caa24a19df2c6f82b88200" },
+    { "path": "src/api/httpd.xi", "sha256": "ed2d8b82a9e4aa4b81c8686732eed39f09b3d0615d395d6236607b453a272b7d" },
     { "path": "src/api/json_fast.xi", "sha256": "0fcc31a08aacd7bf43ecbcdeaf49b0c021e59b16198befa986a0cefb0530933c" },
     { "path": "src/api/replica.xi", "sha256": "3df40d5bd43822062f820e09478e7cff938846e25ae4f5c3d07ec37ba846cc03" },
     { "path": "src/api/router.xi", "sha256": "45dbd5266cd1e8fd22d7155f60c0ee5beddd5f8f5c1edb233257116e658a89af" },

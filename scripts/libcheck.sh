@@ -80,7 +80,7 @@ while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#"$work"/}"
   log="$work/check.log"
-  if ! (cd "$work" && "$XIOM_COMPILER" --check "$rel" > "$log" 2>&1); then
+  if ! (cd "$work" && timeout "$timeout_sec" "$XIOM_COMPILER" --check "$rel" > "$log" 2>&1); then
     failures=$((failures + 1))
     detail="$(grep -m 4 -E 'error|note|help' "$log" | tr '\n' ' ')"
     first_failures="${first_failures}
