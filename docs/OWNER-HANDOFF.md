@@ -10,11 +10,14 @@ repository stays private; nothing below happens until the owner greenlights.
 
 - **Candidate:** `v1.0.0-rc.1` (annotated tag, local, no push). `VERSION` =
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
-- **Batteries (at the candidate pin, v0.64.8):** suite 177/177 x2 +
-  SBOM/unsafe gate (47 modules) + 54 probes x2 + bench smoke + kill matrix
-  on Windows -- **ALL GATES GREEN**; WSL suite 177/177 x2 + libcheck 47/47
-  + SBOM 47/0 + G-2b concurrency spot green (the full WSL probe sweep is
-  combined with the station-UI slice; full logs in SESSION section 0).
+- **Batteries (at the candidate pin, v0.64.8):** Windows suite 177/177 x2 +
+  SBOM/unsafe gate (47 modules) + 55 probes x2 + bench smoke + kill matrix
+  -- **ALL GATES GREEN**; WSL suite 177/177 x2 + `probe_ui` /
+  `probe_concurrency` / service family x2 green (the full WSL 55-probe sweep
+  is queued; logs in SESSION section 0).
+- **Station UI:** read-only web admin at `/ui` (sampled active-store
+  scatter + point inspector + search hit highlighting; `probe_ui`); the
+  editor/three.js upgrade is a later slice (`docs/UI.md`).
 - **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **90 %**
   today (81 % at the candidate; "release-grade"; remaining gaps are G-3/G-4
   concurrency, Q-a2b/L-6 scope, and release-runner activation, all
@@ -69,7 +72,7 @@ from the GitHub release set below.
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
-| compiler archive | **v0.64.8 pinned 2026-10-19 -- re-pin COMPLETE on BOTH platforms** (release 2026-10-19T17:49Z, tag `4d040604b`, run 39296778685; win sha `c31d9c46`, linux sha `a8c003c0`, both installed lane-local incl. WSL; v0.64.7 kept as rollback; stdlib pin `stdlib-v0.64.8`; registry publish blocked upstream `publisher_not_mapped`); **C-19 + C-20 repros GREEN both platforms; G-2b threaded accept loop landed; 54 probes**; full battery at the wrap | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
+| compiler archive | **v0.64.8 pinned 2026-10-19 -- re-pin COMPLETE on BOTH platforms** (release 2026-10-19T17:49Z, tag `4d040604b`, run 39296778685; win sha `c31d9c46`, linux sha `a8c003c0`, both installed lane-local incl. WSL; v0.64.7 kept as rollback; stdlib pin `stdlib-v0.64.8`; registry publish blocked upstream `publisher_not_mapped`); **C-19 + C-20 repros GREEN both platforms; G-2b threaded accept loop landed; station web UI `/ui`; 55 probes**; full battery at the wrap | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
 
 ## 4. Evidence index
 

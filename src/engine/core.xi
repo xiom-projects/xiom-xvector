@@ -1136,6 +1136,13 @@ pub type CollectionStats = {
   wal_lsn: Int;
 }
 
+// A bounded active-store sample for the read-only station UI. The vector is a
+// copy (ids + vectors only; payloads are a later UI slice).
+pub type SamplePoint = {
+  id: Int;
+  vector: Vector;
+}
+
 // Statistics of the index an admin rebuild produced.
 pub type IndexStats = {
   kind: AnnIndexKind;
@@ -2071,6 +2078,35 @@ pub fn engine_get_point(eng: &VectorEngine, point: Int) -> Option[Vector] {
 
 pub fn engine_size(eng: &VectorEngine) -> Int {
   return index_size(&eng.store);
+}
+
+// Deterministic, bounded active-store sample for the station UI: a stride
+// walk offset by `seed % step` (never a full scan, never an allocation of the
+// whole store). Deleted slots (id <= 0) are skipped. Sealed segments are not
+// included yet; the HTTP layer labels the scope "active".
+pub fn engine_sample(eng: &VectorEngine, limit: Int, seed: Int) -> Vec[SamplePoint] {
+  var out = Vec[SamplePoint].new();
+  let total = index_size(&eng.store);
+  if total <= 0 { return out; }
+  var cap = limit;
+  if cap < 1 { cap = 1; }
+  if cap > 2000 { cap = 2000; }
+  var step = total / cap;
+  if step < 1 { step = 1; }
+  var start = 0;
+  if step > 1 {
+    start = seed % step;
+    if start < 0 { start = start + step; }
+  }
+  var i = start;
+  while i < total && out.len() < cap {
+    let id = eng.store.ids[i];
+    if id > 0 {
+      out.push(SamplePoint{ id: id, vector: eng.store.vectors[i] });
+    }
+    i = i + step;
+  }
+  return out;
 }
 
 pub fn engine_durable_lsn(eng: &VectorEngine) -> Int {

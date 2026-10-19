@@ -59,6 +59,13 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   a 2500-input fuzz gate, a JSON depth guard that fixed a found remote
   stack-exhaustion DoS, the bounded JSON log ring, SBOM/unsafe gates in CI,
   `docs/OPERATIONS.md`, and the required security review in `docs/SECURITY.md`.
+- **Station web admin (read-only MVP).** `xvectord` serves `/ui`: a
+  dependency-free page with a seeded random 2D projection of an active-store
+  sample (`GET /collections/{n}/sample`, bounded 1..2000, deterministic
+  stride), point inspection, and `/search` hit highlighting. Static
+  same-origin page; API auth/scopes still apply. Canvas 2D today;
+  three.js/WebGL, a payload-aware editor, and an HNSW graph view are
+  follow-ups (`docs/UI.md`; `probe_ui`).
 - **Scale-out (L-1..L-5).** L-1 mote embedded/polish; L-2 the collection
   move primitive (`export_collection` / `attach_segment` with an integrity
   footer); L-3 the stateless router v1 (versioned mapping file + strict
@@ -98,13 +105,14 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   `publisher_not_mapped`); packages checkout `ca41d483`. WSL legs target
   `wsl -d Ubuntu`.
 - **Full batteries:** Windows **ALL GATES GREEN** at the v0.64.8 pin
-  (suite 177/177 x2, 54 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
-  kill matrix); WSL suite 177/177 x2 + libcheck 47/47 + SBOM 47/0 + the
-  G-2b concurrency spot are green (the full WSL probe sweep is re-run with
-  the station-UI slice). The new 54th probe is the G-2b concurrency gate;
-  the service family and `probe_http_fuzz` are unchanged and green x2.
-  Quick bench on v0.64.8: flat 62us/op (~16.1k qps at the quick group
-  size), HNSW ef=32 recall 1.000 / 281us/op (~3.6k qps), recovery 1.0 s.
+  (suite 177/177 x2, 55 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
+  kill matrix); WSL suite 177/177 x2 + `probe_ui` / `probe_concurrency` /
+  service family x2 are green on the UI tree (the full WSL 55-probe sweep +
+  libcheck are queued). The new 55th probe is the station-UI gate; the 54th
+  is the G-2b concurrency gate; the service family and `probe_http_fuzz` are
+  unchanged and green x2. Quick bench on v0.64.8: flat 62us/op (~16.1k qps
+  at the quick group size), HNSW ef=32 recall 1.000 / 281us/op (~3.6k qps),
+  recovery 1.0 s.
 - **Benchmark report:** `docs/BENCHMARKS.md` (methodology + committed
   baseline; the reference oracle pins kernel fidelity at Float32-ulp scale).
 - **Security checklist:** `docs/SECURITY.md` (threat model, secure defaults,
@@ -128,6 +136,10 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   v0.64.8; the repros stay as regression gates.
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
+- **The web admin is read-only and active-store-scoped.** `/ui` samples the
+  active store (sealed segments are not included yet), uses Canvas 2D with a
+  random projection, and has no editor. It is a browser client of the API,
+  not a privileged backdoor: API keys/scopes still apply.
 - **Q-a2b is not in the candidate:** SQ8 is gated for training/scan/rescore
   and segment artifacts, but the sealed-scan two-tier rescore is still
   queued. Approximate results carry the documented error bounds; exact Flat
