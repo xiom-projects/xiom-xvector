@@ -107,6 +107,10 @@ Ordered candidate slices, each gated:
   the heap-cell pointer form needs `unsafe` casts (SBOM gate forbids).
   Do not retry until the compiler keeps large imported-type global state
   (or ships a supported Send/Sync sharing handle).
+  **Update 2026-10-18:** the compiler fixed this on main `56d362a31` (the
+  `&x` Ident path resolves module globals: aggregate -> `@symbol`, scalar ->
+  slot, pointer -> stored pointer); no v0.64.7 re-cut. On the next archive:
+  re-pin both platforms, re-run the repro, then re-open this slice.
 - G-3 read snapshots (readers never block writers): requires the
   runtime-enforced sharing story (Send/Sync) + a snapshot handle
   definition; design only after G-2 numbers show the mutex bottleneck.
@@ -146,8 +150,9 @@ Ordered candidate slices, each gated:
 ## 6. Slice order recommendation
 
 P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1
-COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2 BLOCKED
-on XVC-C-20** (2026-10-18; engine global mutation loss) -> Q-a2b / M-P
+COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2 blocked
+pending the XVC-C-20 archive** (fixed on compiler main `56d362a31`,
+2026-10-18; no re-cut yet) -> Q-a2b / M-P
 (the non-G queue) while watching for the compiler fix -> G-4 ->
 (evaluate G-3) -> sharding harness story. Owner-facing claims use the v1
 wording until the post-gate slices are green.

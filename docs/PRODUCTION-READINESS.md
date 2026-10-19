@@ -14,7 +14,7 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   platforms** -- full batteries ALL GATES GREEN (53 probes x2 + suite
   177/177 x2) on stdlib `6727526` + packages `2e7c5524`; C-16/C-17/C-18
   repros green on WSL + Windows; zero XVECTOR findings open; the embedded
-  tier packages orbitdb 0.2.1 + pulse 0.2.1 are consumed and gated;
+  tier packages orbitdb 0.2.1 + pulse 0.3.0 are consumed and gated;
   L-3/L-4/L-5 lattice slices landed with the durable reopen-then-write fix)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
@@ -36,7 +36,7 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open); **G-2 accept-loop threads BLOCKED on XVC-C-20** (2026-10-18: module-level engine global loses mutations through `&mut`; repro filed, slice reverted), scale tuning |
+| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open); **G-2 accept-loop threads blocked pending the XVC-C-20 archive** (fixed on compiler main `56d362a31` 2026-10-18, no v0.64.7 re-cut; repro filed, slice reverted), scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
@@ -240,11 +240,13 @@ blocked on XVC-C-17 (imported-type global pointer-field drop;
 `REL-20261015-2216-xvector`). The engine is still single-threaded and each
 call targets one active collection.
 Remaining: G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`) --
-**BLOCKED 2026-10-18 on XVC-C-20** (the engine cannot be shared through a
-module-level global: mutations through `&mut` do not persist; repro
-`docs/repro/xv-global-engine-mutation/`, bus `REL-20261018-1815-xvector`;
-the implemented slice was reverted). Concurrent readers / write
-serialization model, scale tuning beyond the baseline
+**blocked pending the XVC-C-20 archive** (the engine could not be shared
+through a module-level global on v0.64.7: mutations through `&mut` did not
+persist; repro `docs/repro/xv-global-engine-mutation/`, bus
+`REL-20261018-1815-xvector`; the implemented slice was reverted). The
+compiler fixed it on main `56d362a31` (2026-10-18; no re-cut yet): on the
+next archive, re-pin, re-run the repro, then re-open G-2. Concurrent
+readers / write serialization model, scale tuning beyond the baseline
 (`docs/G-PHASE-PLAN.md` slice order); the channel handle form (wished)
 re-opens the channel's own cross-thread leg.
 
@@ -1251,6 +1253,16 @@ extraction with the packages lane.
   `REL-20261018-1815-xvector` (high); the slice was reverted. Also fixed the
   library gate's work dir to TEMP so its copy is not cataloged as project
   modules by later builds (47/47 still green).
+
+- **2026-10-19 (resume):** `xiom.pulse` **0.3.0 adopted** (manifest pin
+  0.2.1 -> 0.3.0): `probe_package_pulse` now gates the exact 0.3.0 identity
+  and the stateful `HookCtx` seam (pre->after mutation visibility, limiter
+  429 short-circuit, idempotent clear) -- 11/11 checks x2 on Windows + WSL;
+  suite 177/177 x2 + libcheck 47/47 both platforms. Compiler lane marked
+  **XVC-C-20 fixed** on main `56d362a31` (`&x` Ident module-global path);
+  no v0.64.7 re-cut, so the repro is still red on the pinned archive and
+  G-2 stays blocked until the next release (re-pin -> repro -> threaded
+  slice).
 
 ## Update rule
 
