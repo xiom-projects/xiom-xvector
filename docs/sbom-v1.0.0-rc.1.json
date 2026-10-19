@@ -2,7 +2,7 @@
   "project": "xiom.xvector",
   "version": "1.0.0-rc.1",
   "compiler": "XIOM Compiler v0.64.8",
-  "stdlib_pin": "be1f84f",
+  "stdlib_pin": "c1f9dce",
   "registry_dependencies": [],
   "unsafe_blocks_in_src": 0,
   "modules": [
@@ -27,7 +27,7 @@
     { "path": "src/durability/wal_segment.xi", "sha256": "71deb9e70962d976a495795d0cf1a0d5dad150201378669263047e18ed23dfa3" },
     { "path": "src/durability/write_ahead_events.xi", "sha256": "c495e7a1bbedc4c48172f869fd9b96ae414afea64e277f4d0aeeb767892beaeb" },
     { "path": "src/engine.xi", "sha256": "6241fe790a84770a5cb61780ca1a2632132311034b742726827b8d152f59a931" },
-    { "path": "src/engine/core.xi", "sha256": "43205fca6a061a751182afec614e3a5f8216df0df3d778a01573bab067646cc4" },
+    { "path": "src/engine/core.xi", "sha256": "85d0e06f51f9e16c603607add1555dda11b1435e70ee06bd0b28d192828dd733" },
     { "path": "src/error.xi", "sha256": "1c79e32871c6b9b453786bc78635c89061767cc97ef89326c378a65a0e82a53f" },
     { "path": "src/hnsw.xi", "sha256": "14cd8c44ff1300ea7c824c665fd56430e21ccd19ce3c6515f83578ac6bd803a7" },
     { "path": "src/ids.xi", "sha256": "6a9609b5b835a0083b31ae77b58a4414abe33ea7a9d1967ecc5eb9d4b4642d7d" },

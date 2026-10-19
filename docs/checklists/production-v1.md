@@ -214,9 +214,10 @@ needed) -> signed commit. Red build = rejection.
   (`sealed_segment_enable_sq`; `q`/`c` after the graph; v1
   byte-identical when unarmed; loader torn-section drop; artifact gates
   in `probe_quantization`) **(done 2026-10-11, 67th pass)**
-- [ ] Q-a2b -- read-path wiring: scan sealed segments via codes + exact
-  rescore (lands with D5's multi-segment reads; consumes study 03's
-  record-layout input)
+- [x] **Q-a2b** -- read-path wiring: scan sealed Flat segments via SQ codes
+  + exact f32 rescore (`union_sealed_knn` uses `sq8_scan_rescore` when the
+  sealed segment has SQ; oversample 4, bit-identical on the gate; filtered
+  queries stay exact) -- `probe_sq_sealed` (56th) **(done 2026-10-19)**
 - [x] Study 03 -- DiskANN layout + quantized-graph notes **(done
   2026-10-11)** -> `docs/REFERENCE-STUDY-03-DISKANN.md` (sector-packed
   fixed-size records, co-located f32 + adjacency, buffer-then-seal

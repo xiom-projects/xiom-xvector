@@ -1279,6 +1279,17 @@ extraction with the packages lane.
   screenshot verified the rendered page with 60 demo points. J +2 (62) --
   read-only station UI landed; editor/three.js-WebGL remains.
 
+- **2026-10-19 (Q-a2b):** the sealed Flat read path now uses SQ codes for the
+  coarse tier and the exact f32 rescore (`union_sealed_knn` ->
+  `sq8_scan_rescore`, oversample 4); the filtered path stays exact.
+  `probe_sq_sealed` (56th) rolled a real segment with SQ and proved the union
+  top-10 bit-identical to the pre-seal exact results over 10 queries; the
+  affected sealed probes + suite 177/177 x2 are green. Windows full
+  56-probe battery **ALL GATES GREEN** (suite 177/177 x2 + libcheck 47/47 +
+  SBOM 47/0 + 56 probes x2 + bench smoke + kill matrix); the SQ read path
+  is no longer a remaining gap. WSL long sweeps were environment-interrupted
+  by VM restarts; targeted re-runs queued.
+
 ## Update rule
 
 Recompute at every wrap: adjust phase scores, recompute the weighted overall,

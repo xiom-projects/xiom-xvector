@@ -67,6 +67,7 @@ probe_replica
 probe_reopen_write
 probe_concurrency
 probe_ui
+probe_sq_sealed
 )
 
 failures=0
