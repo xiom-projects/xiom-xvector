@@ -244,7 +244,7 @@ commits, DCO `git commit -s`.
 |---|---|---|
 | compiler | **v0.64.7 pinned -- re-pin COMPLETE both platforms (2026-10-18)**; Windows `out\toolchain` (sha256 `16a436c4`; old v0.64.6 at `out\toolchain-v0646`) + WSL `~/.xvector-toolchain` (linux sha `153f0cc9`; old at `~/.xvector-toolchain-v0646`; **always target `wsl -d Ubuntu`**); release 2026-10-17T22:59Z (run 39076930839; linux-arm64 target NEW); **full batteries ALL GATES GREEN both platforms** (suite 177/177 x2 + 53 probes x2 + sbom 46 + bench + kill matrix; this pass's library-gate battery: sbom 47, libcheck 47/47); C-16/C-17/C-18 repros green both platforms; findings closed | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `15495aa` (2026-10-18 -- **the tree the library-gate batteries ran on BOTH platforms**; release pin `stdlib-v0.64.7` = `1271dd5`); latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
-| packages | lane HEAD `0574c0d6` (2026-10-18; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.0 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded by 0.3.0; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
+| packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
 | xvector | `995aa26` + this pass's library-gate commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
@@ -1466,6 +1466,14 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > still red on the pinned archive, so G-2b stays blocked until the next
 > release; then re-pin, re-run the repro, and re-open the threaded slice.
 > Next: Q-a2b / M-P; the release-notes refresh remains owed.
+>
+> **2026-10-19 12:50Z: pulse 0.3.1 ADOPTED** -- released the same day
+> (fallback seam + HEAD trim; sha256 `38465713`; test-back requested).
+> Manifest 0.3.0 -> 0.3.1; `probe_package_pulse` now gates the exact 0.3.1
+> identity, the unmatched-route fallback (install / duplicate code /
+> unmatched-route site response / clear -> package 404) and the HEAD wire
+> trim (loopback: GET Content-Length 11 with zero body bytes). Probe 16/16
+> x2 Windows + WSL; suite 177/177 x2 + libcheck 47/47 both platforms.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
@@ -1542,8 +1550,8 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
    no v0.64.7 re-cut -- the repro is still red on the pinned archive). G-2b
    re-opens only after the next archive: re-pin, re-run the repro, then the
    threaded slice. G-1's small `SyncMutex`/`AtomicInt` globals remain green.
-   **Pulse 0.3.0 ADOPTED 2026-10-19** (manifest 0.3.0; exact identity +
-   HookCtx probe x2 both platforms).
+   **Pulse 0.3.1 ADOPTED 2026-10-19** (manifest 0.3.1; exact identity +
+   HookCtx + fallback seam + HEAD trim; 16/16 x2 both platforms).
 3. **Latest-tree protocol (owner directive 2026-10-17): always run against
    the newest stdlib checkout + newest registry packages** (pull
    `E:\xiom-lang\stdlib` + `E:\xiom-packages\packages`; `xiom pkg info`
@@ -3118,9 +3126,10 @@ full battery ALL GATES GREEN (suite 177/177 x2 + libcheck 47/47 + sbom 47
 modules unsafe=0 + 53 probes x2 + bench smoke + kill matrix); WSL spot green
 (libcheck 47/47 + suite 177/177 x2 + probe_vector_store x2 +
 probe_mote_embedded x2) on stdlib 15495aa + packages 0574c0d6.
-`xiom.vectors` 0.2.0 (MOTE, eco-v0.1.198) and `xiom.pulse` 0.3.0 are installed
-in BOTH lane homes; the manifest pins vectors 0.1.0 + **pulse 0.3.0
-(ADOPTED 2026-10-19: exact identity + HookCtx probe x2 both platforms)**.
+`xiom.vectors` 0.2.0 (MOTE, eco-v0.1.198) and `xiom.pulse` 0.3.1 are installed
+in BOTH lane homes; the manifest pins vectors 0.1.0 + **pulse 0.3.1
+(ADOPTED 2026-10-19: exact identity + HookCtx + fallback + HEAD trim,
+16/16 x2 both platforms)**.
 L-0..L-5 all landed; G-1 COMPLETE; MOTE PUBLISHED. Open: XVC-C-19
 (v0.64.7 compiler HANG on module-level function-call/allocating `var`
 initializers; repro docs/repro/xv-global-init-hang/, bus
@@ -3136,7 +3145,7 @@ Do this, in order:
    merge --ff-only; python tools/relay.py view --lane xvector. Handle
    anything new; watch for a compiler archive answering XVC-C-19/C-20
    (C-20 is fixed on main 56d362a31; the next archive is the re-pin trigger),
-   pulse 0.3.0 follow-ups, and packages-lane carve/mote follow-ups.
+   pulse 0.3.1 follow-ups, and packages-lane carve/mote follow-ups.
 2) **G-2b is BLOCKED on the XVC-C-20 archive** -- the compiler fix landed on
    main `56d362a31` (2026-10-18) but there is no v0.64.7 re-cut; the repro is
    still red on the pinned archive. Do NOT retry until the next archive:
@@ -3150,10 +3159,11 @@ Do this, in order:
    threads G-1, the package adoptions, the 53-probe batteries, the mote
    publication, the library type-check gate, and lattice release ownership.
    Note the G-2b/XVC-C-20 status honestly.
-4) **Pulse 0.3.0 adoption: DONE 2026-10-19** -- `xiom.toml` pin 0.3.0;
+4) **Pulse 0.3.1 adoption: DONE 2026-10-19** -- `xiom.toml` pin 0.3.1;
    `probe_package_pulse` gates the exact identity + HookCtx pre->after
-   mutation, limiter 429 short-circuit, idempotent clear; 11/11 x2 Windows +
-   WSL. Recorded in section 0.
+   mutation, limiter 429 short-circuit, idempotent clear, the 0.3.1
+   unmatched-route fallback seam, and the HEAD wire trim (loopback);
+   16/16 x2 Windows + WSL. Recorded in section 0.
 5) Keep a 2-4h doorbell armed (C-20 archive trigger, trees, asks).
 6) Latest-tree protocol EVERY pass: pull E:\xiom-lang\stdlib +
    E:\xiom-packages\packages; `xiom pkg info` each consumed package

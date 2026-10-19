@@ -14,7 +14,7 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   platforms** -- full batteries ALL GATES GREEN (53 probes x2 + suite
   177/177 x2) on stdlib `6727526` + packages `2e7c5524`; C-16/C-17/C-18
   repros green on WSL + Windows; zero XVECTOR findings open; the embedded
-  tier packages orbitdb 0.2.1 + pulse 0.3.0 are consumed and gated;
+  tier packages orbitdb 0.2.1 + pulse 0.3.1 are consumed and gated;
   L-3/L-4/L-5 lattice slices landed with the durable reopen-then-write fix)
 - **Overall:** **88 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
@@ -1258,7 +1258,11 @@ extraction with the packages lane.
   0.2.1 -> 0.3.0): `probe_package_pulse` now gates the exact 0.3.0 identity
   and the stateful `HookCtx` seam (pre->after mutation visibility, limiter
   429 short-circuit, idempotent clear) -- 11/11 checks x2 on Windows + WSL;
-  suite 177/177 x2 + libcheck 47/47 both platforms. Compiler lane marked
+  suite 177/177 x2 + libcheck 47/47 both platforms. **Same day, 0.3.1
+  adopted** (0.3.0 -> 0.3.1): the fallback seam (unmatched-route site/custom
+  404; duplicate -> `fallback_already_installed`; clear restores the package
+  404) and the HEAD wire trim (loopback: GET Content-Length 11, zero body
+  bytes); probe 16/16 x2 both platforms. Compiler lane marked
   **XVC-C-20 fixed** on main `56d362a31` (`&x` Ident module-global path);
   no v0.64.7 re-cut, so the repro is still red on the pinned archive and
   G-2 stays blocked until the next release (re-pin -> repro -> threaded

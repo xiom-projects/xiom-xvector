@@ -1,14 +1,15 @@
 // Copyright (c) 2026 Eleftherios Notas and The XIOM Authors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Registry consumption gate: xiom.pulse 0.3.0 (PULSE Beacon -- the
+// Registry consumption gate: xiom.pulse 0.3.1 (PULSE Beacon -- the
 // embeddable protocol core; Station consumes the same package). Proves the
 // published artifact is consumable from the lane XIOM_HOME and that the
-// pure surface works without sockets: request parse + header/body framing,
-// the version-identity seam (server token roundtrip + rejection rules), the
-// stateless hook seam, and the 0.3.0 stateful HookCtx seam (pre->after
-// mutation visibility, limiter short-circuit, idempotent clear). 0.3.0
-// carries the exact version identity fix.
+// pure surface works: request parse + header/body framing, the
+// version-identity seam (server token roundtrip + rejection rules), the
+// stateless hook seam, the stateful HookCtx seam (pre->after mutation,
+// limiter short-circuit, idempotent clear), the 0.3.1 unmatched-route
+// fallback seam, and the 0.3.1 HEAD wire trim (loopback response: GET
+// Content-Length with zero body bytes).
 // Exit = failed checks.
 
 module probe_package_pulse
@@ -19,8 +20,14 @@ use xiom.pulse.reqctx;
 use xiom.pulse.app;
 use xiom.pulse.router;
 use xiom.string.slice;
+use xiom.net;
+use xiom.net.socket;
+use xiom.thread;
 use xiom.io;
 use xiom.convert;
+
+// Scalar-only global (XVC-C-19): the HEAD loopback port.
+var H_PORT: Int = 0;
 
 fn check(ok: Bool, name: Str, fails: Int) -> Int {
   if ok { io.println("  [PASS] " + name); return fails; }
@@ -54,15 +61,114 @@ fn handler_ok(_req: &PulseRequest, _route: &PulseRoute, _body: Str) -> HandlerOu
   return app.out_json(200, "{\"ok\":true}");
 }
 
+// 0.3.1 fallback seam: an unmatched route consults this before the 404.
+fn fallback_site(_req: &PulseRequest, _body: Str) -> HandlerOut {
+  return app.out_json(200, "{\"fallback\":\"site\"}");
+}
+
+// ---- loopback helpers (HEAD wire trim) ------------------------------------
+
+fn recv_all(fd: Int) -> Vec[UInt8] {
+  var out = Vec[UInt8].new();
+  var done: Bool = false;
+  var rounds: Int = 0;
+  while !done && rounds < 64 {
+    let rr = socket.socket_recv(fd, 65536);
+    if rr.is_err {
+      done = true;
+    } else {
+      let chunk = rr.value;
+      if chunk.len() == 0 {
+        done = true;
+      } else {
+        var i: Int = 0;
+        while i < chunk.len() {
+          out.push(chunk[i]);
+          i = i + 1;
+        }
+      }
+    }
+    rounds = rounds + 1;
+  }
+  return out;
+}
+
+fn status_of(resp: &Vec[UInt8]) -> Int {
+  var i: Int = 0;
+  while i < resp.len() && resp[i] != 32u8 { i = i + 1; }
+  if i >= resp.len() { return -1; }
+  i = i + 1;
+  var code: Int = 0;
+  var n: Int = 0;
+  while i < resp.len() && resp[i] >= 48u8 && resp[i] <= 57u8 && n < 3 {
+    code = code * 10 + ((resp[i] - 48u8) as Int);
+    i = i + 1;
+    n = n + 1;
+  }
+  if n == 0 { return -1; }
+  return code;
+}
+
+fn header_end(resp: &Vec[UInt8]) -> Int {
+  var i: Int = 0;
+  while i + 3 < resp.len() {
+    if resp[i] == 13u8 && resp[i + 1] == 10u8 && resp[i + 2] == 13u8 && resp[i + 3] == 10u8 {
+      return i + 4;
+    }
+    i = i + 1;
+  }
+  return -1;
+}
+
+fn bytes_has(resp: &Vec[UInt8], s: Str) -> Bool {
+  if s.len() == 0 { return true; }
+  let t = slice.str_bytes(s);
+  if t.len() > resp.len() { return false; }
+  var i: Int = 0;
+  while i + t.len() <= resp.len() {
+    var j: Int = 0;
+    var hit: Bool = true;
+    while j < t.len() {
+      if resp[i + j] != t[j] { hit = false; j = t.len(); } else { j = j + 1; }
+    }
+    if hit { return true; }
+    i = i + 1;
+  }
+  return false;
+}
+
+// Send HEAD /health and assert: 200, the GET Content-Length (11 for
+// {"ok":true}) is present, and the response carries zero body bytes.
+fn head_client() -> Int {
+  var fails: Int = 0;
+  let cs = socket.socket_tcp();
+  if cs.is_err { return 1; }
+  let cfd = cs.value;
+  let _t = socket.socket_set_timeout(cfd, 5000);
+  let cr = socket.socket_connect(cfd, "127.0.0.1", H_PORT);
+  if cr.is_err {
+    socket.socket_close(cfd);
+    return 1;
+  }
+  let req = slice.str_bytes("HEAD /health HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+  let _s = socket.socket_send_all(cfd, &req);
+  let resp = recv_all(cfd);
+  socket.socket_close(cfd);
+  if status_of(&resp) != 200 { fails = fails + 1; }
+  if !bytes_has(&resp, "Content-Length: 11") { fails = fails + 1; }
+  let he = header_end(&resp);
+  if he < 0 || he != resp.len() { fails = fails + 1; }
+  return fails;
+}
+
 fn main() -> Int {
-  io.println("=== xvector probe: xiom.pulse 0.3.0 (Beacon embedded tier) ===");
+  io.println("=== xvector probe: xiom.pulse 0.3.1 (Beacon embedded tier) ===");
   var fails: Int = 0;
 
-  // Version-identity gate: 0.3.0 ships the exact identity (the 0.2.x
-  // artifact reported a stale 0.2.0; bus -2102/-1606).
+  // Version-identity gate: 0.3.1 is the exact published identity.
   var pv = pulse.pulse_version();
-  var pv_ok = pv == "0.3.0";
-  fails = check(pv_ok, "version: pulse_version() reports the exact 0.3.0 identity (" + pv + ")", fails);
+  var pv_ok = pv == "0.3.1";
+  fails = check(pv_ok, "version: pulse_version() reports the exact 0.3.1 identity (" + pv + ")", fails);
 
   var raw = slice.str_bytes("GET /health HTTP/1.1\r\nHost: t\r\nX-Api-Key: abc123\r\n\r\n");
   var req = http.parse_request(&raw);
@@ -129,6 +235,67 @@ fn main() -> Int {
   let clr2 = app.hookctx_clear(&mut lctx);
   fails = check(clr1 && !clr2 && app.hookctx_len(&lctx) == 0,
     "hookctx: clear empties once, is idempotent (second call returns false)", fails);
+
+  // ---- 0.3.1 fallback seam ----
+  var fh = app.hooks_new();
+  var fi = false;
+  match app.hooks_install_fallback(&mut fh, fallback_site) { Ok(_) => { fi = true; } Err(_) => {} }
+  fails = check(fi && app.hooks_has_fallback(&fh), "fallback: install + has", fails);
+
+  var dup = false;
+  match app.hooks_install_fallback(&mut fh, fallback_site) {
+    Ok(_) => {}
+    Err(e) => { dup = app.hook_error_code(&e) == "fallback_already_installed"; }
+  }
+  fails = check(dup, "fallback: duplicate rejected with fallback_already_installed", fails);
+
+  var fctx = app.hookctx_new();
+  let miss = http.parse_request(&slice.str_bytes("GET /no-such-page HTTP/1.1\r\nHost: t\r\n\r\n"));
+  let fout = app.dispatch_with_ctx(&fh, &mut fctx, "GET", &miss, "", handler_ok);
+  fails = check(fout.status == 200 && fout.body == "{\"fallback\":\"site\"}",
+    "fallback: unmatched route served by the fallback (site mode)", fails);
+
+  let fc = app.hooks_clear_fallback(&mut fh);
+  let fout2 = app.dispatch_with_ctx(&fh, &mut fctx, "GET", &miss, "", handler_ok);
+  fails = check(fc && !app.hooks_has_fallback(&fh) && fout2.status == 404,
+    "fallback: clear restores the package 404", fails);
+
+  // ---- 0.3.1 HEAD wire trim (loopback) ----
+  let ls = socket.socket_tcp();
+  var lfd: Int = -1;
+  var port: Int = -1;
+  if ls.is_ok {
+    lfd = ls.value;
+    let _ra = socket.socket_reuse_addr(lfd, true);
+    var tryp: Int = 18960;
+    while port < 0 && tryp < 19060 {
+      var ok: Bool = false;
+      let br = socket.socket_bind(lfd, "127.0.0.1", tryp);
+      match br { Ok(_) => { ok = true; } Err(_) => {} }
+      if ok { port = tryp; } else { tryp = tryp + 1; }
+    }
+    if port > 0 {
+      let _lr = socket.socket_listen(lfd, 4);
+    }
+  }
+  if port > 0 {
+    H_PORT = port;
+    let hc = spawn(head_client);
+    let ar = socket.socket_accept(lfd);
+    if ar.is_ok {
+      var hctx2 = app.hookctx_new();
+      var hhooks = app.hooks_new();
+      app.handle_connection_with_ctx(ar.value, handler_ok, &hhooks, &mut hctx2);
+      socket.socket_close(ar.value);
+    }
+    var hf: Int = -1;
+    match hc.join() { Ok(v) => { hf = v; } Err(_) => { hf = 1; } }
+    fails = check(ar.is_ok && hf == 0,
+      "HEAD: headers only (GET Content-Length 11, zero body bytes)", fails);
+    socket.socket_close(lfd);
+  } else {
+    fails = check(false, "HEAD: no loopback port available", fails);
+  }
 
   var resp = slice.str_bytes("HTTP/1.1 200 OK\r\n");
   var with_hdr = http.with_header_line(&resp, "X-Test: 1");
