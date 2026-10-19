@@ -1,9 +1,14 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-# xv-global-init-hang -- compiler hang on module-level initializers (v0.64.7)
+# xv-global-init-hang -- compiler hang on module-level initializers (v0.64.7; FIXED in v0.64.8)
 
-**Symptom:** compiling a minimal module whose module-level `var`s have
+**STATUS (2026-10-19): FIXED on compiler v0.64.8.** The repro now builds
+and runs on both platforms: `main started` / `vec global ok`, exit 0
+(Windows sha `c31d9c46`, Linux sha `a8c003c0`). The v0.64.7 history below is
+retained.
+
+**Symptom (v0.64.7):** compiling a minimal module whose module-level `var`s have
 function-call / allocating initializers HANGS the v0.64.7 compiler (no
 output, no exit; >2 minutes for a 15-line file). `build.ps1`'s watchdog
 would kill it (exit 124); the shell runs left orphaned `xiom` processes

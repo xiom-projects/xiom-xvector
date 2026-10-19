@@ -1,7 +1,12 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-# xv-global-engine-mutation -- module-level engine global loses mutations (v0.64.7)
+# xv-global-engine-mutation -- module-level engine global loses mutations (v0.64.7; FIXED in v0.64.8)
+
+**STATUS (2026-10-19): VERIFIED FIXED on compiler v0.64.8** -- the repro
+prints `count after create = 1`, second create `Err`, exit 0 on Windows and
+WSL; the G-2b threaded accept loop landed. The v0.64.7 history below is
+retained.
 
 **Symptom:** a module-level `var G_ENGINE: VectorEngine` can be assigned and
 read, but mutations made through `&mut G_ENGINE` do not persist:

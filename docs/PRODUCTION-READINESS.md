@@ -16,7 +16,7 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   repros green on WSL + Windows; zero XVECTOR findings open; the embedded
   tier packages orbitdb 0.2.1 + pulse 0.3.1 are consumed and gated;
   L-3/L-4/L-5 lattice slices landed with the durable reopen-then-write fix)
-- **Overall:** **88 %** (weighted; see method)
+- **Overall:** **90 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -36,13 +36,13 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 40 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg; channel handle form wished; XVC-C-19 global-init hang open); **G-2 accept-loop threads blocked pending the XVC-C-20 archive** (fixed on compiler main `56d362a31` 2026-10-18, no v0.64.7 re-cut; repro filed, slice reverted), scale tuning |
+| G | Concurrency & scalability | 10 | 65 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg); **G-2 COMPLETE 2026-10-19 on v0.64.8** (threaded accept loop behind `XVECTORD_THREADS`; bounded in-flight, one coarse engine mutex, graceful joins; `probe_concurrency` 54th, green x2 both); C-19 fixed on v0.64.8; remaining G-3 read snapshots / G-4 metrics-under-concurrency / scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 60 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x95 + 0.08x100 +
-0.08x100 + 0.10x40 + 0.05x88 + 0.09x94 + 0.08x60 = **87.82 -> 88 %**.
+0.08x100 + 0.10x65 + 0.05x88 + 0.09x94 + 0.08x60 = **90.32 -> 90 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -235,17 +235,15 @@ trampoline i64). **G-1's thread + counter legs landed (2026-10-16):**
 `tests/probes/probe_thread_sync.xi` (45th probe, both batteries) pins the
 spawn/join acceptance + a 4-thread mutex-guarded counter (exact 2000) + a
 4-thread atomic counter (exact 2000) on Windows + WSL, plus the
-same-thread channel FIFO/close contract; the channel CROSS-THREAD leg is
-blocked on XVC-C-17 (imported-type global pointer-field drop;
-`REL-20261015-2216-xvector`). The engine is still single-threaded and each
-call targets one active collection.
-Remaining: G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`) --
-**blocked pending the XVC-C-20 archive** (the engine could not be shared
-through a module-level global on v0.64.7: mutations through `&mut` did not
-persist; repro `docs/repro/xv-global-engine-mutation/`, bus
-`REL-20261018-1815-xvector`; the implemented slice was reverted). The
-compiler fixed it on main `56d362a31` (2026-10-18; no re-cut yet): on the
-next archive, re-pin, re-run the repro, then re-open G-2. Concurrent
+same-thread channel FIFO/close contract. The engine core still serializes
+writes and targets one active collection; G-2 adds the threaded accept path.
+Done: **G-2 flag-gated accept-loop threads (`XVECTORD_THREADS`) COMPLETE
+2026-10-19 on v0.64.8** (XVC-C-20 verified fixed; accept in one thread,
+bounded in-flight workers, one coarse engine mutex, graceful `JoinHandle`
+joins; `probe_concurrency` = 54th probe, 4 clients x 8 deterministic ops ->
+exact 32 points, worker-served quit, shutdown join; green x2 both). The
+existing service family + `probe_http_fuzz` are unchanged and green x2.
+Remaining: G-3 read snapshots, G-4 metrics-under-concurrency, concurrent
 readers / write serialization model, scale tuning beyond the baseline
 (`docs/G-PHASE-PLAN.md` slice order); the channel handle form (wished)
 re-opens the channel's own cross-thread leg.
@@ -1262,11 +1260,15 @@ extraction with the packages lane.
   adopted** (0.3.0 -> 0.3.1): the fallback seam (unmatched-route site/custom
   404; duplicate -> `fallback_already_installed`; clear restores the package
   404) and the HEAD wire trim (loopback: GET Content-Length 11, zero body
-  bytes); probe 16/16 x2 both platforms. Compiler lane marked
-  **XVC-C-20 fixed** on main `56d362a31` (`&x` Ident module-global path);
-  no v0.64.7 re-cut, so the repro is still red on the pinned archive and
-  G-2 stays blocked until the next release (re-pin -> repro -> threaded
-  slice).
+  bytes); probe 16/16 x2 both platforms.   **2026-10-19 (v0.64.8): re-pin complete both platforms** (win
+  `c31d9c46`, linux `a8c003c0`; v0.64.7 kept as rollback); XVC-C-20
+  **verified fixed** (repro green both: count 1 / second create Err);
+  **G-2b COMPLETE** -- threaded accept loop behind `XVECTORD_THREADS`
+  (bounded in-flight, one coarse engine mutex, graceful joins), new
+  `probe_concurrency` (54th; 4 clients x 8 deterministic ops -> exact 32
+  points; worker-served quit; shutdown join) green x2 both platforms;
+  service family + fuzz green x2; full battery at the wrap. Next: Q-a2b/M-P,
+  L-6.
 
 ## Update rule
 
