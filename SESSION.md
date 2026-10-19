@@ -242,10 +242,10 @@ commits, DCO `git commit -s`.
 
 | Lane | Version / hash | Path |
 |---|---|---|
-| compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; the full WSL 55-probe sweep is queued after the UI commit); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
+| compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `8b1ddd7` (2026-10-19, advanced during the v0.64.8 pass); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `75e936f` + this pass's station-UI commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `75e936f` + `482ce93` (station UI) + this pass's Q-a2b commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -1514,6 +1514,19 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > Windows full 55-probe battery is ALL GATES GREEN; the WSL targeted gates
 > are green and the full WSL 55-probe sweep is queued. Canvas 2D now;
 > three.js/WebGL + editor later (`docs/UI.md`).
+>
+> **2026-10-19 (work window): Q-a2b LANDED.** Sealed Flat segments with SQ
+> codes now read through `sq8_scan_rescore` (oversample 4) in
+> `union_sealed_knn`; the filtered path stays exact. New `probe_sq_sealed`
+> (56th) proves the sealed union is bit-identical to the pre-seal exact
+> top-10 across 10 queries on a real rolled segment (SQ armed by the roll).
+> Affected probes (quantization / multisegment / snapshot / collection_move
+> / move_under_load) + suite 177/177 x2 + a clean libcheck are green; the
+> clean 56-probe Windows battery is **ALL GATES GREEN** (suite 177/177 x2 +
+> libcheck 47/47 + SBOM 47/0 + 56 probes x2 + bench smoke + kill matrix).
+> WSL could not complete a long sweep tonight: the VM restarted repeatedly
+> (0-min uptime) and killed the frozen 55-probe run mid-probe; WSL targeted
+> re-runs are queued for the next quiet window.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
@@ -1582,8 +1595,9 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
    one thread, bounded in-flight workers, one coarse engine mutex, graceful
    `JoinHandle` joins) and the new `probe_concurrency` (54th) is green x2
    both platforms; the service family + `probe_http_fuzz` are unchanged and
-   green x2. **Next: Q-a2b / M-P** per the standing queue below; L-6
-   (phase B) after. **Station web UI MVP LANDED 2026-10-19** (`/ui` +
+   green x2. **Q-a2b DONE 2026-10-19** (sealed Flat SQ coarse + exact
+   rescore; `probe_sq_sealed` 56th; bit-identical gate); next **M-P**;
+   L-6 (phase B) after. **Station web UI MVP LANDED 2026-10-19** (`/ui` +
    `/collections/{n}/sample`, 55th probe, Canvas 2D, screenshot-verified;
    editor/three.js upgrade optional). Note: **XVC-C-19 and XVC-C-20 are
    VERIFIED FIXED on v0.64.8**; no XVECTOR compiler findings remain open
@@ -3172,8 +3186,9 @@ L-0..L-5 all landed; G-1 COMPLETE; MOTE PUBLISHED. **Compiler v0.64.8 is
 pinned both platforms** (win `c31d9c46` / linux `a8c003c0`; v0.64.7
 rollback kept); XVC-C-20 verified fixed (repro green both); **G-2b threaded
 accept loop COMPLETE** (54th probe green x2 both; Windows full battery ALL
-GATES GREEN; WSL suite + UI/concurrency/service probes green; the full WSL
-55-probe sweep is queued). **Station web UI MVP LANDED**:
+GATES GREEN; WSL suite + UI/concurrency/service probes green; WSL long
+sweeps were environment-interrupted by VM restarts, so the full WSL re-run
+is queued). **Station web UI MVP LANDED**:
 `/ui` static admin + `GET /collections/{n}/sample` + Canvas 2D seeded
 random-projection scatter, inspector, search highlighting; `probe_ui` is the
 55th probe; a headless-Edge screenshot verified the rendered page. Editor /
@@ -3191,10 +3206,11 @@ Do this, in order:
    verified fixed on v0.64.8; no archive watch needed.)
 2) **G-2b is COMPLETE (v0.64.8)** -- do not re-implement. **Station web UI
    MVP is DONE** (`/ui` + `/sample`; `probe_ui` 55th; editor/3D optional).
-   Next in-lane: **Q-a2b (SQ two-tier rescore on sealed scans)** or M-P per
-   section 1's queue; L-6 (phase B) after. Keep the threaded path flag-gated
+   **Q-a2b is DONE** (sealed Flat SQ coarse + exact rescore;
+   `probe_sq_sealed` 56th; bit-identical). Next in-lane: **M-P (P3 SIMD seam
+   / P4 IVF-PQ)**; L-6 (phase B) after. Keep the threaded path flag-gated
    (`XVECTORD_THREADS`, default sequential) and `probe_concurrency` +
-   `probe_ui` in both batteries.
+   `probe_ui` + `probe_sq_sealed` in both batteries.
 3) **Release notes refresh: DONE 2026-10-19** -- `docs/RELEASE-NOTES-v1.0.0-rc.1.md`
    was refreshed from the 2026-10-09 draft (D5-D7, SQ8 Q-a1/Q-a2a,
    filters/planner, lattice L-1..L-5, G-1, package tiers, 177/53/47

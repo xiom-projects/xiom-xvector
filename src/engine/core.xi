@@ -19,6 +19,7 @@ use xiom.vector.primitives;
 use xiom.vector.storage.vector_store;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
+use xiom.vector.index.quantize;
 use xiom.vector.query.search_service;
 use xiom.vector.query.pagination;
 use xiom.vector.query.filter_plan;
@@ -1368,6 +1369,18 @@ fn union_sealed_knn(eng: &VectorEngine, q: &Vector, per: Int) -> Vec[SearchResul
       if sc.ss.kind == AnnIndexKind.Hnsw && sc.ss.has_graph {
         var nb = hnsw_search(&sc.ss.graph, q, per, sc.ss.ef_search, sc.ss.metric);
         src = neighbors_to_results(&nb);
+      } else if sc.ss.has_sq {
+        // Q-a2b: quantized coarse scan + exact f32 rescore over the sealed
+        // segment. The oversample factor (capped at 4096 candidates inside
+        // sq8_scan_rescore) must contain the true top-k for the bit-identical
+        // result contract; probe_sq_sealed gates it. Filtered queries stay on
+        // the exact path below (payload predicates are applied there).
+        var qh = sq8_scan_rescore(&sc.ss.store, &sc.ss.sq, &sc.ss.codes, q, per, sc.ss.metric, 4);
+        var qi: Int = 0;
+        while qi < qh.len() {
+          src.push(SearchResult{ id: qh[qi].id, distance: qh[qi].distance });
+          qi = qi + 1;
+        }
       } else {
         src = search_knn(&sc.ss.store, q, per, sc.ss.metric);
       }

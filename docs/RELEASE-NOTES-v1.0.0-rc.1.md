@@ -46,7 +46,9 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   two-tier rescore) and Q-a2a the segment codec v2 with an opt-in SQ
   section (`has_sq/sq/codes`) and torn-section drop. Rescore is bit-identical
   to exact on the gated queries; documented error bounds are pinned.
-  Q-a2b (two-tier rescore on sealed scans) remains queued.
+  Q-a2b (two-tier rescore on sealed scans) landed: sealed Flat segments with
+  SQ codes are read through the quantized coarse scan + exact f32 rescore
+  (`probe_sq_sealed`), bit-identical to the pre-seal exact top-k on the gate.
 - **Index + planner.** Exact Flat search, a hardened HNSW (multi-layer,
   tombstones, codec, recall harness, compaction), a sorted payload key index
   with pre/post filtering and a planner, and a Float64 reference oracle that
@@ -105,11 +107,12 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   `publisher_not_mapped`); packages checkout `ca41d483`. WSL legs target
   `wsl -d Ubuntu`.
 - **Full batteries:** Windows **ALL GATES GREEN** at the v0.64.8 pin
-  (suite 177/177 x2, 55 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
+  (suite 177/177 x2, 56 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
   kill matrix); WSL suite 177/177 x2 + `probe_ui` / `probe_concurrency` /
-  service family x2 are green on the UI tree (the full WSL 55-probe sweep +
-  libcheck are queued). The new 55th probe is the station-UI gate; the 54th
-  is the G-2b concurrency gate; the service family and `probe_http_fuzz` are
+  service family x2 are green on the UI tree; WSL long sweeps were
+  environment-interrupted by repeated VM restarts, so the full WSL sweep +
+  libcheck are queued for a quiet window. The new 55th probe is the
+  station-UI gate; the 54th is the G-2b concurrency gate; the service family and `probe_http_fuzz` are
   unchanged and green x2. Quick bench on v0.64.8: flat 62us/op (~16.1k qps
   at the quick group size), HNSW ef=32 recall 1.000 / 281us/op (~3.6k qps),
   recovery 1.0 s.
@@ -140,10 +143,11 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   active store (sealed segments are not included yet), uses Canvas 2D with a
   random projection, and has no editor. It is a browser client of the API,
   not a privileged backdoor: API keys/scopes still apply.
-- **Q-a2b is not in the candidate:** SQ8 is gated for training/scan/rescore
-  and segment artifacts, but the sealed-scan two-tier rescore is still
-  queued. Approximate results carry the documented error bounds; exact Flat
-  remains the correctness baseline.
+- **Q-a2b is in the candidate:** SQ8 is opt-in on sealed segments (armed by
+  the roll when trainable) and the sealed Flat read path uses the quantized
+  coarse scan + exact rescore; filtered sealed queries stay exact. Exact
+  Flat remains the correctness baseline; the Q-a2b gate pins bit-identical
+  top-k on a rolled segment.
 - **L-6 phase B is not in the candidate:** L-3/L-4/L-5 cover routing,
   replicas, move/drain; intra-collection scatter-gather follows. Shards stay
   single-writer per home; consistency is the engine's (WAL-before-ack,
@@ -179,7 +183,7 @@ package-internal (not a consumer API). The `XVECTORD_*` environment knobs
 
 ## Next (post-rc.1 queue)
 
-1. Q-a2b (two-tier rescore on sealed scans) then M-P; L-6 phase B after.
+1. M-P (P3 SIMD seam / P4 IVF-PQ); L-6 phase B after.
 2. Keep the repros and the latest-tree protocol running at each archive;
    the v0.64.8 stdlib registry publish is blocked upstream
    (`publisher_not_mapped`) -- the compiler archive is live and re-pinned.
