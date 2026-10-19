@@ -1,16 +1,16 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-> **Coordination bus (2026-10-10):** cross-lane items live in the
-> private `xiom-lang/xiom-relays` repo. As of 2026-10-16 **three XVECTOR
-> findings are open, all on v0.64.5**: **XVC-C-16** (linux-x64 HTTP-service
-> search miscompile, found on WSL during the archive pass;
-> `REL-20261015-2142-xvector`), **XVC-C-17** (imported-type module-level
-> var stores drop pointer fields; found building the G-1 sync smoke;
-> `REL-20261015-2216-xvector`), and **XVC-C-18** (JSON object Map-key
-> reads through a `match` enum binding return garbage; found on Windows
-> during the L-3 router slice; `REL-20261016-1541-xvector`). File new
-> findings as relay items, not here.
+> **Coordination bus (2026-10-19):** cross-lane items live in the private
+> `xiom-lang/xiom-relays` repo. Current XVECTOR findings: **XVC-C-19**
+> (v0.64.7 hangs on module-level function-call/allocating `var`
+> initializers; the lane avoids the shape; `REL-20261018-1518-xvector`) and
+> **XVC-C-20** (a module-level aggregate global lost mutations through
+> `&mut`; fixed on compiler main `56d362a31` on 2026-10-18, no v0.64.7
+> re-cut -- lane verify and G-2b are queued for the next archive;
+> `REL-20261018-1815-xvector`). XVC-C-13/C-14/C-16/C-17/C-18 are verified
+> fixed; C-15 and the phantom controls stay green. File new findings as
+> relay items, not here.
 
 # Compiler findings from the XVECTOR lane
 
