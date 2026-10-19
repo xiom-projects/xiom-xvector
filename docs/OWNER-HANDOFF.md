@@ -19,7 +19,7 @@ repository stays private; nothing below happens until the owner greenlights.
   gated durability primitives, concurrency, and release-runner activation,
   all documented).
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
-  (46 modules, `unsafe` = 0, compiler v0.64.7, stdlib pin).
+  (47 modules, `unsafe` = 0, compiler v0.64.7, stdlib pin).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
   fidelity pinned by `probe_reference_oracle`.
 

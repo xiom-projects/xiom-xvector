@@ -1474,6 +1474,16 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > unmatched-route site response / clear -> package 404) and the HEAD wire
 > trim (loopback: GET Content-Length 11 with zero body bytes). Probe 16/16
 > x2 Windows + WSL; suite 177/177 x2 + libcheck 47/47 both platforms.
+>
+> **2026-10-19 15:00Z (doorbell): rc.1 RELEASE NOTES REFRESHED** -- the
+> 2026-10-09 draft is replaced with the current candidate: durability
+> D5-D7, SQ8 Q-a1/Q-a2a (Q-a2b queued), filters/planner, lattice L-1..L-5,
+> G-1, the package tiers (mote 0.2.0 + pulse 0.3.1), the library gate, the
+> 177/177 x2 + 53 probes x2 + 47-module SBOM evidence, and the honest
+> G-2b/C-19/C-20 limits. SBOM snapshot refreshed to 47 modules; the
+> findings summary and OWNER-HANDOFF were truthed up. v0.64.8 cut is GO
+> upstream (stdlib gate in progress; no archive yet). Machine load was 100%
+> from other lanes: docs-only pass, no heavy gates.
 - Compiler lane: **v0.64.6 RE-PIN COMPLETE (both platforms, 2026-10-17).**
   Windows (sha256 `a32bf7fa`) + WSL (linux `82a7417b`, installed into
   `~/.xvector-toolchain`; old kept at `~/.xvector-toolchain-v0645`).
