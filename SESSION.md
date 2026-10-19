@@ -3242,3 +3242,79 @@ edits scoped (a backstop session may share the tree); check free memory
 before trusting reds; bench loops hard-capped; toolchain/package homes are
 lane-local on purpose.
 ```
+
+## 19. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-19 23:20Z; supersedes 18)
+
+> **NOTE:** v0.64.8 re-pin, G-2b, the station web UI MVP, and Q-a2b all
+> landed; the **Windows 56-probe battery is ALL GATES GREEN**. The only open
+> verification is the WSL long sweep (the VM restarted repeatedly during the
+> work window). Next in-lane: **M-P** and **L-6 phase B**; the UI editor /
+> three.js upgrade is optional.
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first (section 0 =
+state, section 1 = handoff, THIS section = work order). Consumer lane:
+never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
+<lefterisnotas@gmail.com>"; conventional commits, DCO -s.
+
+STATE (2026-10-19 23:20Z): HEAD = `cb66ee5` (Q-a2b); 17 commits ahead of
+origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
+`c31d9c46`, linux `a8c003c0`; v0.64.7 rollback kept; WSL via
+`wsl -d Ubuntu`). stdlib tree `8b1ddd7` (release tag `stdlib-v0.64.8` =
+`0bf5b75`; registry publish blocked upstream `publisher_not_mapped`);
+packages `ca41d483`. Manifest pins: vectors 0.1.0 + **pulse 0.3.1** (0.3.1
+adopted: exact identity + HookCtx + fallback + HEAD trim). Latest packages
+installed both homes: wal 0.1.0, metrics 0.2.0, rate 0.2.0, http 0.1.9,
+vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
+
+Evidence: **Windows full 56-probe battery ALL GATES GREEN** at `cb66ee5`
+(suite 177/177 x2 + libcheck 47/47 + SBOM 47/0 + 56 probes x2 incl.
+probe_concurrency/ui/sq_sealed + bench smoke + kill matrix). WSL: suite
+177/177 x2 + probe_ui/concurrency/service family green; **WSL long sweeps
+were environment-interrupted** (VM 0-min uptime restarts) -- re-run the
+targeted gates + full sweep in a quiet window. C-19 and C-20 are VERIFIED
+FIXED on v0.64.8; no XVECTOR compiler findings are open.
+
+Landed: G-2b `XVECTORD_THREADS` (flag-gated; accept thread + per-connection
+workers, one coarse engine mutex, graceful joins; default sequential);
+station web UI MVP `/ui` (read-only admin: sampled scatter, inspector,
+search highlighting; `GET /collections/{n}/sample`; `docs/UI.md`);
+Q-a2b sealed Flat SQ coarse scan + exact f32 rescore (`probe_sq_sealed`,
+56th; filtered path stays exact). L-1..L-5 landed; G-1 complete; MOTE
+published (xiom.vectors 0.2.0, eco-v0.1.198).
+
+Do this, in order:
+1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
+   merge --ff-only; python tools/relay.py view --lane xvector. Handle
+   anything new; watch pulse/trees and any WSL/archive notes.
+2) Re-run the WSL gates when the VM is stable: suite x2 + libcheck 47/47 +
+   probe_ui/probe_concurrency/probe_sq_sealed (and the full 56-probe sweep
+   if it can run uninterrupted; use `out/wsl-battery.log` and a quiet
+   window -- do not fight VM restarts). The frozen copy at
+   `E:\xiom-projects\xiom-xvector-wslcheck` (482ce93, 55 probes) is
+   reference only; the main tree is 56 at `cb66ee5`.
+3) **M-P** (P3 SIMD seam per the bindings ABI; P4 IVF-PQ from FAISS), then
+   **L-6 phase B** (router fan-out + k-way ranked merge + pagination-after-
+   merge + strict/partial modes + probe_scatter_gather; name the recall
+   definition per arm).
+4) Optional: station-UI editor + three.js/WebGL upgrade (read-only MVP is
+   in; see `docs/UI.md`).
+5) Release notes: refreshed 2026-10-19 and current through Q-a2b; owner
+   review before the rc.1 GitHub release (owner-gated, repo private).
+
+Standing owner items: rc.1 GitHub release greenlight; ann-swap greenlight.
+Discipline: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19 is fixed on
+v0.64.8 (module-level initializers allowed again; keep the repro as a
+regression gate); C-20 fixed; src/ modules import `xiom.vector.primitives`,
+NEVER `xiom.vectors` (run `scripts/libcheck.ps1` / `.sh` before a
+carve/wrap; the import guard is authoritative -- negative-test it if
+edited); the SBOM gate scans the literal token "unsafe" in comments too;
+suite x2 + WSL spot before any wrap; one verified slice at a time; signed
+commits; keep edits scoped (a backstop session may share the tree); check
+free memory before trusting reds; bench loops hard-capped; toolchain/
+package homes are lane-local on purpose.
+```
