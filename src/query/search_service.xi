@@ -8,6 +8,7 @@ module xiom.vector.query.search_service
 // tree).
 
 use xiom.vector.primitives;
+use xiom.vector.index.kernels;
 use xiom.vector.storage.vector_store;
 use xiom.vector.payload.payload;
 use xiom.vector.payload.filter_ast;
@@ -61,8 +62,14 @@ pub fn search_knn(idx: &VectorIndex, query: &Vector, k: Int, metric: DistanceMet
   var results = Vec[SearchResult].new();
   var i: Int = 0;
   var total: Int = idx.ids.len();
+  let alt = kernels.kernels_kind() == 1;
   while i < total {
-    var dist = vector_distance(&idx.vectors[i], query, metric);
+    var dist: Float32 = 0.0;
+    if alt {
+      dist = kernels.kernels_alt_distance(&idx.vectors[i], query, metric);
+    } else {
+      dist = vector_distance(&idx.vectors[i], query, metric);
+    }
     results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);
     i = i + 1;
   }
@@ -84,8 +91,14 @@ pub fn search_range_scan(idx: &VectorIndex, query: &Vector, radius: Float32, lim
   var results = Vec[SearchResult].new();
   var i: Int = 0;
   var total: Int = idx.ids.len();
+  let alt = kernels.kernels_kind() == 1;
   while i < total {
-    var dist = vector_distance(&idx.vectors[i], query, metric);
+    var dist: Float32 = 0.0;
+    if alt {
+      dist = kernels.kernels_alt_distance(&idx.vectors[i], query, metric);
+    } else {
+      dist = vector_distance(&idx.vectors[i], query, metric);
+    }
     if dist <= radius {
       results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, limit);
     }
@@ -105,9 +118,15 @@ fn search_knn_filtered_scan(idx: &VectorIndex, payloads: &PayloadStore, query: &
   var results = Vec[SearchResult].new();
   var i: Int = 0;
   var total: Int = idx.ids.len();
+  let alt = kernels.kernels_kind() == 1;
   while i < total {
     if payload_store_matches(payloads, idx.ids[i], filter) {
-      var dist = vector_distance(&idx.vectors[i], query, metric);
+      var dist: Float32 = 0.0;
+      if alt {
+        dist = kernels.kernels_alt_distance(&idx.vectors[i], query, metric);
+      } else {
+        dist = vector_distance(&idx.vectors[i], query, metric);
+      }
       results_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);
     }
     i = i + 1;
@@ -140,10 +159,16 @@ fn search_knn_filtered_index(idx: &VectorIndex, payloads: &PayloadStore, query: 
   var ids = filter_plan_candidates(payloads, filter);
   var results = Vec[SearchResult].new();
   var i: Int = 0;
+  let alt = kernels.kernels_kind() == 1;
   while i < ids.len() {
     match index_get(idx, ids[i]) {
       Some(v) => {
-        var dist = vector_distance(&v, query, metric);
+        var dist: Float32 = 0.0;
+        if alt {
+          dist = kernels.kernels_alt_distance(&v, query, metric);
+        } else {
+          dist = vector_distance(&v, query, metric);
+        }
         results_push_bounded(&mut results, SearchResult{ id: ids[i], distance: dist }, k);
       }
       None => {}

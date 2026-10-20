@@ -70,7 +70,8 @@ $probes = @(
   "probe_reopen_write",
   "probe_concurrency",
   "probe_ui",
-  "probe_sq_sealed"
+  "probe_sq_sealed",
+  "probe_kernels"
 )
 
 $failures = 0

@@ -1290,6 +1290,18 @@ extraction with the packages lane.
   is no longer a remaining gap. WSL long sweeps were environment-interrupted
   by VM restarts; targeted re-runs queued.
 
+- **2026-10-20 (P3 kernel seam):** `src/index/kernels.xi` routes
+  distance/dot/magnitude through a runtime scalar (default) /
+  unrolled-same-order kind behind the `xiom.vectors` contract; the hot
+  flat/HNSW/range/pagination/SQ loops branch once per scan and keep the
+  scalar path at the pre-seam baseline (flat 62us/op, HNSW ef32 281us/op
+  when unloaded; range r0.6 437us vs 718us). `probe_kernels` (57th) proves
+  bit-identity and records the microbench. Windows full 57-probe battery
+  **ALL GATES GREEN** (suite 177/177 x2 + libcheck 48/48 + SBOM 48/0 + 57
+  probes x2 + bench smoke + kill matrix). No Float32 accelerated binding
+  exists yet (OpenBLAS 0.1.1 is Float64/native); a binding plugs in as a
+  third kind. No score change (P4/P5 remain; WSL long sweeps queued).
+
 ## Update rule
 
 Recompute at every wrap: adjust phase scores, recompute the weighted overall,

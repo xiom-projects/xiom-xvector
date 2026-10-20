@@ -68,6 +68,14 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   same-origin page; API auth/scopes still apply. Canvas 2D today;
   three.js/WebGL, a payload-aware editor, and an HNSW graph view are
   follow-ups (`docs/UI.md`; `probe_ui`).
+- **Performance seam (P3).** Distance/dot/magnitude kernels route through
+  `src/index/kernels.xi` behind the `xiom.vectors` contract: scalar default,
+  selectable unrolled-same-order backend, bit-identical across all metrics
+  (`probe_kernels`, 57th). The hot flat/HNSW/range/pagination/SQ paths
+  branch once per scan, keeping the scalar path at the pre-seam baseline
+  (flat 62us/op, HNSW ef32 281us/op when unloaded). No Float32 accelerated
+  binding is available yet -- OpenBLAS 0.1.1 is Float64/native -- so a
+  binding plugs in as a third kernel kind; the seam is ready for it.
 - **Scale-out (L-1..L-5).** L-1 mote embedded/polish; L-2 the collection
   move primitive (`export_collection` / `attach_segment` with an integrity
   footer); L-3 the stateless router v1 (versioned mapping file + strict
@@ -107,12 +115,13 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   `publisher_not_mapped`); packages checkout `ca41d483`. WSL legs target
   `wsl -d Ubuntu`.
 - **Full batteries:** Windows **ALL GATES GREEN** at the v0.64.8 pin
-  (suite 177/177 x2, 56 probes x2, SBOM 47/0, libcheck 47/47, bench smoke,
+  (suite 177/177 x2, 57 probes x2, SBOM 48/0, libcheck 48/48, bench smoke,
   kill matrix); WSL suite 177/177 x2 + `probe_ui` / `probe_concurrency` /
-  service family x2 are green on the UI tree; WSL long sweeps were
-  environment-interrupted by repeated VM restarts, so the full WSL sweep +
-  libcheck are queued for a quiet window. The new 55th probe is the
-  station-UI gate; the 54th is the G-2b concurrency gate; the service family and `probe_http_fuzz` are
+  `probe_kernels` / service family x2 are green on the UI/P3 tree; WSL long
+  sweeps were environment-interrupted by repeated VM restarts, so the full
+  WSL sweep + libcheck are queued for a quiet window. The new 55th probe is
+  the station-UI gate; the 54th is the G-2b concurrency gate; the 56th is
+  sealed SQ; the 57th is the P3 kernel seam; the service family and `probe_http_fuzz` are
   unchanged and green x2. Quick bench on v0.64.8: flat 62us/op (~16.1k qps
   at the quick group size), HNSW ef=32 recall 1.000 / 281us/op (~3.6k qps),
   recovery 1.0 s.

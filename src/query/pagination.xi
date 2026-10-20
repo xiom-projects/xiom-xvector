@@ -19,6 +19,7 @@ module xiom.vector.query.pagination
 //   e.g. deleted between pages; restarting is the caller's policy).
 
 use xiom.vector.primitives;
+use xiom.vector.index.kernels;
 use xiom.vector.storage.vector_store;
 use xiom.vector.query.search_service;
 
@@ -55,8 +56,14 @@ pub fn search_page_scan(idx: &VectorIndex, query: &Vector, k: Int, offset: Int, 
   var ranked = Vec[SearchResult].new();
   var i: Int = 0;
   var total: Int = idx.ids.len();
+  let alt = kernels.kernels_kind() == 1;
   while i < total {
-    var dist = vector_distance(&idx.vectors[i], query, metric);
+    var dist: Float32 = 0.0;
+    if alt {
+      dist = kernels.kernels_alt_distance(&idx.vectors[i], query, metric);
+    } else {
+      dist = vector_distance(&idx.vectors[i], query, metric);
+    }
     page_push_bounded(&mut ranked, SearchResult{ id: idx.ids[i], distance: dist }, cap);
     i = i + 1;
   }
@@ -76,9 +83,14 @@ pub fn search_after_scan(idx: &VectorIndex, query: &Vector, k: Int, after_id: In
   var cursor_v = index_get(idx, after_id);
   var d0: Float32 = 0.0;
   var found: Bool = false;
+  let alt = kernels.kernels_kind() == 1;
   match cursor_v {
     Some(v) => {
-      d0 = vector_distance(&v, query, metric);
+      if alt {
+        d0 = kernels.kernels_alt_distance(&v, query, metric);
+      } else {
+        d0 = vector_distance(&v, query, metric);
+      }
       found = true;
     }
     None => {}
@@ -90,7 +102,12 @@ pub fn search_after_scan(idx: &VectorIndex, query: &Vector, k: Int, after_id: In
   var i: Int = 0;
   var total: Int = idx.ids.len();
   while i < total {
-    var dist = vector_distance(&idx.vectors[i], query, metric);
+    var dist: Float32 = 0.0;
+    if alt {
+      dist = kernels.kernels_alt_distance(&idx.vectors[i], query, metric);
+    } else {
+      dist = vector_distance(&idx.vectors[i], query, metric);
+    }
     var after: Bool = dist > d0 || (dist == d0 && idx.ids[i] > after_id);
     if after {
       page_push_bounded(&mut results, SearchResult{ id: idx.ids[i], distance: dist }, k);

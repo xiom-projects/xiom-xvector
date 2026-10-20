@@ -178,8 +178,15 @@ needed) -> signed commit. Red build = rejection.
   `probe_memory_estimate` 17 checks x2 Win+WSL; thresholds + rules of
   thumb in `docs/OPERATIONS.md` section 8; budget-cap enforcement stays
   advisory)**
-- [ ] P3 SIMD/BLAS seam behind the `xiom.vectors` contract; benchmark delta
-  recorded
+- [x] **P3 SIMD/BLAS seam** -- distance kernels behind the `xiom.vectors`
+  contract (`src/index/kernels.xi`: scalar default + selectable
+  unrolled-same-order backend; hot flat/HNSW/range/pagination/SQ paths
+  branch once per scan). `probe_kernels` (57th) proves bit-identical
+  dot/magnitude/distance across all metrics, install/restore, and records
+  the microbench. The vendored scalar loop (auto-vectorized by the
+  compiler) remains the fastest measured backend; OpenBLAS 0.1.1 is
+  Float64/native and is not in the Float32 hot path -- a Float32 binding
+  plugs in as another kind. **(done 2026-10-20)**
 - [ ] P4 IVF/PQ prototype (v1.1 track) with recall/latency curve
 - [ ] P5 (stdlib-dependent) mmap/disk segments; tiered storage
 
