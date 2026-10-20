@@ -9,7 +9,8 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $root
 
 . .\scripts\dev-env.ps1
-. .\scripts\memcap.ps1
+. (Join-Path $PSScriptRoot 'lib.ps1')
+. (Join-Path $PSScriptRoot 'memcap.ps1')
 
 $capMB = 8192
 if ($env:XVECTOR_MEM_CAP_MB) { $capMB = [int]$env:XVECTOR_MEM_CAP_MB }

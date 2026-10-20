@@ -1549,7 +1549,11 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > memory-limit job; XVC-C-21) + the watchdog. The shared stdlib checkout
 > `ee1a95c` (waves 198-201) crashes `--check` with v0.64.8 (exit -1, no
 > diagnostic); `XVECTOR_STDLIB_BUNDLED=1` uses the working bundled release
-> stdlib. Full 57-probe battery under the guard is running.
+> stdlib. Full 57-probe battery under the guard: suite 177/177 x2 +
+> libcheck 48/48 + SBOM 48/0 + 57 probes x2 + bench smoke green; the newly
+> capped kill matrix hit a missing `lib.ps1` import in the edited script
+> (fixed) and now runs 4/4 PASS. The next full battery will print the
+> aggregate line.
 >
 > **2026-10-20 00:45Z: PAUSE for the night.** Work window complete; tree
 > clean at `581d765` (18 commits ahead; repo private). Q-a2b landed at
@@ -3297,12 +3301,15 @@ never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
 E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-STATE (2026-10-20): HEAD = the P3 commit (parent `814f2cb`); 20 commits
+STATE (2026-10-20): HEAD = the safety commit (parent `17969bd`); 22 commits
 ahead of origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
 `c31d9c46`, linux `a8c003c0`; v0.64.7 rollback kept; WSL via
-`wsl -d Ubuntu`). stdlib tree `8b1ddd7` (release tag `stdlib-v0.64.8` =
-`0bf5b75`; registry publish blocked upstream `publisher_not_mapped`);
-packages `ca41d483`. Manifest pins: vectors 0.1.0 + **pulse 0.3.1** (0.3.1
+`wsl -d Ubuntu`). Shared stdlib HEAD `ee1a95c` (waves 198-201) **breaks**
+v0.64.8 checks (exit -1, no diagnostic; bus `REL-20261020-1531-xvector`);
+use `XVECTOR_STDLIB_BUNDLED=1` (verified) or the release tag
+`stdlib-v0.64.8` = `0bf5b75` (registry publish blocked upstream
+`publisher_not_mapped`); packages `ca41d483`. Manifest pins: vectors 0.1.0 +
+**pulse 0.3.1** (0.3.1
 adopted: exact identity + HookCtx + fallback + HEAD trim). Latest packages
 installed both homes: wal 0.1.0, metrics 0.2.0, rate 0.2.0, http 0.1.9,
 vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
@@ -3323,8 +3330,12 @@ Q-a2b sealed Flat SQ coarse scan + exact f32 rescore (`probe_sq_sealed`,
 56th; filtered path stays exact); P3 kernel seam `src/index/kernels.xi`
 (scalar default + unrolled same-order kind behind the `xiom.vectors`
 contract; hot flat/HNSW/range/pagination/SQ paths branch once per scan;
-`probe_kernels` 57th; scalar baseline preserved). L-1..L-5 landed; G-1
-complete; MOTE published (xiom.vectors 0.2.0, eco-v0.1.198).
+`probe_kernels` 57th; scalar baseline preserved; no Float32 accelerated
+binding yet); **resource guard** (8 GB hard cap for apps/probes via a
+Windows Job Object + kill-on-close and WSL `ulimit -v`; compiler builds use
+kill-on-close-only jobs because v0.64.8 hangs under a memory-limit job --
+XVC-C-21; `run-capped` wrappers; bundled-stdlib fallback). L-1..L-5 landed;
+G-1 complete; MOTE published (xiom.vectors 0.2.0, eco-v0.1.198).
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
@@ -3333,9 +3344,9 @@ Do this, in order:
 2) Re-run the WSL gates when the VM is stable: suite x2 + libcheck 48/48 +
    probe_ui/probe_concurrency/probe_sq_sealed/probe_kernels (and the full
    57-probe sweep if it can run uninterrupted; use `out/wsl-battery.log` and
-   a quiet window -- do not fight VM restarts). The frozen copies
-   (`xiom-xvector-wslcheck` 482ce93/55 and `xiom-xvector-wslcheck2`
-   814f2cb/56) are reference only; the main tree is 57 at the P3 commit.
+   a quiet window -- do not fight VM restarts). Use
+   `XVECTOR_STDLIB_BUNDLED=1` while the shared stdlib is broken. The frozen
+   copies are reference only; the main tree is at the safety commit.
 3) **P4 IVF/PQ** (v1.1 track: quantized storage, recall/latency curve vs
    HNSW) and **P5 mmap/disk segments** (stdlib-dependent), then **L-6 phase
    B** (router fan-out + k-way ranked merge + pagination-after-merge +
@@ -3343,7 +3354,7 @@ Do this, in order:
    per arm). P3 is done.
 4) Optional: station-UI editor + three.js/WebGL upgrade (read-only MVP is
    in; see `docs/UI.md`).
-5) Release notes: refreshed 2026-10-20 and current through P3/Q-a2b; owner
+5) Release notes: refreshed 2026-10-20 and current through P3/safety; owner
    review before the rc.1 GitHub release (owner-gated, repo private).
 
 Standing owner items: rc.1 GitHub release greenlight; ann-swap greenlight.
