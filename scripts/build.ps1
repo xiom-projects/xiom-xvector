@@ -61,8 +61,9 @@ if (-not $NoIcon -and (Test-Path -LiteralPath $iconPath)) {
 $buildArgs += ('-o "{0}" "{1}"' -f $outExe, $filePath)
 if ($Sequential) { Write-Host "build: --sequential (XVC-C-05 A/B diagnostic)" }
 $result = Invoke-XvectorProcess -FilePath $env:XIOM_COMPILER `
-    -Arguments $buildArgs `
-    -WorkingDirectory $repoRoot -StdOutFile $outFile -StdErrFile $errFile -TimeoutSec $TimeoutSec
+-Arguments $buildArgs `
+-WorkingDirectory $repoRoot -StdOutFile $outFile -StdErrFile $errFile -TimeoutSec $TimeoutSec `
+-NoMemoryCap
 
 $output = "$($result.StdOut)$($result.StdErr)"
 if ($output.Trim().Length -gt 0) { Write-Host $output.TrimEnd() }

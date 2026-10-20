@@ -26,6 +26,7 @@ if [ ! -f "$src" ]; then
 fi
 runs="${2:-2}"
 timeout_sec="${3:-60}"
+cap_mb="${XVECTOR_MEM_CAP_MB:-8192}"
 name="$(basename "$src" .xi)"
 exe="$repo_root/out/$name"
 
@@ -36,7 +37,7 @@ i=1
 while [ "$i" -le "$runs" ]; do
   out_file="$repo_root/out/${name}_run$i.out"
   err_file="$repo_root/out/${name}_run$i.err"
-  ( cd "$repo_root" && timeout "$timeout_sec" "$exe" ) >"$out_file" 2>"$err_file"
+  ( cd "$repo_root" && ulimit -v $((cap_mb * 1024)) 2>/dev/null || true; timeout "$timeout_sec" "$exe" ) >"$out_file" 2>"$err_file"
   code=$?
   if [ "$code" -eq 124 ]; then
     echo "run-probe: run $i: TIMEOUT after ${timeout_sec}s"

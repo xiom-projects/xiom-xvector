@@ -15,6 +15,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 runs="${1:-2}"
 timeout_sec="${2:-60}"
+cap_mb="${XVECTOR_MEM_CAP_MB:-8192}"
 exe="$repo_root/out/test_conformance"
 
 "$script_dir/build.sh" "$repo_root/tests/test_conformance.xi" test_conformance || exit $?
@@ -24,7 +25,7 @@ i=1
 while [ "$i" -le "$runs" ]; do
   out_file="$repo_root/out/suite_run$i.out"
   err_file="$repo_root/out/suite_run$i.err"
-  ( cd "$repo_root" && timeout "$timeout_sec" "$exe" ) >"$out_file" 2>"$err_file"
+  ( cd "$repo_root" && ulimit -v $((cap_mb * 1024)) 2>/dev/null || true; timeout "$timeout_sec" "$exe" ) >"$out_file" 2>"$err_file"
   code=$?
   err_lines=$(wc -l < "$err_file" | tr -d ' ')
   if [ "$code" -eq 124 ]; then

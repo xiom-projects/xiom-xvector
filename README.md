@@ -41,7 +41,9 @@ Both tiers run the same `src/` tree -- a lattice node IS a mote plus transport, 
 ```bash
 .\scripts\build.ps1 src\api\httpd.xi -Name xvectord     # Windows
 bash scripts/build.sh src/api/httpd.xi xvectord         # WSL
-./out/xvectord --port 7707                              # in-memory; XVECTORD_WAL=<path> for a durable home
+powershell -File scripts/run-capped.ps1 -FilePath .\out\xvectord.exe -WorkingDirectory . -MaxMemoryMB 8192
+# WSL: bash scripts/run-capped.sh ./out/xvectord   (8 GB guard; never launch the app bare)
+# in-memory; set XVECTORD_PORT=7707; XVECTORD_WAL=<path> for a durable home
 curl http://127.0.0.1:7707/health
 curl -X POST http://127.0.0.1:7707/collections -d '{"name":"docs","dim":4,"metric":"cosine"}'
 curl -X POST http://127.0.0.1:7707/search -d '{"collection":"docs","vector":[1,0,0,0],"top_k":1}'

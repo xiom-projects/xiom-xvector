@@ -243,7 +243,7 @@ commits, DCO `git commit -s`.
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `8b1ddd7` (2026-10-19, advanced during the v0.64.8 pass); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
+| stdlib | lane HEAD `ee1a95c` (2026-10-20, waves 198-201) -- **BREAKS v0.64.8: `xiom --check` exits -1 with no diagnostic; use `XVECTOR_STDLIB_BUNDLED=1` (verified working) or the release pin; shared tree is cross-lane blocked**; release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass (with the bundled override while the shared tree is broken) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
 | xvector | `75e936f` + `482ce93` (station UI) + `cb66ee5` (Q-a2b) + this pass's P3 commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
@@ -1541,6 +1541,15 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > libcheck 48/48 + SBOM 48/0 + 57 probes x2 + bench smoke + kill matrix);
 > WSL targeted `probe_kernels` + suite green (long WSL sweeps remain
 > environment-interrupted).
+>
+> **2026-10-20 (user directive): RESOURCE GUARD.** Every app/probe run is
+> hard-capped at 8 GB (Windows Job Object PROCESS+JOB limit + kill-on-close;
+> WSL `ulimit -v`); use `scripts/run-capped.ps1`/`.sh` for manual apps.
+> Compiler builds use a kill-on-close-only job (v0.64.8 hangs under a
+> memory-limit job; XVC-C-21) + the watchdog. The shared stdlib checkout
+> `ee1a95c` (waves 198-201) crashes `--check` with v0.64.8 (exit -1, no
+> diagnostic); `XVECTOR_STDLIB_BUNDLED=1` uses the working bundled release
+> stdlib. Full 57-probe battery under the guard is running.
 >
 > **2026-10-20 00:45Z: PAUSE for the night.** Work window complete; tree
 > clean at `581d765` (18 commits ahead; repo private). Q-a2b landed at
@@ -3348,6 +3357,8 @@ carve/wrap; the import guard is authoritative -- negative-test it if
 edited); the SBOM gate scans the literal token "unsafe" in comments too;
 suite x2 + WSL spot before any wrap; one verified slice at a time; signed
 commits; keep edits scoped (a backstop session may share the tree); check
-free memory before trusting reds; bench loops hard-capped; toolchain/
-package homes are lane-local on purpose.
+free memory before trusting reds; bench loops hard-capped; **cap every
+app/probe run at 8 GB (`lib.ps1` / `run-capped`; WSL `ulimit -v`) and never
+launch the app bare; compiler builds are watchdog + kill-on-close only
+(XVC-C-21);** toolchain/package homes are lane-local on purpose.
 ```
