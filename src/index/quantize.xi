@@ -29,6 +29,7 @@ module xiom.vector.index.quantize
 
 use xiom.math;
 use xiom.vector.primitives;
+use xiom.vector.index.kernels;
 use xiom.vector.storage.vector_store;
 
 pub type SQ8 = {
@@ -289,7 +290,7 @@ fn sq8_coarse_top(store: &VectorIndex, sq: &SQ8, codes: &Vec[Int], query: &Vecto
     Cosine => {
       var t = sq8_table_ip(sq, query);
       var tn = sq8_table_norm2(sq);
-      var qmag = vector_magnitude(query);
+      var qmag = kernels.kernels_magnitude(query);
       while p < n {
         topk_push(&mut heap, Neighbor{ id: p as UInt64, distance: sq8_cos_distance(&t, &tn, qmag, codes, p * sq.dim) });
         p = p + 1;
@@ -349,10 +350,17 @@ pub fn sq8_scan_rescore(store: &VectorIndex, sq: &SQ8, codes: &Vec[Int], query: 
     i = i + 1;
   }
   var heap = topk_new(k);
+  let alt = kernels.kernels_kind() == 1;
   i = 0;
   while i < poslist.len() {
     var p = poslist[i];
-    topk_push(&mut heap, Neighbor{ id: store.ids[p] as UInt64, distance: vector_distance(&store.vectors[p], query, metric) });
+    var d: Float32 = 0.0;
+    if alt {
+      d = kernels.kernels_alt_distance(&store.vectors[p], query, metric);
+    } else {
+      d = vector_distance(&store.vectors[p], query, metric);
+    }
+    topk_push(&mut heap, Neighbor{ id: store.ids[p] as UInt64, distance: d });
     i = i + 1;
   }
   var out = Vec[QuantHit].new();

@@ -32,6 +32,7 @@ module xiom.vector.index.hnsw
 
 use xiom.num.float;
 use xiom.vector.primitives;
+use xiom.vector.index.kernels;
 use xiom.vector.storage.vector_store;
 
 // Fixed layer capacity (levels 0..7; p(level >= l) ~ ml^-l, so > 3 is rare).
@@ -108,10 +109,24 @@ pub fn hnsw_build_ops(g: &HNSWGraph) -> Int {
   return g.build_ops;
 }
 
-// Distance helper for the build path (counts the work proxy).
+// Distance helper for the build path (counts the work proxy). Branches on
+// the kernel kind once per call and calls the selected kernel directly; the
+// scalar default is the pre-seam path.
 fn dist_build(g: &mut HNSWGraph, a: Int, b: Int, metric: DistanceMetric) -> Float32 {
   g.build_ops = g.build_ops + 1;
+  let alt = kernels.kernels_kind() == 1;
+  if alt {
+    return kernels.kernels_alt_distance(&g.vectors[a], &g.vectors[b], metric);
+  }
   return vector_distance(&g.vectors[a], &g.vectors[b], metric);
+}
+
+fn kernel_query(g: &HNSWGraph, node: Int, query: &Vector, metric: DistanceMetric) -> Float32 {
+  let alt = kernels.kernels_kind() == 1;
+  if alt {
+    return kernels.kernels_alt_distance(&g.vectors[node], query, metric);
+  }
+  return vector_distance(&g.vectors[node], query, metric);
 }
 
 // Build-time beam width (honoured by the construction search). Values below
@@ -482,7 +497,7 @@ pub fn hnsw_insert(g: &mut HNSWGraph, id: Int, vec: Vector, metric: DistanceMetr
 // Greedy descent on one layer: walk to the local minimum from `start`.
 fn greedy_layer(g: &HNSWGraph, query: &Vector, start: Int, layer: Int, metric: DistanceMetric) -> Int {
   var cur: Int = start;
-  var cur_d = vector_distance(&g.vectors[cur], query, metric);
+  var cur_d = kernel_query(g, cur, query, metric);
   var improved: Bool = true;
   while improved {
     improved = false;
@@ -490,7 +505,7 @@ fn greedy_layer(g: &HNSWGraph, query: &Vector, start: Int, layer: Int, metric: D
     var j: Int = 0;
     while j < g.deg[row] {
       var nb = g.adj[row * g.m0 + j];
-      var d = vector_distance(&g.vectors[nb], query, metric);
+      var d = kernel_query(g, nb, query, metric);
       if d < cur_d {
         cur = nb;
         cur_d = d;
@@ -506,7 +521,7 @@ fn greedy_layer(g: &HNSWGraph, query: &Vector, start: Int, layer: Int, metric: D
 fn greedy_layer_pos(g: &mut HNSWGraph, query: &Vector, start: Int, layer: Int, metric: DistanceMetric) -> Int {
   var cur: Int = start;
   g.build_ops = g.build_ops + 1;
-  var cur_d = vector_distance(&g.vectors[cur], query, metric);
+  var cur_d = kernel_query(g, cur, query, metric);
   var improved: Bool = true;
   while improved {
     improved = false;
@@ -515,7 +530,7 @@ fn greedy_layer_pos(g: &mut HNSWGraph, query: &Vector, start: Int, layer: Int, m
     while j < g.deg[row] {
       var nb = g.adj[row * g.m0 + j];
       g.build_ops = g.build_ops + 1;
-      var d = vector_distance(&g.vectors[nb], query, metric);
+      var d = kernel_query(g, nb, query, metric);
       if d < cur_d {
         cur = nb;
         cur_d = d;
@@ -540,7 +555,7 @@ fn search_layer_build(g: &mut HNSWGraph, query: &Vector, start: Int, ef: Int, la
   var results = Vec[Neighbor].new();
   var frontier = Vec[Neighbor].new();
   g.build_ops = g.build_ops + 1;
-  var dx = vector_distance(&g.vectors[start], query, metric);
+  var dx = kernel_query(g, start, query, metric);
   visited[start] = true;
   neighbor_push_bounded(&mut results, start as UInt64, dx, ef);
   neighbor_push_bounded(&mut frontier, start as UInt64, dx, ef);
@@ -565,7 +580,7 @@ fn search_layer_build(g: &mut HNSWGraph, query: &Vector, start: Int, ef: Int, la
         if !visited[npos] {
           visited[npos] = true;
           g.build_ops = g.build_ops + 1;
-          var dist = vector_distance(&g.vectors[npos], query, metric);
+          var dist = kernel_query(g, npos, query, metric);
           if results.len() < ef {
             neighbor_push_bounded(&mut results, npos as UInt64, dist, ef);
             neighbor_push_bounded(&mut frontier, npos as UInt64, dist, ef);
@@ -610,7 +625,7 @@ fn hnsw_search_core(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: Dist
   var frontier = Vec[Neighbor].new();
   // NOTE: `frontier` entries carry node POSITIONS (internal expansion),
   // `results` entries carry USER ids (returned to the caller).
-  var d0 = vector_distance(&g.vectors[start], query, metric);
+  var d0 = kernel_query(g, start, query, metric);
   visited[start] = true;
   seen = seen + 1;
   // Tombstoned nodes stay in the graph as routers but are never returned.
@@ -641,7 +656,7 @@ fn hnsw_search_core(g: &HNSWGraph, query: &Vector, k: Int, ef: Int, metric: Dist
         if !visited[npos] {
           visited[npos] = true;
           seen = seen + 1;
-          var dist = vector_distance(&g.vectors[npos], query, metric);
+          var dist = kernel_query(g, npos, query, metric);
           if results.len() < breadth {
             if !g.deleted[npos] {
               neighbor_push_bounded(&mut results, g.ids[npos] as UInt64, dist, breadth);

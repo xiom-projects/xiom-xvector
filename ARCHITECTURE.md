@@ -168,6 +168,10 @@ index.quantize -> xiom.vector.primitives (vendored; registry xiom.vectors
                storage.vector_store (SQ8 training + codec + query tables +
                the two-tier scan; returns QuantHit, no query dependency;
                reference study 02 Q-a, gates tests/probes/probe_quantization)
+index.kernels -> xiom.vector.primitives (distance/dot/magnitude; scalar
+               default + unrolled-same-order kind; P3 seam)
+query.search_service / index.hnsw / query.pagination / index.quantize /
+engine.core -> index.kernels (branch once per scan; scalar default)
 collection/* -> types, index.ann_index, core.shim ids
 segment/* -> storage.vector_store, segment_state, core.shim ids;
              segment_file -> index.hnsw + payload.payload + durability.wal_file

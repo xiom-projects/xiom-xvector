@@ -245,7 +245,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `8b1ddd7` (2026-10-19, advanced during the v0.64.8 pass); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `75e936f` + `482ce93` (station UI) + this pass's Q-a2b commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `75e936f` + `482ce93` (station UI) + `cb66ee5` (Q-a2b) + this pass's P3 commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -1528,6 +1528,20 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > (0-min uptime) and killed the frozen 55-probe run mid-probe; WSL targeted
 > re-runs are queued for the next quiet window.
 >
+> **2026-10-20: P3 KERNEL SEAM LANDED.** `src/index/kernels.xi` routes
+> distance/dot/magnitude through a runtime scalar (default) / unrolled
+> same-order backend behind the `xiom.vectors` contract. `probe_kernels`
+> (57th) proves bit-identical dot/magnitude/distance across all metrics,
+> install/restore, and records the microbench. The hot flat/HNSW/range/
+> pagination/SQ loops branch once per scan; the scalar path is back at the
+> pre-seam baseline (flat 62us/op, HNSW ef32 281us/op when unloaded; range
+> r0.6 437us vs 718us). No Float32 accelerated binding exists yet
+> (OpenBLAS 0.1.1 is Float64/native); it plugs in as another kind.
+> Windows full 57-probe battery **ALL GATES GREEN** (suite 177/177 x2 +
+> libcheck 48/48 + SBOM 48/0 + 57 probes x2 + bench smoke + kill matrix);
+> WSL targeted `probe_kernels` + suite green (long WSL sweeps remain
+> environment-interrupted).
+>
 > **2026-10-20 00:45Z: PAUSE for the night.** Work window complete; tree
 > clean at `581d765` (18 commits ahead; repo private). Q-a2b landed at
 > `cb66ee5`; Windows full 56-probe battery ALL GATES GREEN (suite 177/177
@@ -1606,8 +1620,11 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
    `JoinHandle` joins) and the new `probe_concurrency` (54th) is green x2
    both platforms; the service family + `probe_http_fuzz` are unchanged and
    green x2. **Q-a2b DONE 2026-10-19** (sealed Flat SQ coarse + exact
-   rescore; `probe_sq_sealed` 56th; bit-identical gate); next **M-P**;
-   L-6 (phase B) after. **Station web UI MVP LANDED 2026-10-19** (`/ui` +
+   rescore; `probe_sq_sealed` 56th; bit-identical gate). **P3 kernel seam
+   DONE 2026-10-20** (`src/index/kernels.xi`; `probe_kernels` 57th;
+   bit-identical, scalar baseline preserved; no Float32 accelerated binding
+   yet). Next **M-P remainder (P4 IVF/PQ, P5 mmap/disk)**; L-6 after.
+   **Station web UI MVP LANDED 2026-10-19** (`/ui` +
    `/collections/{n}/sample`, 55th probe, Canvas 2D, screenshot-verified;
    editor/three.js upgrade optional). Note: **XVC-C-19 and XVC-C-20 are
    VERIFIED FIXED on v0.64.8**; no XVECTOR compiler findings remain open
@@ -3217,10 +3234,12 @@ Do this, in order:
 2) **G-2b is COMPLETE (v0.64.8)** -- do not re-implement. **Station web UI
    MVP is DONE** (`/ui` + `/sample`; `probe_ui` 55th; editor/3D optional).
    **Q-a2b is DONE** (sealed Flat SQ coarse + exact rescore;
-   `probe_sq_sealed` 56th; bit-identical). Next in-lane: **M-P (P3 SIMD seam
-   / P4 IVF-PQ)**; L-6 (phase B) after. Keep the threaded path flag-gated
-   (`XVECTORD_THREADS`, default sequential) and `probe_concurrency` +
-   `probe_ui` + `probe_sq_sealed` in both batteries.
+   `probe_sq_sealed` 56th; bit-identical). **P3 kernel seam is DONE**
+   (`src/index/kernels.xi`, `probe_kernels` 57th; scalar default preserved).
+   Next in-lane: **P4 IVF/PQ + P5 mmap/disk (stdlib-dependent)**; L-6
+   (phase B) after. Keep the threaded path flag-gated (`XVECTORD_THREADS`,
+   default sequential) and `probe_concurrency` + `probe_ui` +
+   `probe_sq_sealed` + `probe_kernels` in both batteries.
 3) **Release notes refresh: DONE 2026-10-19** -- `docs/RELEASE-NOTES-v1.0.0-rc.1.md`
    was refreshed from the 2026-10-09 draft (D5-D7, SQ8 Q-a1/Q-a2a,
    filters/planner, lattice L-1..L-5, G-1, package tiers, 177/53/47
@@ -3269,8 +3288,8 @@ never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
 E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-STATE (2026-10-19 23:20Z): HEAD = `cb66ee5` (Q-a2b); 17 commits ahead of
-origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
+STATE (2026-10-20): HEAD = the P3 commit (parent `814f2cb`); 20 commits
+ahead of origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
 `c31d9c46`, linux `a8c003c0`; v0.64.7 rollback kept; WSL via
 `wsl -d Ubuntu`). stdlib tree `8b1ddd7` (release tag `stdlib-v0.64.8` =
 `0bf5b75`; registry publish blocked upstream `publisher_not_mapped`);
@@ -3279,39 +3298,43 @@ adopted: exact identity + HookCtx + fallback + HEAD trim). Latest packages
 installed both homes: wal 0.1.0, metrics 0.2.0, rate 0.2.0, http 0.1.9,
 vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
 
-Evidence: **Windows full 56-probe battery ALL GATES GREEN** at `cb66ee5`
-(suite 177/177 x2 + libcheck 47/47 + SBOM 47/0 + 56 probes x2 incl.
-probe_concurrency/ui/sq_sealed + bench smoke + kill matrix). WSL: suite
-177/177 x2 + probe_ui/concurrency/service family green; **WSL long sweeps
-were environment-interrupted** (VM 0-min uptime restarts) -- re-run the
-targeted gates + full sweep in a quiet window. C-19 and C-20 are VERIFIED
-FIXED on v0.64.8; no XVECTOR compiler findings are open.
+Evidence: **Windows full 57-probe battery ALL GATES GREEN** at the P3 commit
+(suite 177/177 x2 + libcheck 48/48 + SBOM 48/0 + 57 probes x2 incl.
+probe_concurrency/ui/sq_sealed/kernels + bench smoke + kill matrix). WSL:
+suite 177/177 x2 + probe_kernels + probe_ui/concurrency/service family
+green; **WSL long sweeps were environment-interrupted** (VM 0-min uptime
+restarts) -- re-run the targeted gates + full sweep in a quiet window. C-19
+and C-20 are VERIFIED FIXED on v0.64.8; no XVECTOR compiler findings open.
 
 Landed: G-2b `XVECTORD_THREADS` (flag-gated; accept thread + per-connection
 workers, one coarse engine mutex, graceful joins; default sequential);
 station web UI MVP `/ui` (read-only admin: sampled scatter, inspector,
 search highlighting; `GET /collections/{n}/sample`; `docs/UI.md`);
 Q-a2b sealed Flat SQ coarse scan + exact f32 rescore (`probe_sq_sealed`,
-56th; filtered path stays exact). L-1..L-5 landed; G-1 complete; MOTE
-published (xiom.vectors 0.2.0, eco-v0.1.198).
+56th; filtered path stays exact); P3 kernel seam `src/index/kernels.xi`
+(scalar default + unrolled same-order kind behind the `xiom.vectors`
+contract; hot flat/HNSW/range/pagination/SQ paths branch once per scan;
+`probe_kernels` 57th; scalar baseline preserved). L-1..L-5 landed; G-1
+complete; MOTE published (xiom.vectors 0.2.0, eco-v0.1.198).
 
 Do this, in order:
 1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
    merge --ff-only; python tools/relay.py view --lane xvector. Handle
    anything new; watch pulse/trees and any WSL/archive notes.
-2) Re-run the WSL gates when the VM is stable: suite x2 + libcheck 47/47 +
-   probe_ui/probe_concurrency/probe_sq_sealed (and the full 56-probe sweep
-   if it can run uninterrupted; use `out/wsl-battery.log` and a quiet
-   window -- do not fight VM restarts). The frozen copy at
-   `E:\xiom-projects\xiom-xvector-wslcheck` (482ce93, 55 probes) is
-   reference only; the main tree is 56 at `cb66ee5`.
-3) **M-P** (P3 SIMD seam per the bindings ABI; P4 IVF-PQ from FAISS), then
-   **L-6 phase B** (router fan-out + k-way ranked merge + pagination-after-
-   merge + strict/partial modes + probe_scatter_gather; name the recall
-   definition per arm).
+2) Re-run the WSL gates when the VM is stable: suite x2 + libcheck 48/48 +
+   probe_ui/probe_concurrency/probe_sq_sealed/probe_kernels (and the full
+   57-probe sweep if it can run uninterrupted; use `out/wsl-battery.log` and
+   a quiet window -- do not fight VM restarts). The frozen copies
+   (`xiom-xvector-wslcheck` 482ce93/55 and `xiom-xvector-wslcheck2`
+   814f2cb/56) are reference only; the main tree is 57 at the P3 commit.
+3) **P4 IVF/PQ** (v1.1 track: quantized storage, recall/latency curve vs
+   HNSW) and **P5 mmap/disk segments** (stdlib-dependent), then **L-6 phase
+   B** (router fan-out + k-way ranked merge + pagination-after-merge +
+   strict/partial modes + probe_scatter_gather; name the recall definition
+   per arm). P3 is done.
 4) Optional: station-UI editor + three.js/WebGL upgrade (read-only MVP is
    in; see `docs/UI.md`).
-5) Release notes: refreshed 2026-10-19 and current through Q-a2b; owner
+5) Release notes: refreshed 2026-10-20 and current through P3/Q-a2b; owner
    review before the rc.1 GitHub release (owner-gated, repo private).
 
 Standing owner items: rc.1 GitHub release greenlight; ann-swap greenlight.

@@ -20,6 +20,7 @@ use xiom.vector.storage.vector_store;
 use xiom.vector.index.ann_index;
 use xiom.vector.index.hnsw;
 use xiom.vector.index.quantize;
+use xiom.vector.index.kernels;
 use xiom.vector.query.search_service;
 use xiom.vector.query.pagination;
 use xiom.vector.query.filter_plan;
@@ -1511,8 +1512,14 @@ fn union_knn_filtered(eng: &VectorEngine, q: &Vector, k: Int, filter: &FilterExp
 fn union_scan(eng: &VectorEngine, q: &Vector, bound: Int, radius: Float32, use_radius: Bool) -> Vec[SearchResult] {
   var results = Vec[SearchResult].new();
   var i: Int = 0;
+  let alt = kernels.kernels_kind() == 1;
   while i < eng.store.ids.len() {
-    var d = vector_distance(&eng.store.vectors[i], q, eng.metric);
+    var d: Float32 = 0.0;
+    if alt {
+      d = kernels.kernels_alt_distance(&eng.store.vectors[i], q, eng.metric);
+    } else {
+      d = vector_distance(&eng.store.vectors[i], q, eng.metric);
+    }
     if !use_radius || d <= radius {
       results_push_bounded(&mut results, SearchResult{ id: eng.store.ids[i], distance: d }, bound);
     }
@@ -1532,7 +1539,12 @@ fn union_scan(eng: &VectorEngine, q: &Vector, bound: Int, radius: Float32, use_r
         }
         if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
         if !skip {
-          var d2 = vector_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          var d2: Float32 = 0.0;
+          if alt {
+            d2 = kernels.kernels_alt_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          } else {
+            d2 = vector_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          }
           if !use_radius || d2 <= radius {
             results_push_bounded(&mut results, SearchResult{ id: id, distance: d2 }, bound);
           }

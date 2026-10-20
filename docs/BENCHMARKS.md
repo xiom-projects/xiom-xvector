@@ -236,5 +236,20 @@ re-pinned to a linearity bound, 20x-ratio + 3 s net; Windows
 - Scale expectation (honest): ingest is single-threaded and
   HNSW-build-bound (~98 points/s at dim 25 on this host); queries run
   53-82 QPS at dim-25. Standard 1M-row external datasets are runnable but
-  will take hours to build; results reflect the SIMD-less baseline until
-  M-P3 lands.
+  will take hours to build; results reflect the scalar baseline until a
+  Float32 accelerated binding lands (the P3 seam is now in place).
+
+## Kernel seam (P3, 2026-10-20)
+
+`src/index/kernels.xi` puts distance/dot/magnitude behind a runtime scalar
+(default) / unrolled-same-order kind. Controlled microbench (Windows, per
+distance, load-contended): direct 175-260 ns at dim 128 / 820-860 ns at dim
+768; branch-once local scalar 195-200 / 820-1040; the old per-call seam
+dispatch 220-255 / 1340-1420; unrolled 170-180 / 980-1180. The branch-once
+pattern is the engine path; the unrolled kind is bit-identical but not
+consistently faster (the compiler already vectorizes the scalar loop), so
+scalar remains the default. Bench observations: flat 62us/op and HNSW ef=32
+281us/op at the pre-seam baseline when unloaded; range r0.6 improved to
+437us vs 718us. OpenBLAS 0.1.1 is Float64/native and is not in the Float32
+hot path; a Float32 binding can be added as a third kind. `probe_kernels`
+(57th) gates bit-identity and records the numbers.
