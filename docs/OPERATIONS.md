@@ -433,4 +433,3 @@ Shared-stdlib note (2026-10-20): the shared checkout at `ee1a95c`
 v0.64.8. Set `XVECTOR_STDLIB_BUNDLED=1` to use the compiler's bundled
 release stdlib (the release tag `stdlib-v0.64.8` = `0bf5b75` also works);
 the lane's batteries use the bundled stdlib until the shared tree is fixed.
-
