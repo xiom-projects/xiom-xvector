@@ -405,3 +405,32 @@ use TLS/ingress for remote access and a read key. This increment is
 read-only; `probe_ui` gates the route, HEAD trim, sample bounds, and the
 graceful quit/join. See [`UI.md`](UI.md) for features, limits, and the
 three.js/WebGL + editor roadmap.
+
+## 14. Resource guard (hard RAM cap)
+
+Every lane-run app/probe is memory-capped so a runaway cannot take the host
+down. Default **8 GB** (`XVECTOR_MEM_CAP_MB` overrides). Windows runs the
+child in a Job Object with PROCESS+JOB memory limits and KILL_ON_JOB_CLOSE
+(`scripts/memcap.ps1` / `lib.ps1`); WSL app runs use `ulimit -v`
+(`run-probe.sh`, `run-suite.sh`, `run-capped.sh`). Exceeding the cap fails
+the app (OOM/abort), not the host; stopping the wrapper kills the app tree.
+
+Use `scripts/run-capped.ps1` (Windows) or `scripts/run-capped.sh` (WSL) for
+manual `xvectord` / `/ui` checks -- never launch the app bare:
+
+```
+powershell -File scripts/run-capped.ps1 -FilePath .\out\xvectord.exe `
+  -WorkingDirectory . -MaxMemoryMB 8192
+```
+
+Compiler builds are excluded from the memory cap: the v0.64.8 compiler
+hangs under a memory-limit Job Object. Builds run with a kill-on-close-only
+job (tree cleanup on timeout) plus the watchdog, no RAM limit. This is
+filed as XVC-C-21; revisit when the compiler fix lands.
+
+Shared-stdlib note (2026-10-20): the shared checkout at `ee1a95c`
+(waves 198-201) crashes `xiom --check` (exit -1, no diagnostic) with
+v0.64.8. Set `XVECTOR_STDLIB_BUNDLED=1` to use the compiler's bundled
+release stdlib (the release tag `stdlib-v0.64.8` = `0bf5b75` also works);
+the lane's batteries use the bundled stdlib until the shared tree is fixed.
+

@@ -43,13 +43,17 @@ if (Test-Path -LiteralPath $laneCompiler) {
     $env:XIOM_COMPILER = Join-Path $env:LOCALAPPDATA "xiom.new\bin\xiom.exe"
 }
 $env:XIOM_STDLIB = "E:\xiom-lang\stdlib"
+if ($env:XVECTOR_STDLIB_BUNDLED -eq "1") {
+    Remove-Item Env:XIOM_STDLIB -ErrorAction SilentlyContinue
+    Write-Host "dev-env: XVECTOR_STDLIB_BUNDLED=1 -> compiler bundled stdlib"
+}
 $env:XIOM_HOME   = Join-Path $repoRoot "out\xiom-home"
 New-Item -ItemType Directory -Force -Path $env:XIOM_HOME | Out-Null
 Remove-Item Env:XIOM_RUNTIME_DIR -ErrorAction SilentlyContinue   # retired
 
 $missing = @()
 if (-not (Test-Path -LiteralPath $env:XIOM_COMPILER)) { $missing += "XIOM_COMPILER ($env:XIOM_COMPILER)" }
-if (-not (Test-Path -LiteralPath $env:XIOM_STDLIB))   { $missing += "XIOM_STDLIB   ($env:XIOM_STDLIB)" }
+if ($env:XIOM_STDLIB -and -not (Test-Path -LiteralPath $env:XIOM_STDLIB)) { $missing += "XIOM_STDLIB   ($env:XIOM_STDLIB)" }
 
 if ($missing.Count -gt 0) {
     Write-Warning "dev-env: missing toolchain paths:"
@@ -59,6 +63,6 @@ if ($missing.Count -gt 0) {
 
 $ver = (& $env:XIOM_COMPILER --version 2>&1 | Select-Object -First 1)
 Write-Host "dev-env: $ver"
-Write-Host "dev-env: XIOM_STDLIB = $env:XIOM_STDLIB"
+Write-Host "dev-env: XIOM_STDLIB = $(if ($env:XIOM_STDLIB) { $env:XIOM_STDLIB } else { '<unset: compiler bundled stdlib>' })"
 Write-Host "dev-env: XIOM_HOME   = $env:XIOM_HOME (lane-local)"
 Write-Host "dev-env: XIOM_RUNTIME_DIR retired (v0.64.1 R65 install-layout fix)"

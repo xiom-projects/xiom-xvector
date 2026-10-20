@@ -51,7 +51,9 @@ fi
 unset XIOM_RUNTIME_DIR
 
 # --- stdlib -----------------------------------------------------------------
-if [ -z "${XIOM_STDLIB:-}" ] && [ -d /mnt/e/xiom-lang/stdlib ]; then
+if [ "${XVECTOR_STDLIB_BUNDLED:-0}" = "1" ]; then
+  unset XIOM_STDLIB
+elif [ -z "${XIOM_STDLIB:-}" ] && [ -d /mnt/e/xiom-lang/stdlib ]; then
   # WSL on the development machine: use the same lane checkout as Windows.
   XIOM_STDLIB=/mnt/e/xiom-lang/stdlib
 fi

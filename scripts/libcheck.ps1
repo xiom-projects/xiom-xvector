@@ -82,7 +82,8 @@ foreach ($f in $files) {
   $rel = $f.FullName.Substring($work.Length + 1)
   $r = Invoke-XvectorProcess -FilePath $env:XIOM_COMPILER `
     -Arguments ('--check "{0}"' -f $rel) `
-    -WorkingDirectory $work -StdOutFile $outFile -StdErrFile $errFile -TimeoutSec $TimeoutSec
+    -WorkingDirectory $work -StdOutFile $outFile -StdErrFile $errFile -TimeoutSec $TimeoutSec `
+    -NoMemoryCap
   if ($r.ExitCode -ne 0) {
     $detail = (($r.StdOut + $r.StdErr) -split "`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 4) -join " | "
     $failures += [pscustomobject]@{ Module = $rel; Exit = $r.ExitCode; Detail = $detail }
