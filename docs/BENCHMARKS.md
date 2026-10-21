@@ -268,8 +268,9 @@ exact Flat oracle:
 
 Filtered HNSW (`bucket=red` pushdown) measured 1.000 ID-set recall at all
 three factors on the same corpus. Flat equality, offset reconstruction, the
-2/3 tie cursor, and chained after-id pages were exact. The gate floors are
-0.80 (ID/distance) and 0.75 (filtered) at oversample 3.
+2/3 tie cursor, chained after-id pages, and a negative-distance DotProduct
+cursor were exact. The gate floors are 0.80 (ID/distance) and 0.75
+(filtered) at oversample 3.
 
 Cost model: each query fans out `parts * (offset + top_k) * oversample`
 candidate hits (default oversample 2) before the k-way merge. No QPS claim

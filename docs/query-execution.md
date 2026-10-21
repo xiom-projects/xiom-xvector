@@ -114,7 +114,8 @@ A mapping may split one collection across N shards (`"split": {name:
    id is resolved on its owner part; its distance in the collection metric
    is sent to every part, which return hits strictly after the
    `(distance, id)` key (`engine_search_after_key`). This keeps the cursor
-   stateless and exact.
+   stateless and exact. Presence is an explicit flag, not a numeric
+   sentinel: DotProduct cursor distances are legitimately negative.
 4. Strict mode (default) returns 503 with a per-shard report if a part
    fails; `"partial": true` opts into live-part hits plus an honest
    `"partial": true` (and `failed_shards`).

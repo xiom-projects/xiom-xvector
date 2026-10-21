@@ -2074,9 +2074,6 @@ pub fn engine_search_after_key(eng: &VectorEngine, query: &Vector, k: Int, after
   if after_id < 0 {
     return Err(CoreError.InvalidInput("after_distance requires after_id"));
   }
-  if after_distance < 0.0 {
-    return Err(CoreError.InvalidInput("after_distance must be >= 0"));
-  }
   return Ok(SearchHits{ items: union_after_key(eng, query, k, after_distance, after_id) });
 }
 
@@ -2118,7 +2115,7 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
   }
   // L-6 merged cursor: the router supplies the cursor's distance so every
   // split part can apply the same global (distance, id) key.
-  if req.after_distance >= 0.0 {
+  if req.after_distance_set {
     if req.after_id < 0 {
       return Err(CoreError.InvalidInput("after_distance requires after_id"));
     }

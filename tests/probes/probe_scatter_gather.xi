@@ -327,6 +327,27 @@ fn dup_vec(v: &Vector) -> Vector {
   return out;
 }
 
+// Positive-coordinate copy (DotProduct distances become negative for a
+// ones query, which is exactly the sentinel case the flag must represent).
+fn abs_vec(v: &Vector) -> Vector {
+  var out = Vector.new(v.dimension);
+  var i: Int = 0;
+  while i < v.dimension {
+    var x = v.data[i];
+    if x < 0.0 { x = 0.0 - x; }
+    out.set(i, x + 0.1);
+    i = i + 1;
+  }
+  return out;
+}
+
+fn ones_vec(dim: Int) -> Vector {
+  var out = Vector.new(dim);
+  var i: Int = 0;
+  while i < dim { out.set(i, 1.0); i = i + 1; }
+  return out;
+}
+
 fn vec_json(v: &Vector) -> Str {
   var s = "[";
   var i: Int = 0;
@@ -394,8 +415,9 @@ fn shard_entry(id: Str, port: Int) -> Str {
 fn mapping_text(ver: Int, docs_parts: Str, hdocs_parts: Str) -> Str {
   return "{\"version\":" + convert.int_to_string(ver)
     + ",\"shards\":[" + shard_entry("s1", 7711) + "," + shard_entry("s2", 7712) + ","
-    + shard_entry("s3", 7713) + "],\"collections\":{\"docs\":\"s1\",\"hdocs\":\"s1\"}"
-    + ",\"split\":{\"docs\":" + docs_parts + ",\"hdocs\":" + hdocs_parts + "}}";
+    + shard_entry("s3", 7713) + "],\"collections\":{\"docs\":\"s1\",\"hdocs\":\"s1\",\"dotdocs\":\"s1\"}"
+    + ",\"split\":{\"docs\":" + docs_parts + ",\"hdocs\":" + hdocs_parts
+    + ",\"dotdocs\":[\"s1\",\"s2\",\"s3\"]}}";
 }
 
 fn mapping_text_missing(ver: Int) -> Str {
@@ -488,11 +510,12 @@ fn main() -> Int {
   var parts3 = "[\"s1\",\"s2\",\"s3\"]";
   let _w0 = write_text(p_map, mapping_text(1, parts3, parts3));
   var m1 = router_mapping_load(p_map);
-  fails = check(m1.ok && m1.version == 1 && m1.coll_names.len() == 2
+  fails = check(m1.ok && m1.version == 1 && m1.coll_names.len() == 3
     && router_mapping_split_count(&m1, 0) == 3
+    && router_mapping_split_count(&m1, 2) == 3
     && router_mapping_part_at(&m1, 0, 0) == 0
     && router_mapping_part_for_id(&m1, 0, 7) == sharding.shard_slot(7, 3),
-    "map: split v1 loads (docs/hdocs x3; owner first part)", fails);
+    "map: split v1 loads (docs/hdocs/dotdocs x3; owner first part)", fails);
   fails = check(router_mapping_owner(&m1, "docs") == 0, "map: docs owner is s1", fails);
 
   var bads = Vec[Str].new();
@@ -544,15 +567,18 @@ fn main() -> Int {
   var c_hdocs = router_handle(&mut rt, &mut shards,
     &mk_req("POST", "/collections", "{\"name\":\"hdocs\",\"dim\":12,\"metric\":\"euclidean\",\"index\":\"hnsw\",\"m\":8,\"ef_construction\":64,\"ef_search\":8}"));
   fails = check(status_of(&c_hdocs) == 201, "create: hdocs HNSW fan-out -> 201", fails);
+  var c_dot = router_handle(&mut rt, &mut shards,
+    &mk_req("POST", "/collections", "{\"name\":\"dotdocs\",\"dim\":12,\"metric\":\"dot\"}"));
+  fails = check(status_of(&c_dot) == 201, "create: dotdocs (DotProduct) fan-out -> 201", fails);
   var all_created: Bool = true;
   var si: Int = 0;
   while si < 3 {
     var lr = router_forward_direct(&mut shards, rt.mapping.shard_ids[si], &mk_req("GET", "/collections", ""));
     var lb = resp_body(&lr);
-    if !(str_contains(lb, "docs") && str_contains(lb, "hdocs")) { all_created = false; }
+    if !(str_contains(lb, "docs") && str_contains(lb, "hdocs") && str_contains(lb, "dotdocs")) { all_created = false; }
     si = si + 1;
   }
-  fails = check(all_created, "create: both collections exist on all three parts", fails);
+  fails = check(all_created, "create: all three collections exist on all parts", fails);
 
   // Client-supplied part hints must not shadow the router's appended hints
   // (http_header_last). A spoofed slot=0/count=3 would otherwise put the
@@ -613,6 +639,22 @@ fn main() -> Int {
   }
   fails = check(balanced, "write: hash parts hold exactly their id slices (no duplicates)", fails);
 
+  // DotProduct split arm: positive-coordinate points + an all-ones query
+  // make the cursor distances negative (the old -1 sentinel would fail).
+  var dot_ids = Vec[Int].new();
+  var dot_vecs = Vec[Vector].new();
+  i = 0;
+  while i < 30 {
+    dot_ids.push(ids[i]);
+    dot_vecs.push(abs_vec(&vecs[i]));
+    i = i + 1;
+  }
+  var dot_ub = upsert_body(&dot_ids, &dot_vecs);
+  var up_dot = router_handle(&mut rt, &mut shards,
+    &mk_req("POST", "/collections/dotdocs/points", dot_ub));
+  fails = check(status_of(&up_dot) == 200 && jnum(&up_dot, "count") == 30.0,
+    "write: dotdocs batch fan-out sums to 30", fails);
+
   // Single-node exact oracles.
   var truth = engine_new();
   let _tc = create_named_collection(&mut truth, "docs", dim, DistanceMetric.Euclidean);
@@ -621,6 +663,9 @@ fn main() -> Int {
   let _thc = create_named_collection(&mut truth_h, "hdocs", dim, DistanceMetric.Euclidean);
   let _thi = set_index(&mut truth_h, AnnIndexKind.Hnsw, AnnParams{ m: 8, ef_construction: 64, ef_search: 8 });
   let _thu = upsert_many(&mut truth_h, &ids, &vecs);
+  var truth_dot = engine_new();
+  let _tdc = create_named_collection(&mut truth_dot, "dotdocs", dim, DistanceMetric.DotProduct);
+  let _tdu = upsert_many(&mut truth_dot, &dot_ids, &dot_vecs);
 
   // ---- point hash routing -------------------------------------------------
   var probe_id: Int = 777;
@@ -721,6 +766,23 @@ fn main() -> Int {
     io.println("    diag after want(" + convert.int_to_string(want3.len()) + ")=" + ids_text(&want3));
   }
   fails = check(cursor_ok && ids_eq(&rec, &want3), "flat: after_id chained pages match exact ranks 0..27", fails);
+
+  // DotProduct cursor: the cursor's distance is NEGATIVE, so this arm fails
+  // if any layer still treats -1 as "no cursor" or rejects d < 0.
+  var dot_q = ones_vec(dim);
+  var dot_head = truth_page(&truth_dot, &dot_q, 4);
+  var dot_cursor: Int = -1;
+  var dot_cursor_d: Float32 = 0.0;
+  if dot_head.items.len() == 4 {
+    dot_cursor = dot_head.items[3].id;
+    dot_cursor_d = dot_head.items[3].distance;
+  }
+  var dot_want = truth_page_ids(&truth_dot, &dot_q, 6, 4);
+  var dot_rr = router_handle(&mut rt, &mut shards,
+    &mk_req("POST", "/search", search_body_after("dotdocs", &dot_q, 6, dot_cursor)));
+  fails = check(dot_cursor >= 0 && dot_cursor_d < 0.0
+    && status_of(&dot_rr) == 200 && ids_eq(&hit_ids(&dot_rr), &dot_want),
+    "flat: DotProduct negative-distance cursor advances exactly", fails);
 
   // ---- HNSW recall arms ---------------------------------------------------
   var qn: Int = 12;
@@ -875,9 +937,9 @@ fn main() -> Int {
     && jbool(&sdoc, "split") && jnum(&sdoc, "parts") == 3.0,
     "stats: split /stats sums parts (120, parts=3)", fails);
   var cs = router_handle(&mut rt, &mut shards, &mk_req("GET", "/cluster/stats", ""));
-  fails = check(status_of(&cs) == 200 && jnum(&cs, "points_total") == (n * 2) as Float64
-    && jnum(&cs, "collections_total") == 2.0,
-    "stats: aggregate dedupes split collection names (2 collections, 240 points)", fails);
+  fails = check(status_of(&cs) == 200 && jnum(&cs, "points_total") == (n * 2 + 30) as Float64
+    && jnum(&cs, "collections_total") == 3.0,
+    "stats: aggregate dedupes split collection names (3 collections, 270 points)", fails);
   var cm = router_handle(&mut rt, &mut shards, &mk_req("GET", "/cluster/mapping", ""));
   fails = check(status_of(&cm) == 200 && jpath_arr_len(&cm, "split", "docs") == 3
     && jpath_str(&cm, "collections", "docs") == "s1",

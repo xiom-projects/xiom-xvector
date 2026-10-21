@@ -30,9 +30,10 @@ pub type SearchRequest = {
   offset: Int;
   after_id: Int;
   // L-6 merged-cursor threshold: the cursor's distance in the request
-  // metric (-1 = not supplied). When >= 0, pagination is a global
-  // (distance, id) key scan, so every split part can apply it even though
-  // only one part holds the cursor id.
+  // metric. `after_distance_set` is the presence flag because DotProduct
+  // distances can legitimately be negative; the numeric sentinel is never
+  // used for this field.
+  after_distance_set: Bool;
   after_distance: Float32;
 }
 
@@ -50,7 +51,8 @@ pub fn search_request_new(query: Vector, top_k: Int, metric: DistanceMetric) -> 
     radius: 0.0,
     offset: 0,
     after_id: -1,
-    after_distance: -1.0,
+    after_distance_set: false,
+    after_distance: 0.0,
   };
 }
 
@@ -102,6 +104,7 @@ pub fn search_request_set_after(req: &mut SearchRequest, after_id: Int) {
 // the stateless form of the same cursor across a scatter-gather.
 pub fn search_request_set_after_key(req: &mut SearchRequest, after_id: Int, after_distance: Float32) {
   req.after_id = after_id;
+  req.after_distance_set = true;
   req.after_distance = after_distance;
 }
 
