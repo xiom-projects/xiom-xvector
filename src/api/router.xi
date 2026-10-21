@@ -67,12 +67,15 @@ module xiom.vector.api.router
 
 use xiom.io;
 use xiom.convert;
+use xiom.num.float;
 use xiom.string.slice;
 use xiom.serialize.json;
 use xiom.time;
 use xiom.vector.api.http_service;
+use xiom.vector.api.sharding;
 use xiom.vector.engine;
 use xiom.vector.engine.core;
+use xiom.vector.primitives;
 use xiom.vector.durability.wal_file;
 
 // One shard context: the service state (config/auth/rate/metrics/log) plus
@@ -94,6 +97,12 @@ pub type RouterMapping = {
   shard_urls: Vec[Str];
   coll_names: Vec[Str];
   coll_shard: Vec[Int];
+  // Intra-collection split parts (L-6). Parallel flat arrays in mapping
+  // file order: split_coll[i] indexes coll_names, split_shard[i] indexes
+  // shard_ids. A collection has either one owner (coll_shard) or >= 2
+  // entries here; the first part is also the collection's owner.
+  split_coll: Vec[Int];
+  split_shard: Vec[Int];
 }
 
 // Router state: the mapping cache plus the router's own service surface
@@ -113,6 +122,10 @@ pub type RouterState = {
   refused_local: Int;
   reloads: Int;
   reload_refusals: Int;
+  // L-6 fan-out knob: each part returns (offset + top_k) * oversample
+  // candidates; the k-way merge then keeps offset + top_k. 1 is exact for
+  // Flat; 2-3 protects HNSW recall (reference study 04).
+  oversample: Int;
 }
 
 // Name rule (shard ids + collection names), identical to the engine's
@@ -139,6 +152,8 @@ fn router_mapping_err(msg: Str) -> RouterMapping {
     shard_urls: Vec[Str].new(),
     coll_names: Vec[Str].new(),
     coll_shard: Vec[Int].new(),
+    split_coll: Vec[Int].new(),
+    split_shard: Vec[Int].new(),
   };
 }
 
@@ -294,6 +309,75 @@ pub fn router_mapping_load(path: Str) -> RouterMapping {
     None => {}
   }
   if !have_colls { return router_mapping_err("missing collections"); }
+  // Optional intra-collection split parts (L-6):
+  //   "split": { "<collection>": ["<shard>", ...] }
+  // The collection must also appear in `collections`; the first part must
+  // equal the declared owner. Every part is a known, unique shard.
+  var split_coll = Vec[Int].new();
+  var split_shard = Vec[Int].new();
+  var spo = json.json_get(doc, "split");
+  match spo {
+    Some(sv) => {
+      if json.json_type(sv) != "object" { return router_mapping_err("split must be an object"); }
+      match sv {
+        Object(entries) => {
+          var sks = entries.keys;
+          var svs = entries.values;
+          var si: Int = 0;
+          while si < sks.len() {
+            var sname = sks[si];
+            if !router_name_ok(sname) { return router_mapping_err("split collection name invalid"); }
+            var sci: Int = -1;
+            var sc: Int = 0;
+            while sc < names.len() {
+              if names[sc] == sname { sci = sc; }
+              sc = sc + 1;
+            }
+            if sci < 0 { return router_mapping_err("split collection not mapped"); }
+            var part_arr = svs[si];
+            if json.json_type(part_arr) != "array" { return router_mapping_err("split parts must be an array"); }
+            match part_arr {
+              Array(pitems) => {
+                if pitems.len() < 2 { return router_mapping_err("split needs at least two parts"); }
+                var pc: Int = 0;
+                while pc < pitems.len() {
+                  var psid: Str = "";
+                  match pitems[pc] {
+                    String(s) => { psid = s; }
+                    _ => { return router_mapping_err("split part must be a shard id string"); }
+                  }
+                  var psi: Int = -1;
+                  var pd: Int = 0;
+                  while pd < ids.len() {
+                    if ids[pd] == psid { psi = pd; }
+                    pd = pd + 1;
+                  }
+                  if psi < 0 { return router_mapping_err("split references unknown shard"); }
+                  var dup: Bool = false;
+                  var q: Int = split_shard.len() - 1;
+                  while q >= 0 {
+                    if split_coll[q] == sci && split_shard[q] == psi { dup = true; }
+                    q = q - 1;
+                  }
+                  if dup { return router_mapping_err("duplicate split part"); }
+                  if pc == 0 && shard_of[sci] != psi {
+                    return router_mapping_err("split owner must be the first part");
+                  }
+                  split_coll.push(sci);
+                  split_shard.push(psi);
+                  pc = pc + 1;
+                }
+              }
+              _ => {}
+            }
+            si = si + 1;
+          }
+        }
+        _ => {}
+      }
+    }
+    None => {}
+  }
   return RouterMapping{
     ok: true,
     err: "",
@@ -302,6 +386,8 @@ pub fn router_mapping_load(path: Str) -> RouterMapping {
     shard_urls: urls,
     coll_names: names,
     coll_shard: shard_of,
+    split_coll: split_coll,
+    split_shard: split_shard,
   };
 }
 
@@ -324,6 +410,46 @@ fn router_mapping_index(m: &RouterMapping, name: Str) -> Int {
     i = i + 1;
   }
   return -1;
+}
+
+// ---- L-6 split-part helpers ----------------------------------------------
+
+// Number of parts declared for a collection index (0 when not split).
+pub fn router_mapping_split_count(m: &RouterMapping, coll_index: Int) -> Int {
+  var n: Int = 0;
+  var i: Int = 0;
+  while i < m.split_coll.len() {
+    if m.split_coll[i] == coll_index { n = n + 1; }
+    i = i + 1;
+  }
+  return n;
+}
+
+pub fn router_mapping_is_split(m: &RouterMapping, coll_index: Int) -> Bool {
+  return router_mapping_split_count(m, coll_index) >= 2;
+}
+
+// Shard index (into shard_ids) of the `slot`-th part, or -1.
+pub fn router_mapping_part_at(m: &RouterMapping, coll_index: Int, slot: Int) -> Int {
+  var seen: Int = 0;
+  var i: Int = 0;
+  while i < m.split_coll.len() {
+    if m.split_coll[i] == coll_index {
+      if seen == slot { return m.split_shard[i]; }
+      seen = seen + 1;
+    }
+    i = i + 1;
+  }
+  return -1;
+}
+
+// Hash-placed shard index for a point id, or -1 when the collection is not
+// split. The router and shards share `sharding.shard_slot`.
+pub fn router_mapping_part_for_id(m: &RouterMapping, coll_index: Int, point_id: Int) -> Int {
+  var n = router_mapping_split_count(m, coll_index);
+  if n < 2 { return -1; }
+  var slot = sharding.shard_slot(point_id, n);
+  return router_mapping_part_at(m, coll_index, slot);
 }
 
 // Minimal JSON string escaping for the persist renderer (\" \\ \n \r \t).
@@ -385,7 +511,41 @@ pub fn router_mapping_persist(m: &RouterMapping, path: Str) -> Bool {
     append_bytes(&mut out, "\"");
     j = j + 1;
   }
-  append_bytes(&mut out, "}}");
+  append_bytes(&mut out, "}");
+  var any_split: Bool = false;
+  var cj: Int = 0;
+  while cj < m.coll_names.len() {
+    if router_mapping_split_count(m, cj) > 0 { any_split = true; }
+    cj = cj + 1;
+  }
+  if any_split {
+    append_bytes(&mut out, ",\"split\":{");
+    var sj: Int = 0;
+    var first: Bool = true;
+    while sj < m.coll_names.len() {
+      var pc = router_mapping_split_count(m, sj);
+      if pc > 0 {
+        if !first { out.push(44u8); }
+        append_bytes(&mut out, "\"");
+        router_json_esc(&mut out, m.coll_names[sj]);
+        append_bytes(&mut out, "\":[");
+        var pk: Int = 0;
+        while pk < pc {
+          if pk > 0 { out.push(44u8); }
+          var psi = router_mapping_part_at(m, sj, pk);
+          append_bytes(&mut out, "\"");
+          router_json_esc(&mut out, m.shard_ids[psi]);
+          append_bytes(&mut out, "\"");
+          pk = pk + 1;
+        }
+        append_bytes(&mut out, "]");
+        first = false;
+      }
+      sj = sj + 1;
+    }
+    append_bytes(&mut out, "}");
+  }
+  append_bytes(&mut out, "}");
   var tmp = path + ".tmp";
   var wres = io.write_file_bytes(tmp, &out);
   match wres {
@@ -438,7 +598,16 @@ pub fn router_state_new(mapping_path: Str) -> RouterState {
     refused_local: 0,
     reloads: 0,
     reload_refusals: 0,
+    oversample: 2,
   };
+}
+
+// Set the per-shard fan-out oversample factor (1..8; clamped).
+pub fn router_set_oversample(rt: &mut RouterState, factor: Int) {
+  var f = factor;
+  if f < 1 { f = 1; }
+  if f > 8 { f = 8; }
+  rt.oversample = f;
 }
 
 // Forward raw request bytes to a local shard context: copy the shard
@@ -530,10 +699,27 @@ fn router_cluster_mapping(rt: &RouterState) -> Vec[UInt8] {
     colls = json.json_set(colls, rt.mapping.coll_names[j], json.json_string(rt.mapping.shard_ids[oi]));
     j = j + 1;
   }
+  var split = json.json_object_new();
+  var si: Int = 0;
+  while si < rt.mapping.coll_names.len() {
+    var pc = router_mapping_split_count(&rt.mapping, si);
+    if pc > 0 {
+      var pa = json.json_array_new();
+      var pk: Int = 0;
+      while pk < pc {
+        var psi = router_mapping_part_at(&rt.mapping, si, pk);
+        pa = json.json_array_push(pa, json.json_string(rt.mapping.shard_ids[psi]));
+        pk = pk + 1;
+      }
+      split = json.json_set(split, rt.mapping.coll_names[si], pa);
+    }
+    si = si + 1;
+  }
   var out = json.json_object_new();
   out = json.json_set(out, "mapping_version", json.json_number(rt.mapping.version as Float64));
   out = json.json_set(out, "shards", sa);
   out = json.json_set(out, "collections", colls);
+  out = json.json_set(out, "split", split);
   return http_response(200, out);
 }
 
@@ -587,6 +773,7 @@ fn internal_get(path: Str, key: Str) -> Vec[UInt8] {
 // unreachable/unparseable shards report reachable=false with zeros.
 fn router_cluster_stats(rt: &mut RouterState, shards: &mut Vec<RouterShard>) -> Vec[UInt8] {
   var sa = json.json_array_new();
+  var seen_colls = Vec[Str].new();
   var total_colls: Int = 0;
   var total_points: Int = 0;
   var i: Int = 0;
@@ -626,6 +813,13 @@ fn router_cluster_stats(rt: &mut RouterState, shards: &mut Vec<RouterShard>) -> 
                       _ => {}
                     }
                     if cname.len() > 0 {
+                      var seen: Bool = false;
+                      var z: Int = 0;
+                      while z < seen_colls.len() {
+                        if seen_colls[z] == cname { seen = true; }
+                        z = z + 1;
+                      }
+                      if !seen { seen_colls.push(cname); }
                       var sr = router_shard_forward(shards, idx, &internal_get("/stats?collection=" + cname, rt.internal_key));
                       if response_status(&sr) == 200 {
                         var sv = json.json_null();
@@ -658,10 +852,10 @@ fn router_cluster_stats(rt: &mut RouterState, shards: &mut Vec<RouterShard>) -> 
     item = json.json_set(item, "points", json.json_number(points as Float64));
     item = json.json_set(item, "max_lsn", json.json_number(max_lsn as Float64));
     sa = json.json_array_push(sa, item);
-    total_colls = total_colls + colls;
     total_points = total_points + points;
     i = i + 1;
   }
+  total_colls = seen_colls.len();
   var out = json.json_object_new();
   out = json.json_set(out, "mapping_version", json.json_number(rt.mapping.version as Float64));
   out = json.json_set(out, "shards", sa);
@@ -849,6 +1043,10 @@ fn router_move_core(rt: &mut RouterState, shards: &mut Vec[RouterShard], coll: S
   }
   var owner = router_mapping_owner(&rt.mapping, coll);
   if owner < 0 { return RouterMoveResult{ ok: false, code: 404, msg: "collection not mapped", from_id: "" }; }
+  var ci_move = router_mapping_index(&rt.mapping, coll);
+  if ci_move >= 0 && router_mapping_is_split(&rt.mapping, ci_move) {
+    return RouterMoveResult{ ok: false, code: 409, msg: "split collection cannot be moved as one artifact", from_id: "" };
+  }
   var from_id = rt.mapping.shard_ids[owner];
   if to_id == from_id { return RouterMoveResult{ ok: false, code: 400, msg: "destination equals source", from_id: from_id }; }
   var to_idx = router_shard_find(shards, to_id);
@@ -964,6 +1162,17 @@ fn router_cluster_drain(rt: &mut RouterState, shards: &mut Vec[RouterShard], sha
     i = i + 1;
   }
   if sidx < 0 { return jerror(404, "unknown shard"); }
+  // A split collection can hold data on more than its owner. Refuse to
+  // drain ANY shard that is a declared part (per-part moves are not v1).
+  var sc: Int = 0;
+  while sc < rt.mapping.split_coll.len() {
+    var psi = rt.mapping.split_shard[sc];
+    if rt.mapping.shard_ids[psi] == shard_id {
+      var sci = rt.mapping.split_coll[sc];
+      return jerror(501, "drain: shard holds a split-collection part: " + rt.mapping.coll_names[sci]);
+    }
+    sc = sc + 1;
+  }
   var dests = Vec[Str].new();
   var j: Int = 0;
   while j < rt.mapping.shard_ids.len() {
@@ -976,6 +1185,14 @@ fn router_cluster_drain(rt: &mut RouterState, shards: &mut Vec[RouterShard], sha
   while k < rt.mapping.coll_names.len() {
     if rt.mapping.coll_shard[k] == sidx { names.push(rt.mapping.coll_names[k]); }
     k = k + 1;
+  }
+  var ck: Int = 0;
+  while ck < names.len() {
+    var ci_drain = router_mapping_index(&rt.mapping, names[ck]);
+    if ci_drain >= 0 && router_mapping_is_split(&rt.mapping, ci_drain) {
+      return jerror(501, "drain: split collection cannot be moved: " + names[ck]);
+    }
+    ck = ck + 1;
   }
   var moved: Int = 0;
   var failed: Str = "";
@@ -1000,6 +1217,629 @@ fn router_cluster_drain(rt: &mut RouterState, shards: &mut Vec[RouterShard], sha
   if failed.len() > 0 {
     out = json.json_set(out, "failed", json.json_string(failed));
     return http_response(500, out);
+  }
+  return http_response(200, out);
+}
+
+// L-6 intra-collection scatter-gather --------------------------------------
+//
+// A split collection lists >= 2 parts in mapping order; point ids hash to a
+// part (sharding.shard_slot). Writes fan out with the part header and each
+// shard keeps only its slice; point get/delete route to the owning part.
+// Searches fan out to every part with an oversample multiplier, then merge
+// by (distance asc, id asc) and apply offset/after_id AFTER the merge.
+
+type RouterHit = {
+  id: Int;
+  distance: Float32;
+}
+
+// Total order used by every merge and by the page/cursor contract.
+fn router_hit_before(a: &RouterHit, b: &RouterHit) -> Bool {
+  if a.distance < b.distance { return true; }
+  if a.distance > b.distance { return false; }
+  return a.id < b.id;
+}
+
+// Dedupe by id (keep the closer copy), insert sorted, trim to cap.
+fn router_hit_push(hits: &mut Vec[RouterHit], item: RouterHit, cap: Int) {
+  var i: Int = 0;
+  var replaced: Bool = false;
+  while i < hits.len() {
+    if hits[i].id == item.id {
+      if router_hit_before(&item, &hits[i]) {
+        hits[i] = item;
+        var p: Int = i;
+        while p > 0 && router_hit_before(&hits[p], &hits[p - 1]) {
+          var tmp = hits[p];
+          hits[p] = hits[p - 1];
+          hits[p - 1] = tmp;
+          p = p - 1;
+        }
+      }
+      replaced = true;
+      i = hits.len();
+    } else {
+      i = i + 1;
+    }
+  }
+  if replaced { return; }
+  hits.push(item);
+  var pos: Int = hits.len() - 1;
+  while pos > 0 && router_hit_before(&hits[pos], &hits[pos - 1]) {
+    var tmp2 = hits[pos];
+    hits[pos] = hits[pos - 1];
+    hits[pos - 1] = tmp2;
+    pos = pos - 1;
+  }
+  if hits.len() > cap { hits.pop(); }
+}
+
+// Parse one shard's {"hits":[...]} body into the accumulator. False on a
+// malformed body (the caller reports the part loudly; never silent).
+fn router_merge_hits(body: Str, hits: &mut Vec[RouterHit], cap: Int) -> Bool {
+  var parsed = json.json_parse(body);
+  var doc = json.json_null();
+  var ok: Bool = false;
+  match parsed {
+    Ok(v) => { doc = v; ok = true; }
+    Err(_) => {}
+  }
+  if !ok { return false; }
+  var ho = json.json_get(doc, "hits");
+  match ho {
+    Some(hv) => {
+      match hv {
+        Array(items) => {
+          var i: Int = 0;
+          while i < items.len() {
+            var idv: Int = -1;
+            var distv: Float32 = 0.0;
+            var have_id: Bool = false;
+            var have_d: Bool = false;
+            match json.json_get(items[i], "id") {
+              Some(nv) => {
+                match nv {
+                  Number(n) => { idv = n as Int; have_id = true; }
+                  _ => {}
+                }
+              }
+              None => {}
+            }
+            match json.json_get(items[i], "distance") {
+              Some(dv) => {
+                match dv {
+                  Number(n) => { distv = n as Float32; have_d = true; }
+                  _ => {}
+                }
+              }
+              None => {}
+            }
+            if have_id && have_d {
+              router_hit_push(hits, RouterHit{ id: idv, distance: distv }, cap);
+            } else {
+              return false;
+            }
+            i = i + 1;
+          }
+        }
+        _ => { return false; }
+      }
+    }
+    None => { return false; }
+  }
+  return true;
+}
+
+// Render [start, start+count) of the merged order as a JSON array.
+fn router_hits_array(hits: &Vec[RouterHit], start: Int, count: Int) -> JsonValue {
+  var arr = json.json_array_new();
+  var i: Int = start;
+  var n: Int = 0;
+  while i < hits.len() && n < count {
+    var hit = json.json_object_new();
+    hit = json.json_set(hit, "id", json.json_number(hits[i].id as Float64));
+    hit = json.json_set(hit, "distance", json.json_number(hits[i].distance as Float64));
+    arr = json.json_array_push(arr, hit);
+    i = i + 1;
+    n = n + 1;
+  }
+  return arr;
+}
+
+fn router_fail_array(ids: &Vec[Str], codes: &Vec[Int]) -> JsonValue {
+  var arr = json.json_array_new();
+  var i: Int = 0;
+  while i < ids.len() && i < codes.len() {
+    var item = json.json_object_new();
+    item = json.json_set(item, "id", json.json_string(ids[i]));
+    item = json.json_set(item, "status", json.json_number(codes[i] as Float64));
+    arr = json.json_array_push(arr, item);
+    i = i + 1;
+  }
+  return arr;
+}
+
+fn router_client_key(req: &HttpRequest) -> Str {
+  match http_header(req, "x-api-key") {
+    Some(k) => { return k; }
+    None => {}
+  }
+  return "";
+}
+
+fn router_query_id(req: &HttpRequest) -> Int {
+  match query_param(req.query, "id") {
+    Some(s) => {
+      var b = slice.str_bytes(s);
+      var r = parse_int_at(b, 0);
+      if r.ok && r.pos == b.len() && b.len() > 0 { return r.value; }
+    }
+    None => {}
+  }
+  return -1;
+}
+
+fn router_json_int(doc: JsonValue, key: Str, def: Int) -> Int {
+  match json.json_get(doc, key) {
+    Some(v) => {
+      match v {
+        Number(n) => { return n as Int; }
+        _ => {}
+      }
+    }
+    None => {}
+  }
+  return def;
+}
+
+fn router_json_bool(doc: JsonValue, key: Str, def: Bool) -> Bool {
+  match json.json_get(doc, key) {
+    Some(v) => {
+      match v {
+        Bool(b) => { return b; }
+        _ => {}
+      }
+    }
+    None => {}
+  }
+  return def;
+}
+
+// Insert one header before the head terminator, preserving the body bytes
+// (the router never re-serializes a client's vector payload).
+fn router_raw_with_header(raw: &Vec[UInt8], name: Str, value: Str) -> Vec[UInt8] {
+  var term: Int = -1;
+  var i: Int = 0;
+  while i + 3 < raw.len() {
+    if raw[i] == 13 && raw[i + 1] == 10 && raw[i + 2] == 13 && raw[i + 3] == 10 {
+      term = i;
+      i = raw.len();
+    } else {
+      i = i + 1;
+    }
+  }
+  var out = Vec[UInt8].new();
+  if term < 0 {
+    var j0: Int = 0;
+    while j0 < raw.len() { out.push(raw[j0]); j0 = j0 + 1; }
+    return out;
+  }
+  var j: Int = 0;
+  while j < term + 2 { out.push(raw[j]); j = j + 1; }
+  append_bytes(&mut out, name);
+  append_bytes(&mut out, ": ");
+  append_bytes(&mut out, value);
+  append_bytes(&mut out, "\r\n");
+  j = term + 2;
+  while j < raw.len() { out.push(raw[j]); j = j + 1; }
+  return out;
+}
+
+// First successful part's collection metric (all parts must agree).
+fn router_split_metric(rt: &mut RouterState, shards: &mut Vec<RouterShard], ci: Int, coll: Str, key: Str) -> Option[DistanceMetric] {
+  var n = router_mapping_split_count(&rt.mapping, ci);
+  var k: Int = 0;
+  while k < n {
+    var psi = router_mapping_part_at(&rt.mapping, ci, k);
+    var sid = rt.mapping.shard_ids[psi];
+    var idx = router_shard_find(shards, sid);
+    if idx >= 0 {
+      var resp = router_shard_forward(shards, idx, &internal_get("/stats?collection=" + coll, key));
+      if response_status(&resp) == 200 {
+        var parsed = json.json_parse(resp_body_str(&resp));
+        var doc = json.json_null();
+        var ok: Bool = false;
+        match parsed {
+          Ok(v) => { doc = v; ok = true; }
+          Err(_) => {}
+        }
+        if ok {
+          match json.json_get(doc, "metric") {
+            Some(mv) => {
+              match mv {
+                String(m) => { return metric_from_name(m); }
+                _ => {}
+              }
+            }
+            None => {}
+          }
+        }
+      }
+    }
+    k = k + 1;
+  }
+  return None;
+}
+
+type RouterCursor = {
+  ok: Bool;
+  not_found: Bool;
+  distance: Float32;
+}
+
+// Cursor key for merged after_id pagination. The cursor lives on exactly
+// one part; its distance in the query metric turns the global cursor into a
+// threshold every part can apply (engine_search_after_key).
+fn router_split_cursor(rt: &mut RouterState, shards: &mut Vec<RouterShard], req: &HttpRequest, ci: Int, coll: Str, id: Int, qv: &Vector) -> RouterCursor {
+  var bad = RouterCursor{ ok: false, not_found: false, distance: 0.0 };
+  var psi = router_mapping_part_for_id(&rt.mapping, ci, id);
+  if psi < 0 { return bad; }
+  var sid = rt.mapping.shard_ids[psi];
+  var idx = router_shard_find(shards, sid);
+  if idx < 0 { return bad; }
+  var key = router_client_key(req);
+  if rt.internal_key.len() > 0 { key = rt.internal_key; }
+  var get_raw = internal_get("/collections/" + coll + "/points?id=" + convert.int_to_string(id), key);
+  var resp = router_shard_forward(shards, idx, &get_raw);
+  var code = response_status(&resp);
+  if code == 404 { return RouterCursor{ ok: false, not_found: true, distance: 0.0 }; }
+  if code != 200 { return bad; }
+  var parsed = json.json_parse(resp_body_str(&resp));
+  var doc = json.json_null();
+  var ok: Bool = false;
+  match parsed {
+    Ok(v) => { doc = v; ok = true; }
+    Err(_) => {}
+  }
+  if !ok { return bad; }
+  var vv = Vector.new(1);
+  var have_v: Bool = false;
+  match json.json_get(doc, "vector") {
+    Some(x) => {
+      match jv_to_vector(x) {
+        Some(v) => { vv = v; have_v = true; }
+        None => {}
+      }
+    }
+    None => {}
+  }
+  if !have_v { return bad; }
+  var mopt = router_split_metric(rt, shards, ci, coll, key);
+  var metric: DistanceMetric = DistanceMetric.Euclidean;
+  var have_m: Bool = false;
+  match mopt {
+    Some(m) => { metric = m; have_m = true; }
+    None => {}
+  }
+  if !have_m { return bad; }
+  return RouterCursor{ ok: true, not_found: false, distance: vector_distance(qv, &vv, metric) };
+}
+
+fn router_split_count_of(resp: &Vec[UInt8]) -> Int {
+  var parsed = json.json_parse(resp_body_str(resp));
+  var doc = json.json_null();
+  var ok: Bool = false;
+  match parsed {
+    Ok(v) => { doc = v; ok = true; }
+    Err(_) => {}
+  }
+  if !ok { return -1; }
+  return router_json_int(doc, "count", -1);
+}
+
+// Split upsert: every part receives the same body plus its slot/count; the
+// shard keeps only ids that hash to its slot. Counts sum to the batch size.
+fn router_split_upsert(rt: &mut RouterState, shards: &mut Vec[RouterShard], raw: &Vec[UInt8], ci: Int) -> Vec[UInt8] {
+  var n = router_mapping_split_count(&rt.mapping, ci);
+  var total: Int = 0;
+  var k: Int = 0;
+  while k < n {
+    var psi = router_mapping_part_at(&rt.mapping, ci, k);
+    var sid = rt.mapping.shard_ids[psi];
+    var idx = router_shard_find(shards, sid);
+    if idx < 0 { return jerror(503, "split part not configured"); }
+    var fwd = router_raw_with_header(raw, "x-xvector-part-slot", convert.int_to_string(k));
+    fwd = router_raw_with_header(&fwd, "x-xvector-part-count", convert.int_to_string(n));
+    var resp = router_shard_forward(shards, idx, &fwd);
+    rt.forwarded = rt.forwarded + 1;
+    if response_status(&resp) != 200 { return resp; }
+    var c = router_split_count_of(&resp);
+    if c < 0 { return jerror(500, "split part returned a malformed count"); }
+    total = total + c;
+    k = k + 1;
+  }
+  var out = json.json_object_new();
+  out = json.json_set(out, "count", json.json_number(total as Float64));
+  return http_response(200, out);
+}
+
+// Split point route: POST fans the upsert out; GET/DELETE route by id hash.
+fn router_split_points(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpRequest, raw: &Vec[UInt8], ci: Int) -> Vec[UInt8] {
+  if req.method == "POST" {
+    return router_split_upsert(rt, shards, raw, ci);
+  }
+  var psi: Int = -1;
+  var id = router_query_id(req);
+  if id >= 0 { psi = router_mapping_part_for_id(&rt.mapping, ci, id); }
+  if psi < 0 { psi = router_mapping_part_at(&rt.mapping, ci, 0); }
+  if psi < 0 { return jerror(503, "split mapping has no part"); }
+  var sid = rt.mapping.shard_ids[psi];
+  var idx = router_shard_find(shards, sid);
+  if idx < 0 { return jerror(503, "split part not configured"); }
+  var resp = router_shard_forward(shards, idx, raw);
+  rt.forwarded = rt.forwarded + 1;
+  return resp;
+}
+
+// Split create: fan the create out to every part; all must agree. A failure
+// is returned loudly (a partial create is possible and never hidden).
+fn router_split_create(rt: &mut RouterState, shards: &mut Vec<RouterShard], raw: &Vec[UInt8], ci: Int) -> Vec[UInt8] {
+  var n = router_mapping_split_count(&rt.mapping, ci);
+  var first: Vec[UInt8] = Vec[UInt8].new();
+  var have_first: Bool = false;
+  var k: Int = 0;
+  while k < n {
+    var psi = router_mapping_part_at(&rt.mapping, ci, k);
+    var sid = rt.mapping.shard_ids[psi];
+    var idx = router_shard_find(shards, sid);
+    if idx < 0 { return jerror(503, "split part not configured"); }
+    var resp = router_shard_forward(shards, idx, raw);
+    rt.forwarded = rt.forwarded + 1;
+    var code = response_status(&resp);
+    if code != 200 && code != 201 { return resp; }
+    if !have_first { first = resp; have_first = true; }
+    k = k + 1;
+  }
+  if !have_first { return jerror(503, "split mapping has no part"); }
+  return first;
+}
+
+// Split stats: sum the per-part counters (points/payloads/...); lsn = max.
+fn router_split_stats(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpRequest, ci: Int, coll: Str) -> Vec[UInt8] {
+  var n = router_mapping_split_count(&rt.mapping, ci);
+  var key = router_client_key(req);
+  if rt.internal_key.len() > 0 { key = rt.internal_key; }
+  var first_body: Str = "";
+  var have_first: Bool = false;
+  var points: Int = 0;
+  var payloads: Int = 0;
+  var nodes: Int = 0;
+  var tombstones: Int = 0;
+  var sealed_segments: Int = 0;
+  var sealed_loaded: Int = 0;
+  var sealed_missing: Int = 0;
+  var mem_store: Int = 0;
+  var mem_graph: Int = 0;
+  var mem_payloads: Int = 0;
+  var mem_total: Int = 0;
+  var mem_wal: Int = 0;
+  var max_lsn: Int = 0;
+  var fail_ids = Vec[Str].new();
+  var fail_codes = Vec[Int].new();
+  var k: Int = 0;
+  while k < n {
+    var psi = router_mapping_part_at(&rt.mapping, ci, k);
+    var sid = rt.mapping.shard_ids[psi];
+    var idx = router_shard_find(shards, sid);
+    if idx < 0 {
+      fail_ids.push(sid);
+      fail_codes.push(503);
+    } else {
+      var resp = router_shard_forward(shards, idx, &internal_get("/stats?collection=" + coll, key));
+      if response_status(&resp) == 200 {
+        var body = resp_body_str(&resp);
+        if !have_first { first_body = body; have_first = true; }
+        var parsed = json.json_parse(body);
+        var doc = json.json_null();
+        var ok: Bool = false;
+        match parsed {
+          Ok(v) => { doc = v; ok = true; }
+          Err(_) => {}
+        }
+        if ok {
+          points = points + router_json_int(doc, "points", 0);
+          payloads = payloads + router_json_int(doc, "payloads", 0);
+          nodes = nodes + router_json_int(doc, "nodes", 0);
+          tombstones = tombstones + router_json_int(doc, "tombstones", 0);
+          sealed_segments = sealed_segments + router_json_int(doc, "sealed_segments", 0);
+          sealed_loaded = sealed_loaded + router_json_int(doc, "sealed_loaded", 0);
+          sealed_missing = sealed_missing + router_json_int(doc, "sealed_missing", 0);
+          mem_store = mem_store + router_json_int(doc, "mem_store", 0);
+          mem_graph = mem_graph + router_json_int(doc, "mem_graph", 0);
+          mem_payloads = mem_payloads + router_json_int(doc, "mem_payloads", 0);
+          mem_total = mem_total + router_json_int(doc, "mem_total", 0);
+          mem_wal = mem_wal + router_json_int(doc, "mem_wal", 0);
+          var l = router_json_int(doc, "lsn", 0);
+          if l > max_lsn { max_lsn = l; }
+        } else {
+          fail_ids.push(sid);
+          fail_codes.push(500);
+        }
+      } else {
+        fail_ids.push(sid);
+        fail_codes.push(response_status(&resp));
+      }
+    }
+    k = k + 1;
+  }
+  if !have_first || fail_ids.len() > 0 {
+    var out = json.json_object_new();
+    out = json.json_set(out, "error", json.json_string("split stats failed"));
+    out = json.json_set(out, "shards", router_fail_array(&fail_ids, &fail_codes));
+    return http_response(503, out);
+  }
+  var parsed2 = json.json_parse(first_body);
+  var doc2 = json.json_null();
+  match parsed2 {
+    Ok(v) => { doc2 = v; }
+    Err(_) => { return jerror(500, "split stats parse failed"); }
+  }
+  doc2 = json.json_set(doc2, "points", json.json_number(points as Float64));
+  doc2 = json.json_set(doc2, "payloads", json.json_number(payloads as Float64));
+  doc2 = json.json_set(doc2, "nodes", json.json_number(nodes as Float64));
+  doc2 = json.json_set(doc2, "tombstones", json.json_number(tombstones as Float64));
+  doc2 = json.json_set(doc2, "sealed_segments", json.json_number(sealed_segments as Float64));
+  doc2 = json.json_set(doc2, "sealed_loaded", json.json_number(sealed_loaded as Float64));
+  doc2 = json.json_set(doc2, "sealed_missing", json.json_number(sealed_missing as Float64));
+  doc2 = json.json_set(doc2, "mem_store", json.json_number(mem_store as Float64));
+  doc2 = json.json_set(doc2, "mem_graph", json.json_number(mem_graph as Float64));
+  doc2 = json.json_set(doc2, "mem_payloads", json.json_number(mem_payloads as Float64));
+  doc2 = json.json_set(doc2, "mem_total", json.json_number(mem_total as Float64));
+  doc2 = json.json_set(doc2, "mem_wal", json.json_number(mem_wal as Float64));
+  doc2 = json.json_set(doc2, "lsn", json.json_number(max_lsn as Float64));
+  doc2 = json.json_set(doc2, "split", json.json_bool(true));
+  doc2 = json.json_set(doc2, "parts", json.json_number(n as Float64));
+  return http_response(200, doc2);
+}
+
+// Split search: parse the request, compute the fan-out budget, fan out,
+// merge, then apply offset/after_id after the merge. Strict by default;
+// `"partial": true` opts into live-shard results with an honest flag.
+fn router_split_search(rt: &mut RouterState, shards: &mut Vec<RouterShard], req: &HttpRequest, raw: &Vec[UInt8], ci: Int, coll: Str) -> Vec[UInt8] {
+  var parsed = json.json_parse(req.body);
+  var doc = json.json_null();
+  var ok: Bool = false;
+  match parsed {
+    Ok(v) => { doc = v; ok = true; }
+    Err(_) => {}
+  }
+  if !ok { return jerror(400, "bad json"); }
+  if json.json_type(doc) != "object" { return jerror(400, "bad search body"); }
+  var is_batch: Bool = false;
+  match json.json_get(doc, "requests") {
+    Some(_) => { is_batch = true; }
+    None => {}
+  }
+  if is_batch { return jerror(501, "batch search on split collections is not supported"); }
+  var is_range: Bool = false;
+  match json.json_get(doc, "mode") {
+    Some(mv) => {
+      match mv {
+        String(m) => {
+          if m == "range" { is_range = true; }
+          else if m != "knn" { return jerror(400, "unknown search mode"); }
+        }
+        _ => { return jerror(400, "bad search mode"); }
+      }
+    }
+    None => {}
+  }
+  if is_range { return jerror(501, "range search on split collections is not supported"); }
+  var top_k = router_json_int(doc, "top_k", 10);
+  var offset = router_json_int(doc, "offset", 0);
+  var after_id = router_json_int(doc, "after_id", -1);
+  var partial = router_json_bool(doc, "partial", false);
+  if top_k < 1 { return jerror(400, "top_k must be positive"); }
+  if offset < 0 { return jerror(400, "offset must be >= 0"); }
+  if after_id >= 0 && offset > 0 { return jerror(400, "offset and after_id are mutually exclusive"); }
+  var add: Int = offset;
+  if after_id >= 0 { add = 0; }
+  var needed: Int = add + top_k;
+  if needed < 1 { needed = 1; }
+  var mult = rt.oversample;
+  if needed * mult > rt.cfg.max_top_k {
+    mult = rt.cfg.max_top_k / needed;
+    if mult < 1 { return jerror(400, "page exceeds split fan-out limit"); }
+  }
+  var after_d: Float32 = -1.0;
+  if after_id >= 0 {
+    var qv = Vector.new(1);
+    var have_q: Bool = false;
+    match json.json_get(doc, "vector") {
+      Some(x) => {
+        match jv_to_vector(x) {
+          Some(v) => { qv = v; have_q = true; }
+          None => {}
+        }
+      }
+      None => {}
+    }
+    if !have_q { return jerror(400, "missing vector"); }
+    var cur = router_split_cursor(rt, shards, req, ci, coll, after_id, &qv);
+    if !cur.ok {
+      if cur.not_found { return jerror(404, "unknown after_id"); }
+      return jerror(503, "cursor lookup failed");
+    }
+    after_d = cur.distance;
+  }
+  var n = router_mapping_split_count(&rt.mapping, ci);
+  var bodies = Vec[Str].new();
+  var body_sids = Vec[Str].new();
+  var fail_ids = Vec[Str].new();
+  var fail_codes = Vec[Int].new();
+  var k: Int = 0;
+  while k < n {
+    var psi = router_mapping_part_at(&rt.mapping, ci, k);
+    var sid = rt.mapping.shard_ids[psi];
+    var idx = router_shard_find(shards, sid);
+    if idx < 0 {
+      fail_ids.push(sid);
+      fail_codes.push(503);
+    } else {
+      var fwd = router_raw_with_header(raw, "x-xvector-fanout-mult", convert.int_to_string(mult));
+      fwd = router_raw_with_header(&fwd, "x-xvector-ignore-offset", "1");
+      if after_d >= 0.0 {
+        // Exact Float32 bit pattern: header-side float text parsing is
+        // unreliable at this stdlib pin (JSON top-level numbers read 0).
+        fwd = router_raw_with_header(&fwd, "x-xvector-after-distance",
+          convert.int_to_string(float.f32_bits(after_d)));
+      }
+      var resp = router_shard_forward(shards, idx, &fwd);
+      rt.forwarded = rt.forwarded + 1;
+      var code = response_status(&resp);
+      if code == 200 {
+        bodies.push(resp_body_str(&resp));
+        body_sids.push(sid);
+      } else if code == 400 || code == 401 || code == 403 || code == 413 || code == 429 {
+        return resp;
+      } else {
+        fail_ids.push(sid);
+        fail_codes.push(code);
+      }
+    }
+    k = k + 1;
+  }
+  if fail_ids.len() > 0 && (!partial || bodies.len() == 0) {
+    var out0 = json.json_object_new();
+    out0 = json.json_set(out0, "error", json.json_string("scatter-gather failed"));
+    out0 = json.json_set(out0, "shards", router_fail_array(&fail_ids, &fail_codes));
+    return http_response(503, out0);
+  }
+  var hits = Vec[RouterHit].new();
+  var bi: Int = 0;
+  while bi < bodies.len() {
+    if !router_merge_hits(bodies[bi], &mut hits, needed) {
+      fail_ids.push(body_sids[bi]);
+      fail_codes.push(500);
+      if !partial {
+        var out1 = json.json_object_new();
+        out1 = json.json_set(out1, "error", json.json_string("shard response parse failed"));
+        out1 = json.json_set(out1, "shards", router_fail_array(&fail_ids, &fail_codes));
+        return http_response(503, out1);
+      }
+    }
+    bi = bi + 1;
+  }
+  var start: Int = 0;
+  if after_id < 0 { start = offset; }
+  var out = json.json_object_new();
+  out = json.json_set(out, "hits", router_hits_array(&hits, start, top_k));
+  if partial {
+    out = json.json_set(out, "partial", json.json_bool(fail_ids.len() > 0));
+    if fail_ids.len() > 0 {
+      out = json.json_set(out, "failed_shards", router_fail_array(&fail_ids, &fail_codes));
+    }
   }
   return http_response(200, out);
 }
@@ -1048,7 +1888,13 @@ fn router_route(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpR
     if !(req.method == "GET") { return jerror(405, "method not allowed"); }
     var sco = query_param(req.query, "collection");
     match sco {
-      Some(c) => { return router_dispatch(rt, shards, c, raw); }
+      Some(c) => {
+        var sci_stats = router_mapping_index(&rt.mapping, c);
+        if sci_stats >= 0 && router_mapping_is_split(&rt.mapping, sci_stats) {
+          return router_split_stats(rt, shards, req, sci_stats, c);
+        }
+        return router_dispatch(rt, shards, c, raw);
+      }
       None => { return router_cluster_stats(rt, shards); }
     }
   }
@@ -1057,17 +1903,29 @@ fn router_route(rt: &mut RouterState, shards: &mut Vec[RouterShard], req: &HttpR
     if req.method == "POST" {
       var pick = router_pick_create_name(req);
       if pick.err.len() > 0 { return jerror(400, pick.err); }
+      var sci_create = router_mapping_index(&rt.mapping, pick.name);
+      if sci_create >= 0 && router_mapping_is_split(&rt.mapping, sci_create) {
+        return router_split_create(rt, shards, raw, sci_create);
+      }
       return router_dispatch(rt, shards, pick.name, raw);
     }
     return jerror(405, "method not allowed");
   }
   if segs.len() == 3 && segs[0] == "collections" && segs[2] == "points" {
+    var sci_points = router_mapping_index(&rt.mapping, segs[1]);
+    if sci_points >= 0 && router_mapping_is_split(&rt.mapping, sci_points) {
+      return router_split_points(rt, shards, req, raw, sci_points);
+    }
     return router_dispatch(rt, shards, segs[1], raw);
   }
   if segs.len() == 1 && segs[0] == "search" {
     if !(req.method == "POST") { return jerror(405, "method not allowed"); }
     var pick2 = router_pick_search_collection(req);
     if pick2.err.len() > 0 { return jerror(400, pick2.err); }
+    var sci_search = router_mapping_index(&rt.mapping, pick2.name);
+    if sci_search >= 0 && router_mapping_is_split(&rt.mapping, sci_search) {
+      return router_split_search(rt, shards, req, raw, sci_search, pick2.name);
+    }
     return router_dispatch(rt, shards, pick2.name, raw);
   }
   return jerror(404, "unknown route");

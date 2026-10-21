@@ -10,12 +10,14 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-18, 86th pass (**v0.64.7 re-pin COMPLETE on both
-  platforms** -- full batteries ALL GATES GREEN (53 probes x2 + suite
-  177/177 x2) on stdlib `6727526` + packages `2e7c5524`; C-16/C-17/C-18
-  repros green on WSL + Windows; zero XVECTOR findings open; the embedded
-  tier packages orbitdb 0.2.1 + pulse 0.3.1 are consumed and gated;
-  L-3/L-4/L-5 lattice slices landed with the durable reopen-then-write fix)
+- **As of:** 2026-10-21, 87th pass (**L-6 phase B hash scatter-gather
+  landed**: mapping `split`, create/upsert/get/delete routing, k-way merge,
+  offset + merged after-id pagination, strict/partial, filter pushdown.
+  `probe_scatter_gather` = 51st in the list (58 total), 0 fails x2
+  Windows; suite 177/177 x2; libcheck 49/49. HNSW recall 0.9917/0.9917
+  at oversample 1 and
+  1.000/1.000 at 2-3; filtered 1.000. v1 limits: split batch/range search
+  501, split move 409, split drain 501. WSL x2 + full battery next.)
 - **Overall:** **90 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -243,10 +245,16 @@ bounded in-flight workers, one coarse engine mutex, graceful `JoinHandle`
 joins; `probe_concurrency` = 54th probe, 4 clients x 8 deterministic ops ->
 exact 32 points, worker-served quit, shutdown join; green x2 both). The
 existing service family + `probe_http_fuzz` are unchanged and green x2.
+**L-6 phase B hash scatter-gather landed 2026-10-21**: mapping `split`,
+`id mod N` placement, create/upsert/get/delete fan-out, k-way ranked merge,
+offset + merged after-id pagination, strict/partial, filter pushdown; gate
+`probe_scatter_gather` 0 fails x2 Windows + full suite/libcheck. v1 limits
+(split batch/range 501, split move 409, split drain 501, fixed part count/
+reshard rebuild) are explicit.
 Remaining: G-3 read snapshots, G-4 metrics-under-concurrency, concurrent
-readers / write serialization model, scale tuning beyond the baseline
-(`docs/G-PHASE-PLAN.md` slice order); the channel handle form (wished)
-re-opens the channel's own cross-thread leg.
+readers / write serialization model, split resharding/rebalance, scale
+tuning beyond the baseline (`docs/G-PHASE-PLAN.md` slice order); the
+channel handle form (wished) re-opens the channel's own cross-thread leg.
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -1310,6 +1318,21 @@ extraction with the packages lane.
   `docs/repro/xv-pq-second-call/`; the prototype was reverted; bus
   `REL-20261021-1103-xvector`. Flat/HNSW/SQ are unaffected; P4 reopens on a
   compiler fix. No score change (v1.1 track).
+
+- **2026-10-21 (L-6 phase B):** intra-collection hash split landed. New
+  `src/api/sharding.xi` (`id mod N`), mapping `split` load/persist/view,
+  create + batch-upsert fan-out with part-header filtering, point get/delete
+  hash routing, strict/partial scatter-gather with k-way `(distance, id)`
+  merge and dedupe, offset applied after merge, merged `after_id` via
+  `engine_search_after_key` (cursor distance resolved on its owner part),
+  wire filter pushdown (`eq/range/exists/in/and/or/not`), split stats
+  aggregation, and explicit v1 refusals (split batch/range 501, move 409,
+  drain 501). Gate `probe_scatter_gather` (51st; 58 total) 0 fails x2
+  Windows; HNSW
+  ID/distance recall 0.9917 at oversample 1, 1.000 at 2-3; filtered 1.000;
+  Flat exactness/offset/tie-cursor/after-id exact. Suite 177/177 x2;
+  libcheck 49/49; affected probes green. WSL x2 + full battery queued.
+  No score change yet (G-3/G-4 and split rebalance remain).
 
 ## Update rule
 

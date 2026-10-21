@@ -230,12 +230,14 @@ several behind an edge proxy.
 edit bumps `version`):
 
     {
-      "version": 2,
+      "version": 3,
       "shards": [
         {"id": "s1", "url": "http://127.0.0.1:7711"},
-        {"id": "s2", "url": "http://127.0.0.1:7712"}
+        {"id": "s2", "url": "http://127.0.0.1:7712"},
+        {"id": "s3", "url": "http://127.0.0.1:7713"}
       ],
-      "collections": {"docs": "s2", "logs": "s2"}
+      "collections": {"docs": "s1", "logs": "s2"},
+      "split": {"docs": ["s1", "s2", "s3"]}
     }
 
 Loader rules (refuse-start on any violation): `version` is an integer
@@ -245,6 +247,19 @@ valid names to KNOWN shard ids. Placement is EXPLICIT: a collection is
 routable only when the mapping declares it -- record the shard first,
 then create the collection through the router (unmapped names answer 404
 `not_found`).
+
+**Split collections (L-6):** optional `split` maps a collection to 2+
+known, unique shard ids in SLOT ORDER. The collection must also appear in
+`collections`; its declared owner must be the first part. Hash placement:
+`slot = point_id mod part_count`. `POST /collections` fans out to every
+part; a batch upsert fans out with the part hints and each shard keeps its
+slice; point get/delete route by hash. Search fan-out and merged pagination
+are described in `docs/query-execution.md`. Split stats sum the parts and
+carry `"split": true` + `"parts"`. The part count is FIXED in v1: changing
+it remaps every id and requires a rebuild. Admin edits to `split` require
+a router reload/restart (split routes do not use the stale-404 retry).
+Explicit limits: batch/range search -> 501; move -> 409; any drain that
+touches a split part -> 501; split stats with a down part -> 503.
 
 **Surfaces:** the route set is forwarded verbatim (the client's key
 travels with the request -- shards re-check auth independently, defense
@@ -277,8 +292,9 @@ socket hop, which lands with the `xiom.http` client half
 library + gates (`probe_router_2shards`), not as a standalone binary.
 
 **Non-goals (v1):** cross-collection batches in one `/search` body,
-automatic placement, failover; intra-collection scatter-gather is L-6
-(phase B).
+automatic placement, failover. Intra-collection scatter-gather is L-6
+phase B for search/upsert/get/delete; split batch/range search, split
+moves, and split resharding remain explicit 501/409 limits.
 
 ## 11. Cluster operations (move / drain, L-5)
 
@@ -316,6 +332,8 @@ Artifacts: moves write `xvmove_<collection>.seg` into the router's
 artifact dir. In the in-process transport the artifact doubles as the
 source's sealed file until the drop; ops that ship bytes over the wire
 should copy the artifact and verify sha256 on the receiving side.
+Split collections are excluded: `POST /cluster/move` returns 409, and a
+drain that would touch ANY split part returns 501 before moving anything.
 
 ### Cluster templates (sketch)
 

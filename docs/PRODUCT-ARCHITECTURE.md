@@ -170,7 +170,28 @@ sequenceDiagram
 - Merge is exact for Flat per-shard results (k-way of per-shard total
   orders == global order when k' >= rank window needed).
 - HNSW per shard stays approximate: recall bound is measured by the L-6
-  gate; oversampling factor is a config knob, defaulted by that gate.
+  gate; oversampling factor is a config knob (router default 2), tuned by
+  that gate.
+- **Decision (2026-10-21): HASH split.** The mapping's `split` entry lists
+  two or more shard ids in slot order; `slot = point_id mod part_count`
+  (`src/api/sharding.xi`, shared by router and shards). Rationale: balanced
+  write/search fan-out for arbitrary sparse ids; the ranked merge means
+  range's ordered-scan advantage does not apply to v1 pagination; a fixed
+  part count avoids range-boundary bookkeeping. Range sharding remains a
+  future option when ID-ordered scans land.
+- Writes: a split create fans out to every part; a batch upsert fans out
+  with the part slot/count headers and each shard keeps only ids hashing to
+  its slot; single-point get/delete route by the same hash. No cross-shard
+  transaction: a failed part can leave a partial batch, reported loudly.
+- Pagination: `offset` is applied after the merge (each part returns its
+  top `(offset + top_k) * oversample` pool); `after_id` resolves the cursor
+  id on its owner part, computes its distance in the collection metric, and
+  asks every part for hits strictly after the `(distance, id)` key. This
+  keeps the merged cursor stateless and exact.
+- v1 limits (explicit, never silent): batch and range search on a split
+  collection return 501; split collections cannot be moved/drained as one
+  L-2 artifact (409/501); a split stats request with a down part returns
+  503; split mapping edits require a router reload/restart.
 
 ## 7. Consistency and failure model
 
@@ -189,13 +210,15 @@ sequenceDiagram
 - **v1 (exact): shard by collection.** Shard count sized by
   tenant/collection; a single hot collection scales vertically first
   (HNSW params, SQ/PQ, mmap-backed segments, more RAM).
-- **phase B (L-6): shard a huge collection** by ID range or hash
-  (decision recorded in the L-6 design; range keeps scan/pagination
-  cheap, hash evens load). Ranked-merge semantics per 6.3; pagination
-  (`offset`/`after_id`) computed after the merge.
+- **phase B (L-6): shard a huge collection by HASH** (decision above).
+  Ranked-merge semantics per 6.3; pagination (`offset`/`after_id`)
+  computed after the merge. The part count is fixed in v1: adding or
+  removing a part changes every slot and requires a rebuild (per-part
+  rebalance is not implemented).
 - **Rebalancing = moving collections** (L-2 primitive): freeze -> final
   WAL flush/checkpoint -> copy dir + manifest entry -> attach -> flip
-  mapping version. No re-hash, no data rewrite in v1 semantics.
+  mapping version. No re-hash, no data rewrite in v1 semantics. Split
+  collections are excluded from the whole-collection move/drain in v1.
 - **Cluster snapshot** = per-shard snapshots + the mapping version (no
   cross-shard transactions; restore = restore each shard, then the
   mapping).
@@ -203,9 +226,13 @@ sequenceDiagram
 ## 9. Cluster metadata and routing (v1)
 
 - **Mapping file** (JSON): `{version, shards: [{id, url}...],
-  collections: {name -> shard_id}}` + a generation counter. Owned by
-  admin tooling; read by routers (poll + reload; optional push later).
+  collections: {name -> shard_id}, split: {name -> [shard_id...]}}` + a
+  generation counter. `split` is optional and lists 2+ parts in slot
+  order; the collection's `collections` owner must be the first part.
+  Owned by admin tooling; read by routers (poll + reload; optional push
+  later).
 - Router refresh: on startup, on file change, and on a shard 404 retry.
+  Split routes use the cached mapping until a reload/restart (v1).
 - New-collection placement: admin policy (explicit or least-loaded by
   `mem_*`/`/stats`); recorded in the mapping, then the shard creates it.
 - The router exposes `/health` (itself) and an aggregate `/stats` (sum

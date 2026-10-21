@@ -89,3 +89,23 @@ selectivity:
 `SearchRequest.filter` (in `query/search_request.xi`) carries the expression;
 `with_payload` controls whether matched payloads are hydrated onto the returned
 hits.
+
+## Wire filter shape (L-6)
+
+`POST /search` accepts an optional `filter` object. The router forwards it
+unchanged, so every split part applies it locally (L-6 pushdown):
+
+```json
+{"field": "bucket", "eq": "red"}
+{"field": "rank", "range": [3, 5]}
+{"field": "tag", "exists": true}
+{"field": "rank", "in": [1, 2, 3]}
+{"and": [{"field": "bucket", "eq": "red"}, {"field": "rank", "range": [3, 5]}]}
+{"or":  [{"field": "bucket", "eq": "red"}, {"field": "tag", "exists": true}]}
+{"not": {"field": "bucket", "eq": "blue"}}
+```
+
+JSON numbers that are exactly integral map to `IntVal`; other numbers map to
+`FloatVal`; strings and booleans map to `TextVal`/`BoolVal`. `exists: false`
+is `not(exists)`. Malformed shapes reject the request (400), never fail open.
+Pagination and filters remain mutually exclusive (engine contract).

@@ -1609,6 +1609,59 @@ fn union_after(eng: &VectorEngine, q: &Vector, k: Int, after_id: Int) -> Option[
   return Some(SearchHits{ items: out });
 }
 
+// L-6 merged-cursor scan: every live union hit strictly after the
+// (distance, id) key, in the paginated total order, bounded by k. Unlike
+// search_after_scan this does not need the cursor id locally; the router
+// supplies the key distance from the cursor's owner shard. Exact on both
+// index kinds (raw-store scan), matching the page/after contract.
+fn union_after_key(eng: &VectorEngine, q: &Vector, k: Int, key_d: Float32, key_id: Int) -> Vec[SearchResult] {
+  var results = Vec[SearchResult].new();
+  let alt = kernels.kernels_kind() == 1;
+  var i: Int = 0;
+  while i < eng.store.ids.len() {
+    var d: Float32 = 0.0;
+    if alt {
+      d = kernels.kernels_alt_distance(&eng.store.vectors[i], q, eng.metric);
+    } else {
+      d = vector_distance(&eng.store.vectors[i], q, eng.metric);
+    }
+    if d > key_d || (d == key_d && eng.store.ids[i] > key_id) {
+      page_push_bounded(&mut results, SearchResult{ id: eng.store.ids[i], distance: d }, k);
+    }
+    i = i + 1;
+  }
+  var ci: Int = 0;
+  while ci < eng.sealed_cache.len() {
+    var sc = eng.sealed_cache[ci];
+    if sc.cid == eng.active_cid {
+      var j: Int = 0;
+      while j < sc.ss.store.ids.len() {
+        var id = sc.ss.store.ids[j];
+        var skip: Bool = false;
+        match index_get(&eng.store, id) {
+          Some(_) => { skip = true; }
+          None => {}
+        }
+        if !skip && tombs_contain(&eng.tombstones, id) { skip = true; }
+        if !skip {
+          var d2: Float32 = 0.0;
+          if alt {
+            d2 = kernels.kernels_alt_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          } else {
+            d2 = vector_distance(&sc.ss.store.vectors[j], q, sc.ss.metric);
+          }
+          if d2 > key_d || (d2 == key_d && id > key_id) {
+            page_push_bounded(&mut results, SearchResult{ id: id, distance: d2 }, k);
+          }
+        }
+        j = j + 1;
+      }
+    }
+    ci = ci + 1;
+  }
+  return results;
+}
+
 pub fn engine_search(eng: &VectorEngine, query: &Vector, k: Int) -> Result[SearchHits, CoreError]
   requires: eng.created
   requires: k > 0
@@ -2006,6 +2059,27 @@ pub fn engine_search_after(eng: &VectorEngine, query: &Vector, k: Int, after_id:
   }
 }
 
+// L-6 merged-cursor pagination: the next k ranks strictly after the global
+// (distance, id) key. This is exact on Flat and Hnsw (raw-store scan) and is
+// the shape the router fans out after resolving the cursor's distance.
+pub fn engine_search_after_key(eng: &VectorEngine, query: &Vector, k: Int, after_distance: Float32, after_id: Int) -> Result[SearchHits, CoreError]
+  requires: eng.created
+{
+  if query.dimension != eng.dimension {
+    return Err(CoreError.InvalidInput("dimension mismatch"));
+  }
+  if !is_valid_top_k(k) {
+    return Err(CoreError.InvalidInput("top_k out of range"));
+  }
+  if after_id < 0 {
+    return Err(CoreError.InvalidInput("after_distance requires after_id"));
+  }
+  if after_distance < 0.0 {
+    return Err(CoreError.InvalidInput("after_distance must be >= 0"));
+  }
+  return Ok(SearchHits{ items: union_after_key(eng, query, k, after_distance, after_id) });
+}
+
 // Request-driven search: honors the request's top_k, filter, and
 // with_payload hydration flag. The active collection's metric governs; a
 // request whose metric differs from the collection is rejected. Returns
@@ -2038,6 +2112,24 @@ pub fn engine_search_request(eng: &VectorEngine, req: &SearchRequest) -> Result[
     }
     var rres = engine_search_range(eng, &req.query, req.radius, req.top_k);
     match rres {
+      Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits_union(eng, &h.items, req.with_payload) }); }
+      Err(e) => { return Err(e); }
+    }
+  }
+  // L-6 merged cursor: the router supplies the cursor's distance so every
+  // split part can apply the same global (distance, id) key.
+  if req.after_distance >= 0.0 {
+    if req.after_id < 0 {
+      return Err(CoreError.InvalidInput("after_distance requires after_id"));
+    }
+    if req.offset > 0 {
+      return Err(CoreError.InvalidInput("offset and after_id are mutually exclusive"));
+    }
+    if search_request_has_filter(req) {
+      return Err(CoreError.InvalidInput("pagination does not support filters"));
+    }
+    var kres = engine_search_after_key(eng, &req.query, req.top_k, req.after_distance, req.after_id);
+    match kres {
       Ok(h) => { return Ok(HydratedHits{ items: hydrate_hits_union(eng, &h.items, req.with_payload) }); }
       Err(e) => { return Err(e); }
     }

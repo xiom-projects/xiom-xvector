@@ -182,11 +182,11 @@ new dependency. Module `src/index/quantize.xi`.
 Kernel seam (SIMD drop-in point, Phase 10). `cosine_kernel`/`cosine_similarity`, `dot_distance`/`dot_raw`, `l2_distance`/`l2_squared`. Delegate to the `xiom.vectors` metric functions today.
 
 ## `xiom.vector.query.search_request` (rewritten against real types)
-`SearchRequest { query: Vector; top_k: Int; metric: DistanceMetric; filter: Vec[FilterExpr]; with_payload: Bool; mode: SearchMode; radius: Float32; offset: Int; after_id: Int }` -- the wire shape for request-driven search (the pre-extraction file carried inline mirrors; now it imports the extracted types). `SearchMode { Knn, Range }` (M-Q6).
-- `search_request_new(query, top_k, metric)` `requires: top_k > 0`; defaults: `with_payload=false`, `mode=Knn`, `radius=0.0`, `offset=0`, `after_id=-1` (plain-knn behavior -- existing consumers unchanged).
+`SearchRequest { query: Vector; top_k: Int; metric: DistanceMetric; filter: Vec[FilterExpr]; with_payload: Bool; mode: SearchMode; radius: Float32; offset: Int; after_id: Int; after_distance: Float32 }` -- the wire shape for request-driven search (the pre-extraction file carried inline mirrors; now it imports the extracted types). `SearchMode { Knn, Range }` (M-Q6); `after_distance` is the L-6 merged-cursor key (-1 = absent).
+- `search_request_new(query, top_k, metric)` `requires: top_k > 0`; defaults: `with_payload=false`, `mode=Knn`, `radius=0.0`, `offset=0`, `after_id=-1`, `after_distance=-1.0` (plain-knn behavior -- existing consumers unchanged).
 - `search_request_set_filter(req, expr)` -- single-clause replace (`[]` = no filter); `search_request_has_filter`, `search_request_top_k`.
 - `search_request_set_with_payload(req, on)` -- toggle hydration.
-- M-Q6 setters: `search_request_set_mode(req, mode)`; `search_request_set_range(req, radius)` (sugar: mode=Range + radius; `top_k` acts as the inclusive-radius limit); `search_request_set_page(req, offset)` (knn offset ranks); `search_request_set_after(req, after_id)` (knn cursor; -1 = none).
+- M-Q6 setters: `search_request_set_mode(req, mode)`; `search_request_set_range(req, radius)` (sugar: mode=Range + radius; `top_k` acts as the inclusive-radius limit); `search_request_set_page(req, offset)` (knn offset ranks); `search_request_set_after(req, after_id)` (knn cursor; -1 = none); `search_request_set_after_key(req, after_id, after_distance)` (L-6 merged cursor; the router supplies the cursor's distance from its owner part).
 - `SearchBatchRequest { requests: Vec[SearchRequest] }` + `search_batch_request_new/add/len` -- an ordered batch of requests.
 
 ## Bounded top-K -- the `xiom.vectors` package
@@ -240,6 +240,7 @@ paginated order is the documented contract, on Flat AND Hnsw alike (both
 kernels scan the raw store; ANN widening is M-P tuning).
 - `search_page_scan(idx, query, k, offset, metric) -> SearchHits` `requires: k > 0, offset >= 0, idx.dim == query.dimension` `ensures: result.items.len() <= k` -- ranks `[offset, offset+k)` of the ordered result set (bounded collector with the id tie-break; O(n * (offset+k)) scan).
 - `search_after_scan(idx, query, k, after_id, metric) -> Option[SearchHits]` `requires: k > 0, idx.dim == query.dimension` -- the next k ranks strictly after the CURRENT position of `after_id` (its live vector defines the cursor distance); `None` when the cursor id does not exist (e.g. deleted between pages). Gate: `tests/probes/probe_pagination.xi` (22 checks: page reconstruction, tie clusters, cursor walks, refusals, Flat/Hnsw parity, recovery).
+- L-6 merged cursor: `engine_search_after_key(eng, query, k, after_distance, after_id)` scans the union (active + sealed, tombstone-safe) for hits strictly after the `(distance, id)` key and returns the next k ranks. It does not need the cursor id locally, so every split part can apply the same key; `after_distance < 0` / missing cursor id are loud `InvalidInput`s. Gate arm: `tests/probes/probe_scatter_gather.xi` (tie cursor + chained pages vs the exact oracle).
 
 ## `xiom.vector.collection.schema`
 `enum NormalizationMode { Raw, L2Normalized }`; `PayloadFieldSpec { name; indexed }`; `CollectionSchema { dimension; metric; normalization; payload_fields }`. `schema_new(dim, metric)` `requires: is_valid_dimension(dim)` `ensures: result.dimension == dim`; `schema_set_normalization`, `schema_add_field`, `schema_dimension`.
@@ -577,7 +578,7 @@ wraps the names (SearchHits discipline).
 - Selective delete (M-Q4): `engine_delete_filter(eng, filter) -> Result[Int, CoreError]` -- removes every live point whose payload matches `filter`, planner-driven: index-answerable shapes (Eq/Range/Exists/And-of-those) resolve candidates from the sorted payload index (each verified with `payload_store_matches`); every other shape (In/Or/Not) scans the live store. Ids are collected before deletion (store shifts cannot skip points) and applied in ascending order (plan-independent WAL), each through the gated single-delete path: WAL record, graph tombstone (Hnsw), payload + index cleanup. Nothing matching -> `Ok(0)`, never an error. Gate `tests/probes/probe_delete_filter.xi` (26 checks).
 - Index admin (M-Q5): `CollectionStats { name; cid; dimension; metric; index_kind; m; ef_construction; ef_search; points; payloads; nodes; tombstones; wal_lsn }` + `engine_collection_stats(eng, name) -> Result[CollectionStats, CoreError]` -- the active collection reports from the live fields, a parked collection from its registry entry (synced at park time); unknown name -> `Err(NotFound)`. `IndexStats { kind; points; nodes_before; nodes_after; reclaimed }` + `engine_rebuild_index(eng) -> Result[IndexStats, CoreError]` `requires: eng.created` -- admin rebuild from the flat store (Hnsw: fresh graph over live nodes only, tombstones reclaimed; Flat: no-op with zeroed graph stats); `compact_index` remains the Int-returning wrapper. Gate `tests/probes/probe_index_admin.xi` (20 checks).
 - Memory accounting (M-P P2): `MemoryEstimate { name; dim; points; index_kind; store_bytes; graph_bytes; payload_bytes; total_bytes; wal_bytes }` + `engine_memory_estimate(eng, name) -> Result[MemoryEstimate, CoreError]` (facade `memory_estimate`) -- a documented accounting model over the live structures: flat store (`index_memory_estimate`), HNSW graph (`hnsw_memory_estimate`; level-independent uniform rows: `adj` = nodes*8*m0 Ints, `deg` = nodes*8 Ints), payload store incl. index rows (`payload_store_memory_estimate`) and the engine-wide WAL (`wal_memory_estimate`; the shared log is reported separately from `total_bytes`). Unknown name -> `Err(NotFound)`. Model constants (24 B Vec/Str header, 8 B Int, 4 B Float32, 1 B Bool, 32 B Vector struct) are documented at `hnsw_memory_estimate`; deltas are exact, absolutes within struct-padding tolerance. Gate `tests/probes/probe_memory_estimate.xi` (17 checks).
-- `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise). M-Q6 dispatch: `mode=Range` runs the exact range path (top_k as inclusive-radius limit; filters and pagination are Knn-only and rejected loudly in range mode; negative radius -> `InvalidInput`); knn `after_id >= 0` continues after the cursor (`Err(NotFound)` for a missing id; mutually exclusive with `offset`); knn `offset > 0` returns those ranks; pagination does not combine with filters yet (loud `InvalidInput`). Otherwise dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`. Gate `tests/probes/probe_search_request.xi` (24 checks).
+- `engine_search_request(eng, req) -> Result[HydratedHits, CoreError]` -- request-driven search: validates dimension/top_k and that `req.metric` matches the active collection (`InvalidInput` otherwise). M-Q6 dispatch: `mode=Range` runs the exact range path (top_k as inclusive-radius limit; filters and pagination are Knn-only and rejected loudly in range mode; negative radius -> `InvalidInput`); L-6 knn `after_distance >= 0` runs the merged-key scan (`engine_search_after_key`; requires `after_id >= 0`, no offset, no filter); knn `after_id >= 0` continues after the cursor (`Err(NotFound)` for a missing id; mutually exclusive with `offset`); knn `offset > 0` returns those ranks; pagination does not combine with filters yet (loud `InvalidInput`). Otherwise dispatches filtered vs plain (plain routes by index kind; filtered uses the ANN+fallback path on Hnsw), then hydrates when `req.with_payload`. Gate `tests/probes/probe_search_request.xi` (24 checks) + `probe_scatter_gather.xi`.
 - `engine_search_batch_request(eng, batch) -> Result[HydratedBatch, CoreError]` -- one `HydratedHits` per request, order preserved (all-or-nothing: empty -> `InvalidInput`; the first failing request aborts the batch). `HydratedBatch { sets: Vec[HydratedHits] }` is the C-04 family wrapper. Facade `search_batch_with_request`.
 - `recover_store(w, dim) -> VectorIndex` `requires: dim > 0` -- legacy single-collection replay (kept in `durability.recovery`; the engine now uses the registry path).
 - Multi-collection recovery (M-D3): `engine_recover(w, dim, metric) -> VectorEngine` `requires: dim > 0` -- builds the collection set from `ManifestUpdate` records (v1 legacy `[1, dim, mc, kc, m, efc, efs]` -> "default"/cid 1; v2 config `[2, name_len, name..., dim, mc, kc, m, efc, efs]` upserted by record value = cid; v3 drop `[3, name_len, name...]`), replays data records **routed by collection id** when the log carries v2/v3 records (D3 strict mode) or into the single collection otherwise (legacy logs, where the value field is not meaningful), applies each collection's index (Hnsw graphs rebuilt), and writes a compacted checkpoint WAL carrying every alive collection's data + its v2 manifest. No manifest at all -> caller dim/metric as the single "default" collection. Malformed records are ignored; LSNs stay monotonic. Prefix exactness (crash guarantee at the WAL model level) is gated by `tests/probes/probe_kill_recovery.xi`.
@@ -755,6 +756,52 @@ adapter is `xiom.vector.api.httpd` -- `xvectord`, 69th pass).
   (14 checks: 2500 deterministic fuzz inputs all well-formed; targeted
   abuse incl. lying Content-Length, header floods, 60 KB unbalanced
   JSON, 8000-deep nesting, NUL bytes, path/segment bombs, bursts).
+
+## `xiom.vector.api.sharding` + router L-6 (phase B)
+
+`src/api/sharding.xi`: `shard_slot(point_id, part_count) -> Int` -- normalized
+`point_id mod part_count` (`part_count > 0`); `shard_slot_ok`. Shared by the
+router (write/point routing and fan-out) and every shard (the internal upsert
+part filter), so placement has one implementation.
+
+Mapping extension (optional; strict loader):
+
+```json
+{"version": 4,
+ "shards": [{"id": "s1", "url": "..."}, ...],
+ "collections": {"docs": "s1"},
+ "split": {"docs": ["s1", "s2", "s3"]}}
+```
+
+- `split` maps a collection to 2+ known, unique shard ids in SLOT ORDER; the
+  collection must also appear in `collections`, and its declared owner must be
+  the first part. Duplicate parts, unknown shards, single-part splits, and
+  unmapped split names refuse start. Persist renders `split` after
+  `collections` (round-trip gated).
+- **Decision: hash**, rationale in `docs/PRODUCT-ARCHITECTURE.md` 6.3; part
+  count is fixed in v1 (a count change remaps every id and needs a rebuild).
+- Router writes: create fans out to all parts; batch upsert forwards the same
+  body with `x-xvector-part-slot/count` (last-match wins over client headers)
+  and each shard keeps its hash slice; single-point get/delete route by hash.
+  No cross-shard transaction (a failed part can leave a partial batch).
+- Router search: fan-out with `x-xvector-fanout-mult` +
+  `x-xvector-ignore-offset`; each part returns its top
+  `(offset + top_k) * oversample` pool; the router merges by `(distance asc,
+  id asc)`, dedupes ids, then applies offset. `after_id` resolves the cursor
+  on its owner part, computes its distance in the collection metric, and sends
+  the exact Float32 bit pattern in `x-xvector-after-distance`; parts use
+  `engine_search_after_key`. Strict is the default (503 + per-shard report);
+  `"partial": true` returns live hits + `"partial": true` + `failed_shards`.
+- Wire filter (L-6 pushdown): body `"filter"` object with `field` + one of
+  `eq`/`range`/`exists`/`in`, or `and`/`or`/`not`; malformed -> 400. See
+  `docs/metadata-filtering.md`.
+- v1 limits: split batch/range search -> 501; split move -> 409; any drain
+  touching a split part -> 501; split stats with a down part -> 503; split
+  mapping edits need a router reload/restart.
+- Gate: `tests/probes/probe_scatter_gather.xi` (mapping matrix, create/upsert
+  fan-out, hash placement, Flat ID-set exactness, offset + after-id tie cursor,
+  HNSW ID-set + distance-threshold recall at oversample 1/2/3, filtered
+  pushdown, strict/partial, stats, admin refusals), x2 both platforms.
 
 ## `xiom.vector.observability.metrics` (M-O)
 Package-backed since the 2026-10-10 adoption: the internals run on
