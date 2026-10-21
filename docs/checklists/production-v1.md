@@ -187,7 +187,11 @@ needed) -> signed commit. Red build = rejection.
   compiler) remains the fastest measured backend; OpenBLAS 0.1.1 is
   Float64/native and is not in the Float32 hot path -- a Float32 binding
   plugs in as another kind. **(done 2026-10-20)**
-- [ ] P4 IVF/PQ prototype (v1.1 track) with recall/latency curve
+- [ ] **P4 IVF/PQ prototype** (v1.1 track) with recall/latency curve --
+  **BLOCKED 2026-10-21 on XVC-C-22** (second `pq_train` call crashes
+  `0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook;
+  repro `docs/repro/xv-pq-second-call/`; P4 prototype reverted). Reopens on
+  a compiler fix; Flat/HNSW/SQ unaffected.
 - [ ] P5 (stdlib-dependent) mmap/disk segments; tiered storage
 
 ## M-R -- Release candidate & handoff
