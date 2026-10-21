@@ -244,8 +244,8 @@ commits, DCO `git commit -s`.
 |---|---|---|
 | compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `750384f` (2026-10-21; **shared-tree block RESOLVED** -- v0.64.8 `--check`/build/suite pass again; bus `REL-20261020-1531-xvector` acked; `XVECTOR_STDLIB_BUNDLED=1` remains a fallback); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
-| packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `75e936f` + `482ce93` (station UI) + `cb66ee5` (Q-a2b) + this pass's P3 commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| packages | lane HEAD `b133b1a7` (2026-10-21; lane consumes the registry, not this checkout; stdlib block resolved; `xiom.epos` 0.1.0 / `xiom.jev` 0.2.0 are unrelated); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
+| xvector | `6b417b2` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -1564,6 +1564,13 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > `docs/repro/xv-pq-second-call/`; P4 code reverted; bus
 > `REL-20261021-1103-xvector`; P4 checklist BLOCKED. Next: L-6 phase B /
 > G-3-G-4; P4 reopens on a compiler fix.
+>
+> **2026-10-21 11:20Z: HANDOFF (fresh context).** State, findings,
+> wishlists, and the ordered next work are fully recorded; **the
+> fresh-session prompt is section 20**. Tree clean at the handoff commit;
+> resource guard active (8 GB apps/probes, compilers kill-on-close only,
+> WSL `ulimit -v`); P4 blocked on XVC-C-22; next L-6 / G-3-G-4; WSL full
+> 57-probe sweep queued.
 >
 > **2026-10-20 00:45Z: PAUSE for the night.** Work window complete; tree
 > clean at `581d765` (18 commits ahead; repo private). Q-a2b landed at
@@ -3392,3 +3399,101 @@ app/probe run at 8 GB (`lib.ps1` / `run-capped`; WSL `ulimit -v`) and never
 launch the app bare; compiler builds are watchdog + kill-on-close only
 (XVC-C-21);** toolchain/package homes are lane-local on purpose.
 ```
+
+## 20. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-21 11:20Z; supersedes 19)
+
+> **NOTE:** the shared stdlib is fixed (`750384f`). P4 IVF/PQ is **BLOCKED
+> on XVC-C-22** (second `pq_train` call crashes `0xC0000005`; one
+> `ivf_pq_build` returns a corrupted nested codebook; repro
+> `docs/repro/xv-pq-second-call/`; prototype reverted). C-21 (compiler
+> build hangs under a memory-limit Job Object) stays open. Next: **L-6
+> phase B / G-3-G-4**. The WSL full 57-probe sweep is queued (VM
+> restarts). The resource guard is active: 8 GB app/probe cap; compilers
+> kill-on-close only; WSL `ulimit -v`.
+
+```
+You are the XVECTOR session for E:\xiom-projects\xiom-xvector -- the
+production-grade XIOM vector database. Read SESSION.md first (section 0 =
+state, section 1 = handoff, section 20 = this work order). Consumer lane:
+never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
+E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
+<lefterisnotas@gmail.com>"; conventional commits, DCO -s.
+
+STATE (2026-10-21): HEAD = the handoff commit (parent `6b417b2`; ~25
+commits ahead); tree clean. Compiler v0.64.8 both platforms (win
+`c31d9c46`, linux `a8c003c0`; v0.64.7 rollback; WSL `wsl -d Ubuntu`).
+stdlib shared `750384f` (fixed; `XVECTOR_STDLIB_BUNDLED=1` fallback; release
+tag `stdlib-v0.64.8` = `0bf5b75`; registry publish blocked
+`publisher_not_mapped`). packages `b133b1a7`. Manifest: vectors 0.1.0 +
+pulse 0.3.1; installed both homes: wal 0.1.0, metrics/rate 0.2.0, http
+0.1.9, vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
+
+EVIDENCE: Windows suite 177/177 x2 + libcheck 48/48 + SBOM 48/0 + 57 probes
+x2 + bench smoke green under the 8 GB guard; the aggregate line did not
+print because the newly capped kill matrix missed a lib.ps1 import -- fixed
+and re-ran 4/4 PASS (the next full battery will print ALL GATES GREEN).
+Shared stdlib 750384f: probe/libcheck/suite x2 green. WSL suite 177/177 x2
++ targeted UI/concurrency/SQ/kernel probes green; the full WSL 57-probe
+sweep is queued (VM 0-min-uptime restarts).
+
+LANDED: v0.64.8 re-pin; C-19/C-20 verified fixed; G-2b XVECTORD_THREADS;
+station UI `/ui` + `/collections/{n}/sample`; Q-a2b sealed SQ; P3 kernel
+seam; hard 8 GB resource guard (Job Object/kill-on-close; WSL `ulimit -v`);
+pulse 0.3.1; shared-stdlib unblock.
+
+BLOCKED/OPEN: **P4 IVF/PQ BLOCKED on XVC-C-22** -- the deterministic PQ
+trainer + IVF-PQ prototype exposed: a second `pq_train` call crashes
+`0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook
+(checksum 370608086 -> 534399819, recon 0.84 -> 4.48e28; exact rescore
+<1.0). Repro `docs/repro/xv-pq-second-call/`; prototype reverted; bus
+`REL-20261021-1103-xvector` (high); reopens on a compiler fix.
+**XVC-C-21 OPEN** (v0.64.8 compiler build hangs under a PROCESS/JOB
+memory-limit Job Object; compiler builds use kill-on-close-only + watchdog;
+bus `REL-20261020-1531-xvector-2`). No other compiler findings open.
+
+FINDINGS/WISHLISTS (bus): C-21 `REL-20261020-1531-xvector-2`; C-22
+`REL-20261021-1103-xvector`; stdlib `ee1a95c` break
+`REL-20261020-1531-xvector` (acked; fixed at `750384f`); **Float32
+BLAS/eigen kernel binding wish** `REL-20261021-1121-xvector` (P3 seam ready;
+OpenBLAS 0.1.1 is Float64/native); **host WSL VM instability**
+`REL-20261021-1121-xvector-2` (short gates + logs on `out/wsl-battery.log`).
+P3's unrolled kind is bit-identical but not faster (the compiler vectorizes
+the scalar loop; scalar default) -- documented in BENCHMARKS.
+
+Do this, in order:
+1) Relay bus FIRST: git -C E:\xiom-lang\xiom-relays fetch origin main;
+   merge --ff-only; python tools/relay.py view --lane xvector. Check
+   C-21/C-22 answers, stdlib/pulse/trees, asks.
+2) WSL gates when the VM is stable: suite x2 + libcheck 48/48 +
+   probe_ui/probe_concurrency/probe_sq_sealed/probe_kernels (full 57-probe
+   if uninterrupted; log to `out/wsl-battery.log`; short gates during
+   restarts; shared `750384f`; bundled fallback).
+3) **L-6 phase B** (next station feature): range-vs-hash decision; router
+   fan-out + k-way ranked merge (distance asc, id asc); offset/after_id
+   after the merge; strict default / partial opt-in; `probe_scatter_gather`
+   with named recall definitions; gates x2 + bench note.
+4) G-3 read snapshots / G-4 metrics-under-concurrency; scale tuning.
+5) P5 mmap/disk (stdlib-dependent); **P4 reopens on XVC-C-22** (PQ design
+   and repro at `docs/repro/xv-pq-second-call/`; deterministic training +
+   reconstruction-error budget; no lossy-only path).
+6) Optional station-UI editor + three.js/WebGL upgrade (`docs/UI.md`).
+7) Release notes current through P3/safety + the P4 blocked note; owner
+   review before the rc.1 GitHub release (owner-gated, repo private);
+   `xiom.ann` swap owner-gated.
+
+Standing owner items: rc.1 GitHub release greenlight; ann-swap greenlight.
+Discipline: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19 fixed, C-20
+fixed; src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`
+(run `scripts/libcheck.ps1` / `.sh` before a carve/wrap; the import guard is
+authoritative -- negative-test it if edited); the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21)**; toolchain/
+package homes are lane-local on purpose.
+```
+
