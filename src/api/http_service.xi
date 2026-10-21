@@ -80,6 +80,7 @@ pub type ServiceFanout = {
   part_count: Int;
   fanout_mult: Int;
   ignore_offset: Bool;
+  after_distance_set: Bool;
   after_distance: Float32;
 }
 
@@ -89,7 +90,8 @@ pub fn service_fanout_none() -> ServiceFanout {
     part_count: 0,
     fanout_mult: 1,
     ignore_offset: false,
-    after_distance: -1.0,
+    after_distance_set: false,
+    after_distance: 0.0,
   };
 }
 
@@ -324,8 +326,8 @@ fn fanout_from_request(req: &HttpRequest) -> ServiceFanout {
   }
   var after_bits = header_int(req, "x-xvector-after-distance");
   if after_bits != -1 {
-    var d = float.bits_to_f32(after_bits);
-    if d >= 0.0 { f.after_distance = d; }
+    f.after_distance_set = true;
+    f.after_distance = float.bits_to_f32(after_bits);
   }
   return f;
 }
@@ -1455,7 +1457,8 @@ fn apply_fanout(r: SearchRequest, fanout: &ServiceFanout, max_top_k: Int) -> Sea
     if want < 1 { want = 1; }
     out.top_k = want;
   }
-  if fanout.after_distance >= 0.0 {
+  if fanout.after_distance_set {
+    out.after_distance_set = true;
     out.after_distance = fanout.after_distance;
   }
   return out;

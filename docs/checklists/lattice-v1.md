@@ -183,7 +183,8 @@ Consumer lane; repo private; findings bus-routed.
   `offset`/`after_id` applied AFTER the merge; oversampling knob
   (default 2, 1..8). `after_id` resolves the cursor distance on its owner
   part and every part applies `(distance, id)` via
-  `engine_search_after_key`.
+  `engine_search_after_key`; an explicit presence flag carries negative
+  DotProduct cursor distances.
 - [x] strict mode default; partial mode opt-in with `"partial": true`
   (+ `partial:false` on a fully-live partial request; 503 + per-shard
   report when strict fails).
@@ -191,13 +192,15 @@ Consumer lane; repo private; findings bus-routed.
   single-node oracle, HNSW **ID-set recall** and **distance-threshold
   recall** (epsilon 1e-3, reference study 04), filtered pushdown
   oversampling measurement, offset + after-id pagination including an
-  exact 2/3 tie cursor, strict/partial, split stats, and admin refusals.
+  exact 2/3 tie cursor and a negative DotProduct cursor, strict/partial,
+  split stats, and admin refusals.
   Measured (Windows): HNSW 0.9917/0.9917 at oversample 1, 1.000/1.000 at
   2 and 3; filtered HNSW 1.000 at all three. See BENCHMARKS.
 - Gate: probe x2 **Windows GREEN (0 fails x2)** + suite 177/177 x2 +
-  libcheck 49/49 + SBOM (49/0) + affected probes (pagination,
-  search_request, http_service, http_fuzz, metrics, router_2shards)
-  green. WSL x2 + full battery queued on the stable VM.
+  libcheck 49/49; affected probes (pagination, search_request,
+  http_service, http_fuzz, metrics, router_2shards) green. SBOM (49/0)
+  and the full Windows/WSL 58-probe batteries are re-running after the
+  final negative-DotProduct fix; fill the result here at the wrap.
 - v1 limits are explicit and gated: split batch/range search -> 501;
   split move -> 409; any drain touching a split part -> 501; split stats
   with a down part -> 503; mapping edits require reload/restart.

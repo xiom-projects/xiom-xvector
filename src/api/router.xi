@@ -1752,7 +1752,8 @@ fn router_split_search(rt: &mut RouterState, shards: &mut Vec<RouterShard], req:
     mult = rt.cfg.max_top_k / needed;
     if mult < 1 { return jerror(400, "page exceeds split fan-out limit"); }
   }
-  var after_d: Float32 = -1.0;
+  var after_d: Float32 = 0.0;
+  var have_after_d: Bool = false;
   if after_id >= 0 {
     var qv = Vector.new(1);
     var have_q: Bool = false;
@@ -1772,6 +1773,7 @@ fn router_split_search(rt: &mut RouterState, shards: &mut Vec<RouterShard], req:
       return jerror(503, "cursor lookup failed");
     }
     after_d = cur.distance;
+    have_after_d = true;
   }
   var n = router_mapping_split_count(&rt.mapping, ci);
   var bodies = Vec[Str].new();
@@ -1789,9 +1791,10 @@ fn router_split_search(rt: &mut RouterState, shards: &mut Vec<RouterShard], req:
     } else {
       var fwd = router_raw_with_header(raw, "x-xvector-fanout-mult", convert.int_to_string(mult));
       fwd = router_raw_with_header(&fwd, "x-xvector-ignore-offset", "1");
-      if after_d >= 0.0 {
+      if have_after_d {
         // Exact Float32 bit pattern: header-side float text parsing is
         // unreliable at this stdlib pin (JSON top-level numbers read 0).
+        // The presence flag (not the sign) distinguishes DotProduct keys.
         fwd = router_raw_with_header(&fwd, "x-xvector-after-distance",
           convert.int_to_string(float.f32_bits(after_d)));
       }
