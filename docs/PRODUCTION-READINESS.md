@@ -1302,6 +1302,15 @@ extraction with the packages lane.
   exists yet (OpenBLAS 0.1.1 is Float64/native); a binding plugs in as a
   third kind. No score change (P4/P5 remain; WSL long sweeps queued).
 
+- **2026-10-21 (P4 prototype blocked):** the deterministic PQ trainer +
+  IVF-PQ prototype exposed **XVC-C-22**: a second `pq_train` call crashes
+  `0xC0000005`, and one `ivf_pq_build` returns a corrupted nested codebook
+  (checksum 370608086 -> 534399819, mean recon L2 0.84 -> 4.48e28; exact
+  rescore <1.0). Minimal Option/Vec and nested-struct tests pass. Repro
+  `docs/repro/xv-pq-second-call/`; the prototype was reverted; bus
+  `REL-20261021-1103-xvector`. Flat/HNSW/SQ are unaffected; P4 reopens on a
+  compiler fix. No score change (v1.1 track).
+
 ## Update rule
 
 Recompute at every wrap: adjust phase scores, recompute the weighted overall,

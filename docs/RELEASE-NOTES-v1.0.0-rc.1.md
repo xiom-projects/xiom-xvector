@@ -192,7 +192,9 @@ package-internal (not a consumer API). The `XVECTORD_*` environment knobs
 
 ## Next (post-rc.1 queue)
 
-1. M-P (P3 SIMD seam / P4 IVF-PQ); L-6 phase B after.
+1. L-6 phase B (router scatter-gather); P4 IVF/PQ is blocked on XVC-C-22
+   (compiler; repro `docs/repro/xv-pq-second-call/`); P5 is
+   stdlib-dependent.
 2. Keep the repros and the latest-tree protocol running at each archive;
    the v0.64.8 stdlib registry publish is blocked upstream
    (`publisher_not_mapped`) -- the compiler archive is live and re-pinned.

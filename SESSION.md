@@ -1555,6 +1555,16 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > (fixed) and now runs 4/4 PASS. The next full battery will print the
 > aggregate line.
 >
+> **2026-10-21: P4 IVF-PQ prototype BLOCKED on XVC-C-22.** The deterministic
+> PQ trainer + IVF-PQ prototype was implemented and exposed a compiler
+> memory bug: a second `pq_train` call crashes `0xC0000005`; one
+> `ivf_pq_build` returns a corrupted nested codebook (checksum 370608086 ->
+> 534399819, mean recon L2 0.84 -> 4.48e28) and the exact rescore <1.0.
+> Minimal Option/Vec and nested-struct tests pass. Repro
+> `docs/repro/xv-pq-second-call/`; P4 code reverted; bus
+> `REL-20261021-1103-xvector`; P4 checklist BLOCKED. Next: L-6 phase B /
+> G-3-G-4; P4 reopens on a compiler fix.
+>
 > **2026-10-20 00:45Z: PAUSE for the night.** Work window complete; tree
 > clean at `581d765` (18 commits ahead; repo private). Q-a2b landed at
 > `cb66ee5`; Windows full 56-probe battery ALL GATES GREEN (suite 177/177
@@ -3249,8 +3259,11 @@ Do this, in order:
    **Q-a2b is DONE** (sealed Flat SQ coarse + exact rescore;
    `probe_sq_sealed` 56th; bit-identical). **P3 kernel seam is DONE**
    (`src/index/kernels.xi`, `probe_kernels` 57th; scalar default preserved).
-   Next in-lane: **P4 IVF/PQ + P5 mmap/disk (stdlib-dependent)**; L-6
-   (phase B) after. Keep the threaded path flag-gated (`XVECTORD_THREADS`,
+   Next in-lane: **L-6 phase B** (router scatter-gather) or **G-3/G-4**;
+   **P4 IVF/PQ is BLOCKED on XVC-C-22** (second `pq_train` crash / nested
+   codebook corruption; repro `docs/repro/xv-pq-second-call/`; code
+   reverted; bus `REL-20261021-1103-xvector`); P5 is stdlib-dependent.
+   Keep the threaded path flag-gated (`XVECTORD_THREADS`,
    default sequential) and `probe_concurrency` + `probe_ui` +
    `probe_sq_sealed` + `probe_kernels` in both batteries.
 3) **Release notes refresh: DONE 2026-10-19** -- `docs/RELEASE-NOTES-v1.0.0-rc.1.md`
@@ -3301,8 +3314,8 @@ never edit E:\xiom-lang\stdlib, E:\xiom-lang\xiom,
 E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
-STATE (2026-10-20): HEAD = the safety commit (parent `17969bd`); 22 commits
-ahead of origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
+STATE (2026-10-21): HEAD = the P4 finding commit (parent `74db6c5`); 24
+commits ahead of origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
 `c31d9c46`, linux `a8c003c0`; v0.64.7 rollback kept; WSL via
 `wsl -d Ubuntu`). Shared stdlib HEAD `750384f` (2026-10-21): the
 `ee1a95c` block is **resolved** (bus `REL-20261020-1531-xvector` acked;
@@ -3313,6 +3326,12 @@ vectors 0.1.0 + **pulse 0.3.1** (0.3.1
 adopted: exact identity + HookCtx + fallback + HEAD trim). Latest packages
 installed both homes: wal 0.1.0, metrics 0.2.0, rate 0.2.0, http 0.1.9,
 vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
+
+P4 IVF/PQ is **BLOCKED on XVC-C-22**: a second `pq_train` call crashes
+`0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook
+(checksum 370608086 -> 534399819, recon 0.84 -> 4.48e28). Repro
+`docs/repro/xv-pq-second-call/`; the prototype was reverted; bus
+`REL-20261021-1103-xvector`. Flat/HNSW/SQ are unaffected.
 
 Evidence: **Windows full 57-probe battery ALL GATES GREEN** at the P3 commit
 (suite 177/177 x2 + libcheck 48/48 + SBOM 48/0 + 57 probes x2 incl.
@@ -3346,12 +3365,12 @@ Do this, in order:
    57-probe sweep if it can run uninterrupted; use `out/wsl-battery.log` and
    a quiet window -- do not fight VM restarts). The shared stdlib is fixed
    at `750384f`; `XVECTOR_STDLIB_BUNDLED=1` is the fallback. The frozen
-   copies are reference only; the main tree is at the safety commit.
-3) **P4 IVF/PQ** (v1.1 track: quantized storage, recall/latency curve vs
-   HNSW) and **P5 mmap/disk segments** (stdlib-dependent), then **L-6 phase
-   B** (router fan-out + k-way ranked merge + pagination-after-merge +
-   strict/partial modes + probe_scatter_gather; name the recall definition
-   per arm). P3 is done.
+   copies are reference only; the main tree is at the P4 finding commit.
+3) **L-6 phase B** (router fan-out + k-way ranked merge + pagination-after-
+   merge + strict/partial modes + probe_scatter_gather; name the recall
+   definition per arm). **P4 IVF/PQ is BLOCKED on XVC-C-22** (repro
+   `docs/repro/xv-pq-second-call/`; prototype reverted); **P5** is
+   stdlib-dependent. P3 is done.
 4) Optional: station-UI editor + three.js/WebGL upgrade (read-only MVP is
    in; see `docs/UI.md`).
 5) Release notes: refreshed 2026-10-20 and current through P3/safety; owner
