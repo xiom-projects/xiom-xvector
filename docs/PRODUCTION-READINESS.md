@@ -17,7 +17,9 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   Windows; suite 177/177 x2; libcheck 49/49. HNSW recall 0.9917/0.9917
   at oversample 1 and
   1.000/1.000 at 2-3; filtered 1.000. v1 limits: split batch/range search
-  501, split move 409, split drain 501. WSL x2 + full battery next.)
+  501, split move 409, split drain 501. **Windows + WSL full 58-probe
+  batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM
+  49/0, bench, kill matrix; logs in `out/`).)
 - **Overall:** **90 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1324,15 +1326,17 @@ extraction with the packages lane.
   create + batch-upsert fan-out with part-header filtering, point get/delete
   hash routing, strict/partial scatter-gather with k-way `(distance, id)`
   merge and dedupe, offset applied after merge, merged `after_id` via
-  `engine_search_after_key` (cursor distance resolved on its owner part),
-  wire filter pushdown (`eq/range/exists/in/and/or/not`), split stats
+  `engine_search_after_key` (cursor distance resolved on its owner part;
+  explicit presence flag so negative DotProduct keys work), wire filter
+  pushdown (`eq/range/exists/in/and/or/not`), split stats
   aggregation, and explicit v1 refusals (split batch/range 501, move 409,
   drain 501). Gate `probe_scatter_gather` (51st; 58 total) 0 fails x2
   Windows; HNSW
   ID/distance recall 0.9917 at oversample 1, 1.000 at 2-3; filtered 1.000;
-  Flat exactness/offset/tie-cursor/after-id exact. Suite 177/177 x2;
-  libcheck 49/49; affected probes green. WSL x2 + full battery queued.
-  No score change yet (G-3/G-4 and split rebalance remain).
+  Flat exactness/offset/tie-cursor/after-id exact, plus a negative
+  DotProduct cursor. Suite 177/177 x2; libcheck 49/49; **Windows + WSL
+  full 58-probe batteries ALL GATES GREEN** (SBOM 49/0, bench, kill
+  matrix). No score change yet (G-3/G-4 and split rebalance remain).
 
 ## Update rule
 

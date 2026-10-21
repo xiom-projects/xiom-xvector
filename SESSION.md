@@ -8,6 +8,9 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
+**Latest pass:** 2026-10-21 (88th: **L-6 phase B hash scatter-gather
+landed** -- mapping `split`, ranked merge, merged after-id pagination,
+strict/partial, filter pushdown; probe 51/58 x2 Windows; see §21).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -3483,6 +3486,120 @@ Do this, in order:
 
 Standing owner items: rc.1 GitHub release greenlight; ann-swap greenlight.
 Discipline: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19 fixed, C-20
+fixed; src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`
+(run `scripts/libcheck.ps1` / `.sh` before a carve/wrap; the import guard is
+authoritative -- negative-test it if edited); the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21)**; toolchain/
+package homes are lane-local on purpose.
+```
+
+## 21. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-21 16:0xZ; supersedes 20)
+
+```text
+XIOM XVECTOR -- fresh-context continuation prompt (L-6 phase B landed).
+
+REPO/STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `383c2d1` (L-6 phase B
+  + negative-DotProduct cursor fix), parent `902be21`; clean tree (after
+  this docs/SESSION wrap); 28 commits ahead at the fix, 29 after this
+  wrap commit; tag v1.0.0-rc.1 = `530b041`. The isolated worktree used for the slice
+  (C:\Users\lefte\AppData\Local\Temp\kilo\xvector-l6, branch
+  feat/l6-scatter-gather) was fast-forward merged; remove it after the wrap.
+- Compiler v0.64.8 both (win `c31d9c46`, linux `a8c003c0`); shared stdlib
+  `750384f` (release tag `0bf5b75`); packages `b133b1a7`. Lane-local homes.
+- WSL: always `wsl -d Ubuntu`; VM restarts are environment noise; logs
+  persist on /mnt/e.
+
+LANDED (2026-10-21, 88th pass): L-6 PHASE B HASH SCATTER-GATHER
+- `src/api/sharding.xi`: `shard_slot(id, n) = id mod n` (normalized for
+  negatives), shared by the router and every shard.
+- Mapping `"split": {collection: [shard...]}`: 2+ unique known parts in SLOT
+  ORDER; first part = declared owner; strict loader/persist/view; round-trip.
+- Create fan-out; batch upsert fan-out with `x-xvector-part-slot/count`
+  headers (last-match wins: client hints cannot shadow router placement);
+  point get/delete route by hash.
+- Search: fan-out with oversample (`x-xvector-fanout-mult`,
+  `x-xvector-ignore-offset`), k-way `(distance asc, id asc)` merge + dedupe,
+  offset applied after merge; merged `after_id` resolves the cursor distance
+  on its owner part and sends the exact Float32 bit pattern
+  (`x-xvector-after-distance`); every part uses `engine_search_after_key`
+  (active + sealed, tombstone-safe, exact). Presence is the explicit
+  `after_distance_set` flag, so negative DotProduct cursor keys work.
+- Strict default (503 + per-shard report); `"partial": true` -> live hits +
+  `partial` (+ `failed_shards`); fully-live partial -> `partial:false`.
+- Wire filter pushdown: `eq/range/exists/in/and/or/not`; malformed -> 400.
+- Split stats sum parts (`split:true`, `parts`); `/cluster/stats` dedupes
+  split collection names. `router_cluster_stats` total_collections is now
+  unique-name based (existing semantics preserved for non-split).
+- Explicit v1 limits: split batch/range search 501; split move 409; any
+  drain touching a split part 501; split stats with a down part 503; part
+  count fixed (reshard = rebuild); split mapping edits need reload/restart.
+
+EVIDENCE
+- Windows: `probe_scatter_gather` (51st; 58 total) 0 fails x2; suite
+  177/177 x2; libcheck 49/49; affected probes green: router_2shards,
+  move_under_load, pagination, search_request, http_service, http_fuzz,
+  metrics, service_auth, service_limits.
+- Flat exactness vs single-node oracle; offset reconstruction; 2/3 tie
+  cursor; chained after-id ranks 0..27 exact; negative DotProduct cursor
+  advances exactly (explicit presence flag).
+- HNSW (120 points, dim 12, 3 parts, m=8/ef_construction=64/ef_search=8):
+  ID-set/distance-threshold recall 0.9917/0.9917 at oversample 1;
+  1.000/1.000 at 2 and 3. Filtered HNSW 1.000 at 1/2/3. Gate floors
+  0.80/0.80 and 0.75 filtered. See BENCHMARKS.
+- WSL baseline (pre-L-6) FULL BATTERY: ALL GATES GREEN -- suite 177/177 x2,
+  libcheck 48/48, SBOM 48/0, 57 probes x2, bench smoke, kill matrix
+  (`out/wsl-battery.log`, WSL_CI_EXIT:0).
+- WSL L-6 suite 177/177 x2 + libcheck 49/49 + SBOM 49/0 green.
+- **WSL L-6 full 58-probe battery: ALL GATES GREEN** -- 58 probes x2,
+  bench smoke, kill matrix; `WSL_L6_CI_EXIT:0` (`out/wsl-battery-l6.log`).
+- **Windows full 58-probe battery: ALL GATES GREEN** -- suite 177/177 x2,
+  libcheck 49/49, SBOM 49/0, 58 probes x2, bench smoke, kill matrix
+  (`out/win-battery-l6.log`).
+
+BLOCKED/OPEN
+- P4 IVF/PQ still BLOCKED on XVC-C-22 (second `pq_train` 0xC0000005 +
+  corrupted nested codebook; repro `docs/repro/xv-pq-second-call/`; bus
+  `REL-20261021-1103-xvector`). A backstop session was observed generating
+  variant probes; they were cleaned up; no bus answer. P4 reopens on the
+  compiler fix.
+- XVC-C-21 open (v0.64.8 compiler build hang under a PROCESS/JOB memory
+  limit; kill-on-close only + watchdog); bus
+  `REL-20261020-1531-xvector-2`. No other compiler findings open.
+- New finding/workaround: a header-sized JSON numeric read came back 0
+  (likely the XVC-C-18 family). The after-distance header now carries the
+  exact Float32 bit pattern, so L-6 is unaffected; filed as info
+  `REL-20261021-1243-xvector` (compiler) asking whether it is C-18; isolate
+  a repro before claiming a new C-id.
+- P5 mmap/disk is stdlib-dependent.
+
+NEXT (ordered)
+1) Remove the temp worktree/branch; both full 58-probe batteries are green
+   and the checklist/readiness/SESSION are updated.
+2) G-3 read snapshots; G-4 metrics-under-concurrency; scale tuning.
+3) P5 when stdlib unblocks; P4 on XVC-C-22.
+4) Split resharding/rebalance (fixed part count is the v1 limit); optional
+   UI editor/three.js upgrade (`docs/UI.md`).
+5) Release notes through L-6; owner gates (rc.1 release, ann swap).
+
+DO FIRST
+1) Relay bus: `git -C E:\xiom-lang\xiom-relays fetch origin main`;
+   `merge --ff-only`; `python tools/relay.py view --lane xvector`. Check
+   C-21/C-22 answers, stdlib/pulse/trees, asks.
+2) `git status`/`git log`; verify HEAD `383c2d1` + this wrap commit; check
+   free memory; one battery at a time.
+3) Re-run `probe_scatter_gather` x2 + suite x2 + libcheck before editing.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
 value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
 map/vec data into locals before iterating (XVC-C-18); C-19 fixed, C-20
 fixed; src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`
