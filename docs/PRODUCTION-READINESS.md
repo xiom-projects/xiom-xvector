@@ -10,7 +10,7 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-21, 87th pass (**L-6 phase B hash scatter-gather
+- **As of:** 2026-10-21, 88th pass (**L-6 phase B hash scatter-gather
   landed**: mapping `split`, create/upsert/get/delete routing, k-way merge,
   offset + merged after-id pagination, strict/partial, filter pushdown.
   `probe_scatter_gather` = 51st in the list (58 total), 0 fails x2
