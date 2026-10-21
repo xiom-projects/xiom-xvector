@@ -175,17 +175,32 @@ Consumer lane; repo private; findings bus-routed.
 
 ## L-6 -- intra-collection scatter-gather (phase B)
 
-- [ ] design decision recorded: range vs hash sharding (rationale)
-- [ ] router fan-out + k-way ranked merge (distance asc, id asc) +
+- [x] design decision recorded: **hash** split (`id mod part_count`);
+  rationale in PRODUCT-ARCHITECTURE 6.3 (balanced fan-out, ranked
+  pagination makes range's ordered-scan edge inapplicable, fixed part
+  count for v1). Mapping `split` lists parts in slot order; first = owner.
+- [x] router fan-out + k-way ranked merge (distance asc, id asc) +
   `offset`/`after_id` applied AFTER the merge; oversampling knob
-- [ ] strict mode default; partial mode opt-in with `"partial": true`
-- [ ] `probe_scatter_gather`: Flat exactness vs single-node ground truth
-  (equal result sets), HNSW recall bound vs the gate, filtered pushdown
-  oversampling measurement, pagination semantics. **The gate must name
-  the recall definition per arm** (reference study 04): VectorDBBench
-  uses ID-set recall; ann-benchmarks uses distance-threshold recall
-  (epsilon ~1e-3, can credit wrong IDs inside the band)
-- Gate: probes x2 both platforms + suite x2; BENCHMARKS note
+  (default 2, 1..8). `after_id` resolves the cursor distance on its owner
+  part and every part applies `(distance, id)` via
+  `engine_search_after_key`.
+- [x] strict mode default; partial mode opt-in with `"partial": true`
+  (+ `partial:false` on a fully-live partial request; 503 + per-shard
+  report when strict fails).
+- [x] `probe_scatter_gather`: Flat equal-result-set exactness vs a
+  single-node oracle, HNSW **ID-set recall** and **distance-threshold
+  recall** (epsilon 1e-3, reference study 04), filtered pushdown
+  oversampling measurement, offset + after-id pagination including an
+  exact 2/3 tie cursor, strict/partial, split stats, and admin refusals.
+  Measured (Windows): HNSW 0.9917/0.9917 at oversample 1, 1.000/1.000 at
+  2 and 3; filtered HNSW 1.000 at all three. See BENCHMARKS.
+- Gate: probe x2 **Windows GREEN (0 fails x2)** + suite 177/177 x2 +
+  libcheck 49/49 + SBOM (49/0) + affected probes (pagination,
+  search_request, http_service, http_fuzz, metrics, router_2shards)
+  green. WSL x2 + full battery queued on the stable VM.
+- v1 limits are explicit and gated: split batch/range search -> 501;
+  split move -> 409; any drain touching a split part -> 501; split stats
+  with a down part -> 503; mapping edits require reload/restart.
 
 ## G-2 -- in-process concurrency (parallel track)
 

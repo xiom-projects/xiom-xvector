@@ -253,3 +253,24 @@ scalar remains the default. Bench observations: flat 62us/op and HNSW ef=32
 437us vs 718us. OpenBLAS 0.1.1 is Float64/native and is not in the Float32
 hot path; a Float32 binding can be added as a third kind. `probe_kernels`
 (57th) gates bit-identity and records the numbers.
+
+## L-6 scatter-gather recall (phase B, 2026-10-21)
+
+`probe_scatter_gather` (Windows, 120 points, dim 12, 3 hash parts, 12
+queries, HNSW m=8/ef_construction=64/ef_search=8) against a single-node
+exact Flat oracle:
+
+| oversample | ID-set recall | distance-threshold recall (eps 1e-3) |
+|---|---|---|
+| 1 | 0.9917 | 0.9917 |
+| 2 | 1.000 | 1.000 |
+| 3 | 1.000 | 1.000 |
+
+Filtered HNSW (`bucket=red` pushdown) measured 1.000 ID-set recall at all
+three factors on the same corpus. Flat equality, offset reconstruction, the
+2/3 tie cursor, and chained after-id pages were exact. The gate floors are
+0.80 (ID/distance) and 0.75 (filtered) at oversample 3.
+
+Cost model: each query fans out `parts * (offset + top_k) * oversample`
+candidate hits (default oversample 2) before the k-way merge. No QPS claim
+yet -- forwarding is in-process; the socket hop is a later slice.

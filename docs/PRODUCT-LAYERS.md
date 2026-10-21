@@ -25,17 +25,19 @@ no divergent numeric behavior; the shared suite/probes gate both).
 ## Scale-out model (vector-DB honest version)
 
 - v1 scale-out = **process-level sharding**: N single-writer shards, each
-  owning disjoint collections; a stateless router maps collection ->
-  home/URL (per-collection routing + self-describing manifests already
-  exist; the G-phase harness is the missing piece).
-- Sharding one huge collection = **scatter-gather**: per-shard top-k,
-  k-way merge; oversample k per shard (2-3x) to protect recall under
-  HNSW; filters push down per shard.
+  owning disjoint collections; a stateless L-3/L-5 router maps collection
+  -> home/URL (per-collection routing + self-describing manifests).
+- Sharding one huge collection = **L-6 hash scatter-gather (landed
+  2026-10-21)**: per-shard top-k, k-way merge; oversample 2x by default
+  to protect HNSW recall; filters push down per shard; offset/after-id
+  applied after the merge. Split batch/range search and resharding are
+  explicit v1 limits.
 - Consistency stays simple: single-writer per shard (WAL-before-ack),
   async replicas via WAL catch-up; no cross-shard transactions needed
   (upserts are last-writer-wins).
-- In-process concurrency is deliberately POST-v1 (`XVECTORD_THREADS`
-  flag per `docs/G-PHASE-PLAN.md`; G-1 smoke landed 2026-10-16).
+- In-process concurrency: G-2 threaded accept loop is complete behind
+  `XVECTORD_THREADS` (2026-10-19); G-3 read snapshots / G-4
+  metrics-under-concurrency remain (`docs/G-PHASE-PLAN.md`).
 
 ## Gaps before "enterprise tier" claims
 

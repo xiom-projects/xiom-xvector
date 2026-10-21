@@ -29,6 +29,11 @@ pub type SearchRequest = {
   radius: Float32;
   offset: Int;
   after_id: Int;
+  // L-6 merged-cursor threshold: the cursor's distance in the request
+  // metric (-1 = not supplied). When >= 0, pagination is a global
+  // (distance, id) key scan, so every split part can apply it even though
+  // only one part holds the cursor id.
+  after_distance: Float32;
 }
 
 pub fn search_request_new(query: Vector, top_k: Int, metric: DistanceMetric) -> SearchRequest
@@ -45,6 +50,7 @@ pub fn search_request_new(query: Vector, top_k: Int, metric: DistanceMetric) -> 
     radius: 0.0,
     offset: 0,
     after_id: -1,
+    after_distance: -1.0,
   };
 }
 
@@ -89,6 +95,14 @@ pub fn search_request_set_page(req: &mut SearchRequest, offset: Int) {
 // Knn cursor pagination: continue strictly after `after_id` (-1 = none).
 pub fn search_request_set_after(req: &mut SearchRequest, after_id: Int) {
   req.after_id = after_id;
+}
+
+// Merged-cursor pagination: continue strictly after the total-order key
+// (distance, id). The distance comes from the cursor's owner shard; this is
+// the stateless form of the same cursor across a scatter-gather.
+pub fn search_request_set_after_key(req: &mut SearchRequest, after_id: Int, after_distance: Float32) {
+  req.after_id = after_id;
+  req.after_distance = after_distance;
 }
 
 // A batch of requests (M-Q6), executed in order.

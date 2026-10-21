@@ -31,6 +31,7 @@ module xiom.vector.api.http_service
 // proof) are deliberately out of this module: it stays transport-agnostic.
 
 use xiom.convert;
+use xiom.num.float;
 use xiom.io;
 use xiom.string.slice;
 use xiom.serialize.json;
@@ -45,10 +46,13 @@ use xiom.vector.engine.core;
 use xiom.vector.core.shim;
 use xiom.vector.primitives;
 use xiom.vector.index.ann_index;
+use xiom.vector.payload.payload;
+use xiom.vector.payload.filter_ast;
 use xiom.vector.query.search_request;
 use xiom.vector.query.search_service;
 use xiom.vector.durability.wal_file;
 use xiom.vector.api.json_fast;
+use xiom.vector.api.sharding;
 
 // ---- Request model + parsing ----
 
@@ -66,6 +70,27 @@ pub type HttpRequest = {
   // `str_bytes`/`str_slice` on big Strs are quadratic on this stdlib pin
   // (REL-20261011-1453-xvector).
   body_bytes: Vec[UInt8];
+}
+
+// Internal router -> shard hints (L-6). They never bypass validation: the
+// part filter only narrows a client's own batch, and the fan-out multiplier
+// is capped by the service's max_top_k. Headers are lowercase at parse time.
+pub type ServiceFanout = {
+  part_slot: Int;
+  part_count: Int;
+  fanout_mult: Int;
+  ignore_offset: Bool;
+  after_distance: Float32;
+}
+
+pub fn service_fanout_none() -> ServiceFanout {
+  return ServiceFanout{
+    part_slot: -1,
+    part_count: 0,
+    fanout_mult: 1,
+    ignore_offset: false,
+    after_distance: -1.0,
+  };
 }
 
 fn bytes_to_str(b: &Vec[UInt8], from: Int, to: Int) -> Str {
@@ -251,6 +276,58 @@ pub fn http_header(req: &HttpRequest, name: Str) -> Option[Str] {
     i = i + 1;
   }
   return None;
+}
+
+// The router appends its internal headers after the client's; the LAST
+// match is authoritative so a client-supplied hint cannot shadow the
+// router's placement/fan-out decision. (The public x-api-key lookup keeps
+// the first-match contract.)
+fn http_header_last(req: &HttpRequest, name: Str) -> Option[Str] {
+  var i: Int = req.header_names.len() - 1;
+  while i >= 0 {
+    if req.header_names[i] == name { return Some(req.header_values[i]); }
+    i = i - 1;
+  }
+  return None;
+}
+
+fn header_int(req: &HttpRequest, name: Str) -> Int {
+  match http_header_last(req, name) {
+    Some(s) => {
+      var b = slice.str_bytes(s);
+      var r = parse_int_at(b, 0);
+      if r.ok && r.pos == b.len() && b.len() > 0 { return r.value; }
+    }
+    None => {}
+  }
+  return -1;
+}
+
+// Parse the internal L-6 hints. Invalid/missing hints leave the default
+// (single-shard) behavior; the router is the only writer in normal use.
+fn fanout_from_request(req: &HttpRequest) -> ServiceFanout {
+  var f = service_fanout_none();
+  var slot = header_int(req, "x-xvector-part-slot");
+  var count = header_int(req, "x-xvector-part-count");
+  if count >= 2 && slot >= 0 && sharding.shard_slot_ok(slot, count) {
+    f.part_slot = slot;
+    f.part_count = count;
+  }
+  var mult = header_int(req, "x-xvector-fanout-mult");
+  if mult > 1 {
+    f.fanout_mult = mult;
+    if f.fanout_mult > 8 { f.fanout_mult = 8; }
+  }
+  match http_header_last(req, "x-xvector-ignore-offset") {
+    Some(v) => { if v == "1" { f.ignore_offset = true; } }
+    None => {}
+  }
+  var after_bits = header_int(req, "x-xvector-after-distance");
+  if after_bits != -1 {
+    var d = float.bits_to_f32(after_bits);
+    if d >= 0.0 { f.after_distance = d; }
+  }
+  return f;
 }
 
 // ---- Service config + limits (M-S2) ----
@@ -768,7 +845,9 @@ fn handle_state_inner(eng: &mut VectorEngine, raw: &Vec<UInt8>, st: &mut Service
       return handle_stats(eng, req2.query, st.replica_lag);
     }
   }
-  return http_service_handle_cfg(eng, raw, &st.cfg);
+  var fan_req = http_parse_request(raw);
+  var fan = fanout_from_request(&fan_req);
+  return http_service_handle_cfg_fanout(eng, raw, &st.cfg, &fan);
 }
 
 // ---- Response writing ----
@@ -894,7 +973,7 @@ fn jget_num(v: JsonValue, key: Str) -> Option[Float64] {
   return None;
 }
 
-fn jv_to_vector(arr: JsonValue) -> Option[Vector] {
+pub fn jv_to_vector(arr: JsonValue) -> Option[Vector] {
   match arr {
     Array(items) => {
       if items.len() == 0 { return None; }
@@ -1003,6 +1082,157 @@ pub fn query_param(query: Str, key: Str) -> Option[Str] {
 
 // ---- Search request from JSON ----
 
+// Wire filter shape (L-6, metadata pushdown):
+//   {"field":"bucket","eq":"red"}
+//   {"field":"rank","range":[3,5]}
+//   {"field":"tag","exists":true}
+//   {"field":"rank","in":[1,2,3]}
+//   {"and":[<filter>,...]} / {"or":[...]} / {"not":<filter>}
+fn filter_value_from_json(v: JsonValue) -> Option[FieldValue] {
+  match v {
+    Bool(b) => { return Some(FieldValue.BoolVal(b)); }
+    String(s) => { return Some(FieldValue.TextVal(s)); }
+    Number(n) => {
+      var i = n as Int;
+      if (i as Float64) == n { return Some(FieldValue.IntVal(i)); }
+      return Some(FieldValue.FloatVal(n as Float32));
+    }
+    _ => {}
+  }
+  return None;
+}
+
+fn filter_expr_from_json(v: JsonValue) -> Option[FilterExpr] {
+  if json.json_type(v) != "object" { return None; }
+  // Combinators first.
+  match json.json_get(v, "and") {
+    Some(av) => {
+      match av {
+        Array(items) => {
+          var clauses = Vec[FilterExpr].new();
+          var i: Int = 0;
+          while i < items.len() {
+            match filter_expr_from_json(items[i]) {
+              Some(e) => { clauses.push(e); }
+              None => { return None; }
+            }
+            i = i + 1;
+          }
+          return Some(filter_and(clauses));
+        }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  match json.json_get(v, "or") {
+    Some(ov) => {
+      match ov {
+        Array(items) => {
+          var clauses = Vec[FilterExpr].new();
+          var i: Int = 0;
+          while i < items.len() {
+            match filter_expr_from_json(items[i]) {
+              Some(e) => { clauses.push(e); }
+              None => { return None; }
+            }
+            i = i + 1;
+          }
+          return Some(filter_or(clauses));
+        }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  match json.json_get(v, "not") {
+    Some(nv) => {
+      match filter_expr_from_json(nv) {
+        Some(e) => { return Some(filter_not(e)); }
+        None => { return None; }
+      }
+    }
+    None => {}
+  }
+  // Leaf: one field + exactly one operator.
+  var field: Str = "";
+  var have_field: Bool = false;
+  match json.json_get(v, "field") {
+    Some(fv) => {
+      match fv {
+        String(s) => { field = s; have_field = true; }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  if !have_field || field.len() == 0 { return None; }
+  match json.json_get(v, "eq") {
+    Some(ev) => {
+      match filter_value_from_json(ev) {
+        Some(val) => { return Some(filter_eq(field, val)); }
+        None => { return None; }
+      }
+    }
+    None => {}
+  }
+  match json.json_get(v, "range") {
+    Some(rv) => {
+      match rv {
+        Array(items) => {
+          if items.len() != 2 { return None; }
+          var lo: Float64 = 0.0;
+          var hi: Float64 = 0.0;
+          match items[0] {
+            Number(n) => { lo = n; }
+            _ => { return None; }
+          }
+          match items[1] {
+            Number(n) => { hi = n; }
+            _ => { return None; }
+          }
+          return Some(filter_range(field, lo as Float32, hi as Float32));
+        }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  match json.json_get(v, "exists") {
+    Some(xv) => {
+      match xv {
+        Bool(b) => {
+          if b { return Some(filter_exists(field)); }
+          return Some(filter_not(filter_exists(field)));
+        }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  match json.json_get(v, "in") {
+    Some(iv) => {
+      match iv {
+        Array(items) => {
+          var vals = Vec[FieldValue].new();
+          var i: Int = 0;
+          while i < items.len() {
+            match filter_value_from_json(items[i]) {
+              Some(val) => { vals.push(val); }
+              None => { return None; }
+            }
+            i = i + 1;
+          }
+          return Some(filter_in(field, vals));
+        }
+        _ => { return None; }
+      }
+    }
+    None => {}
+  }
+  return None;
+}
+
 fn search_req_from_json(body: JsonValue) -> Option[SearchRequest] {
   var is_range: Bool = false;
   var mo = json.json_get(body, "mode");
@@ -1088,6 +1318,15 @@ fn search_req_from_json(body: JsonValue) -> Option[SearchRequest] {
     }
     if after >= 0 { search_request_set_after(&mut req, after); }
   }
+  match json.json_get(body, "filter") {
+    Some(fv) => {
+      match filter_expr_from_json(fv) {
+        Some(expr) => { search_request_set_filter(&mut req, expr); }
+        None => { return None; }
+      }
+    }
+    None => {}
+  }
   return Some(req);
 }
 
@@ -1107,7 +1346,7 @@ fn hits_json(hits: &Vec[SearchHit]) -> JsonValue {
 // Dispatch a parsed request on the engine. `fallback` metric is used when
 // the request body does not carry one (the body's metric must match the
 // collection anyway; we always overwrite with the collection's).
-fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
+fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &ServiceConfig, fanout: &ServiceFanout) -> Vec[UInt8] {
   var sel = select_collection(eng, collection);
   match sel {
     Ok(_) => {}
@@ -1154,7 +1393,7 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &Se
     while i < batch_items.len() {
       match search_req_from_json(batch_items[i]) {
         Some(r) => {
-          var rr = mutate_req(r, eng.metric);
+          var rr = apply_fanout(mutate_req(r, eng.metric), fanout, cfg.max_top_k);
           if rr.top_k > cfg.max_top_k { return jerror(400, "top_k exceeds service limit"); }
           match search_with_request(eng, &rr) {
             Ok(h) => { sets.push(h); }
@@ -1177,7 +1416,7 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &Se
   }
   match search_req_from_json(body) {
     Some(r) => {
-      var rr = mutate_req(r, eng.metric);
+      var rr = apply_fanout(mutate_req(r, eng.metric), fanout, cfg.max_top_k);
       if rr.top_k > cfg.max_top_k { return jerror(400, "top_k exceeds service limit"); }
       match search_with_request(eng, &rr) {
         Ok(h) => {
@@ -1196,6 +1435,29 @@ fn run_search(eng: &mut VectorEngine, collection: Str, body: JsonValue, cfg: &Se
 fn mutate_req(r: SearchRequest, metric: DistanceMetric) -> SearchRequest {
   var out = r;
   out.metric = metric;
+  return out;
+}
+
+// Apply the internal L-6 fan-out hints. `ignore_offset` is the router's
+// signal that it will apply offset after the k-way merge: each part returns
+// its top (offset + top_k) pool instead of a local page. The multiplier
+// widens that pool for HNSW recall; max_top_k always caps it.
+fn apply_fanout(r: SearchRequest, fanout: &ServiceFanout, max_top_k: Int) -> SearchRequest {
+  var out = r;
+  var orig_k = out.top_k;
+  var orig_offset = out.offset;
+  if fanout.ignore_offset {
+    out.offset = 0;
+  }
+  if fanout.fanout_mult > 1 || fanout.ignore_offset {
+    var want = (orig_offset + orig_k) * fanout.fanout_mult;
+    if want > max_top_k { want = max_top_k; }
+    if want < 1 { want = 1; }
+    out.top_k = want;
+  }
+  if fanout.after_distance >= 0.0 {
+    out.after_distance = fanout.after_distance;
+  }
   return out;
 }
 
@@ -1302,7 +1564,46 @@ fn handle_create_collection(eng: &mut VectorEngine, body: JsonValue, cfg: &Servi
   }
 }
 
-fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue, cfg: &ServiceConfig) -> Vec[UInt8] {
+// The router sends the FULL batch to every split part; each shard keeps
+// only the ids that hash to its slot. The struct wrapper is the proven
+// shape for a Vec-bearing return (XVC-C-04 family).
+type PartBatch = {
+  ids: Vec[Int];
+  vectors: Vec[Vector];
+}
+
+fn fanout_part_batch(fanout: &ServiceFanout, ids: &Vec[Int], vecs: &Vec[Vector]) -> PartBatch {
+  var oi = Vec[Int].new();
+  var ov = Vec[Vector].new();
+  var i: Int = 0;
+  while i < ids.len() && i < vecs.len() {
+    if sharding.shard_slot(ids[i], fanout.part_count) == fanout.part_slot {
+      oi.push(ids[i]);
+      ov.push(vecs[i]);
+    }
+    i = i + 1;
+  }
+  return PartBatch{ ids: oi, vectors: ov };
+}
+
+fn empty_count_response() -> Vec[UInt8] {
+  var out = json.json_object_new();
+  out = json.json_set(out, "count", json.json_number(0.0));
+  return http_response(200, out);
+}
+
+fn upsert_count_response(res: Result[Int, CoreError]) -> Vec[UInt8] {
+  match res {
+    Ok(n) => {
+      var out = json.json_object_new();
+      out = json.json_set(out, "count", json.json_number(n as Float64));
+      return http_response(200, out);
+    }
+    Err(e) => { return core_err_response(e); }
+  }
+}
+
+fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue, cfg: &ServiceConfig, fanout: &ServiceFanout) -> Vec[UInt8] {
   var sel = select_collection(eng, name);
   match sel {
     Ok(_) => {}
@@ -1344,37 +1645,33 @@ fn handle_upsert(eng: &mut VectorEngine, name: Str, body: JsonValue, cfg: &Servi
     None => {}
   }
   if !have_ids || !have_vecs || ids.len() == 0 { return jerror(400, "bad points body"); }
+  if ids.len() != vecs.len() { return jerror(400, "bad points body"); }
   if ids.len() > cfg.max_batch { return jerror(413, "batch exceeds service limit"); }
-  var res = upsert_many(eng, &ids, &vecs);
-  match res {
-    Ok(n) => {
-      var out = json.json_object_new();
-      out = json.json_set(out, "count", json.json_number(n as Float64));
-      return http_response(200, out);
-    }
-    Err(e) => { return core_err_response(e); }
+  if fanout.part_count >= 2 {
+    var pb = fanout_part_batch(fanout, &ids, &vecs);
+    if pb.ids.len() == 0 { return empty_count_response(); }
+    return upsert_count_response(upsert_many(eng, &pb.ids, &pb.vectors));
   }
+  return upsert_count_response(upsert_many(eng, &ids, &vecs));
 }
 
 // Fast-path upsert handler: identical tail to `handle_upsert` (same
 // status codes and JSON), fed by the lane-local scanner.
-fn handle_upsert_fast(eng: &mut VectorEngine, name: Str, f: &FastUpsert, cfg: &ServiceConfig) -> Vec[UInt8] {
+fn handle_upsert_fast(eng: &mut VectorEngine, name: Str, f: &FastUpsert, cfg: &ServiceConfig, fanout: &ServiceFanout) -> Vec<UInt8> {
   var sel = select_collection(eng, name);
   match sel {
     Ok(_) => {}
     Err(_) => { return jerror(404, "unknown collection"); }
   }
   if f.ids.len() == 0 { return jerror(400, "bad points body"); }
+  if f.ids.len() != f.vectors.len() { return jerror(400, "bad points body"); }
   if f.ids.len() > cfg.max_batch { return jerror(413, "batch exceeds service limit"); }
-  var res = upsert_many(eng, &f.ids, &f.vectors);
-  match res {
-    Ok(n) => {
-      var out = json.json_object_new();
-      out = json.json_set(out, "count", json.json_number(n as Float64));
-      return http_response(200, out);
-    }
-    Err(e) => { return core_err_response(e); }
+  if fanout.part_count >= 2 {
+    var pb = fanout_part_batch(fanout, &f.ids, &f.vectors);
+    if pb.ids.len() == 0 { return empty_count_response(); }
+    return upsert_count_response(upsert_many(eng, &pb.ids, &pb.vectors));
   }
+  return upsert_count_response(upsert_many(eng, &f.ids, &f.vectors));
 }
 
 fn handle_stats(eng: &VectorEngine, query: Str, replica_lag: Int) -> Vec[UInt8] {
@@ -1434,6 +1731,13 @@ pub fn http_service_handle(eng: &mut VectorEngine, raw: &Vec[UInt8]) -> Vec[UInt
 // Config-aware entry point (M-S2): enforces the request-size limit before
 // any parsing and threads the configured limits into the handlers.
 pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &ServiceConfig) -> Vec[UInt8] {
+  var fan = service_fanout_none();
+  return http_service_handle_cfg_fanout(eng, raw, cfg, &fan);
+}
+
+// Fan-out-aware entry point: the state pipeline parses the internal L-6
+// headers once and threads them here. Direct users keep the default call.
+pub fn http_service_handle_cfg_fanout(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &ServiceConfig, fanout: &ServiceFanout) -> Vec[UInt8] {
   if raw.len() > cfg.max_request_bytes {
     return jerror(413, "request exceeds service limit");
   }
@@ -1492,13 +1796,13 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
   if cfg.fast_upsert {
   var fast = json_fast_upsert_bytes(&req.body_bytes);
   match fast {
-  Some(f) => { return handle_upsert_fast(eng, name, &f, cfg); }
+  Some(f) => { return handle_upsert_fast(eng, name, &f, cfg, fanout); }
   None => {}
   }
   }
   var parsed = json.json_parse(req.body);
   match parsed {
-  Ok(body) => { return handle_upsert(eng, name, body, cfg); }
+  Ok(body) => { return handle_upsert(eng, name, body, cfg, fanout); }
   Err(_) => { return jerror(400, "bad json"); }
   }
   }
@@ -1591,7 +1895,7 @@ pub fn http_service_handle_cfg(eng: &mut VectorEngine, raw: &Vec[UInt8], cfg: &S
           }
         }
         if !have_coll { return jerror(400, "missing collection"); }
-        return run_search(eng, coll, body, cfg);
+        return run_search(eng, coll, body, cfg, fanout);
       }
       Err(_) => { return jerror(400, "bad json"); }
     }

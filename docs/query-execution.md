@@ -99,6 +99,33 @@ return heap sorted
 The single shared heap enforces `len() <= k` no matter how many segments
 contribute, so the top-level guarantee is unchanged.
 
+## Intra-collection scatter-gather (L-6)
+
+A mapping may split one collection across N shards (`"split": {name:
+[shard...]}`, hash slot = `id mod N`). The router:
+
+1. Fans the same search body out to every part with an internal oversample
+   multiplier; each part returns its top `(offset + top_k) * oversample`
+   pool (`offset` is ignored locally).
+2. Merges by the paginated total order `(distance asc, id asc)`, deduping
+   ids (a point belongs to one part; duplicates from a misconfigured
+   mapping keep the closer copy).
+3. Applies `offset`/`top_k` **after** the merge. For `after_id`, the cursor
+   id is resolved on its owner part; its distance in the collection metric
+   is sent to every part, which return hits strictly after the
+   `(distance, id)` key (`engine_search_after_key`). This keeps the cursor
+   stateless and exact.
+4. Strict mode (default) returns 503 with a per-shard report if a part
+   fails; `"partial": true` opts into live-part hits plus an honest
+   `"partial": true` (and `failed_shards`).
+
+Flat exactness follows from the k-way merge of total orders. HNSW parts
+remain approximate; the oversample factor is the recall knob and the L-6
+gate measures both ID-set and distance-threshold recall. Filters are
+pushed down in the body (the shard applies its normal exact/ANN filtered
+path). Batch and range search on a split collection are explicit 501 limits
+in v1.
+
 ## Guarantees at a glance
 
 - Dimension validated before any distance is computed.

@@ -32,7 +32,7 @@ fn page_after(a: &SearchResult, b: &SearchResult) -> Bool {
 
 // Insert-sorted bounded push under the total order (the shape of
 // search_service.results_push_bounded plus the id tie-break).
-fn page_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, cap: Int) {
+pub fn page_push_bounded(results: &mut Vec[SearchResult], item: SearchResult, cap: Int) {
   results.push(item);
   var pos: Int = results.len() - 1;
   while pos > 0 && page_after(&results[pos - 1], &results[pos]) {
