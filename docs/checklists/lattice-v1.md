@@ -198,9 +198,11 @@ Consumer lane; repo private; findings bus-routed.
   2 and 3; filtered HNSW 1.000 at all three. See BENCHMARKS.
 - Gate: probe x2 **Windows GREEN (0 fails x2)** + suite 177/177 x2 +
   libcheck 49/49; affected probes (pagination, search_request,
-  http_service, http_fuzz, metrics, router_2shards) green. SBOM (49/0)
-  and the full Windows/WSL 58-probe batteries are re-running after the
-  final negative-DotProduct fix; fill the result here at the wrap.
+  http_service, http_fuzz, metrics, router_2shards) green. **Windows full
+  58-probe battery ALL GATES GREEN** and **WSL full 58-probe battery ALL
+  GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes
+  x2, bench smoke, kill matrix; logs `out/win-battery-l6.log`,
+  `out/wsl-battery-l6.log`, WSL_L6_CI_EXIT:0).
 - v1 limits are explicit and gated: split batch/range search -> 501;
   split move -> 409; any drain touching a split part -> 501; split stats
   with a down part -> 503; mapping edits require reload/restart.
