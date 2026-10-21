@@ -3496,4 +3496,3 @@ reds; bench loops hard-capped; **cap every app/probe run at 8 GB
 compiler builds are watchdog + kill-on-close only (XVC-C-21)**; toolchain/
 package homes are lane-local on purpose.
 ```
-
