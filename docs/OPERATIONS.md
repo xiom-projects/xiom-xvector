@@ -428,8 +428,7 @@ hangs under a memory-limit Job Object. Builds run with a kill-on-close-only
 job (tree cleanup on timeout) plus the watchdog, no RAM limit. This is
 filed as XVC-C-21; revisit when the compiler fix lands.
 
-Shared-stdlib note (2026-10-20): the shared checkout at `ee1a95c`
-(waves 198-201) crashes `xiom --check` (exit -1, no diagnostic) with
-v0.64.8. Set `XVECTOR_STDLIB_BUNDLED=1` to use the compiler's bundled
-release stdlib (the release tag `stdlib-v0.64.8` = `0bf5b75` also works);
-the lane's batteries use the bundled stdlib until the shared tree is fixed.
+Shared-stdlib note: the `ee1a95c` (waves 198-201) break was **resolved at
+`750384f`** (2026-10-21; the shared tree builds/checks/suite pass again).
+`XVECTOR_STDLIB_BUNDLED=1` remains a fallback for a broken checkout; the
+release tag `stdlib-v0.64.8` = `0bf5b75` also works.

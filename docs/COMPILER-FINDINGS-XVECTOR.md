@@ -8,9 +8,10 @@
 > compiler build hangs under a Job Object with PROCESS/JOB memory limits
 > (16 GB); a kill-on-close-only job builds normally -- the lane memory-caps
 > app/probe runs but not compiler/tool builds. XVC-C-13/C-14/C-16/C-17/C-18
-> are verified fixed; C-15 and the phantom controls stay green. Separately,
-> shared stdlib HEAD `ee1a95c` (waves 198-201) breaks v0.64.8 `--check`
-> (stdlib-side bus item; use `XVECTOR_STDLIB_BUNDLED=1` / the release pin).
+> are verified fixed; C-15 and the phantom controls stay green. The shared
+> stdlib `ee1a95c` break is **resolved at `750384f`** (bus
+> `REL-20261020-1531-xvector` acked; `XVECTOR_STDLIB_BUNDLED=1` remains a
+> fallback).
 
 # Compiler findings from the XVECTOR lane
 

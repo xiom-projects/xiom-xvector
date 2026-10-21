@@ -243,7 +243,7 @@ commits, DCO `git commit -s`.
 | Lane | Version / hash | Path |
 |---|---|---|
 | compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
-| stdlib | lane HEAD `ee1a95c` (2026-10-20, waves 198-201) -- **BREAKS v0.64.8: `xiom --check` exits -1 with no diagnostic; use `XVECTOR_STDLIB_BUNDLED=1` (verified working) or the release pin; shared tree is cross-lane blocked**; release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass (with the bundled override while the shared tree is broken) | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
+| stdlib | lane HEAD `750384f` (2026-10-21; **shared-tree block RESOLVED** -- v0.64.8 `--check`/build/suite pass again; bus `REL-20261020-1531-xvector` acked; `XVECTOR_STDLIB_BUNDLED=1` remains a fallback); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `ca41d483` (2026-10-19; lane consumes the registry, not this checkout); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
 | xvector | `75e936f` + `482ce93` (station UI) + `cb66ee5` (Q-a2b) + this pass's P3 commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
 
@@ -1547,9 +1547,9 @@ is red on XVC-C-16, so the v0.64.5 re-pin is HELD):**
 > WSL `ulimit -v`); use `scripts/run-capped.ps1`/`.sh` for manual apps.
 > Compiler builds use a kill-on-close-only job (v0.64.8 hangs under a
 > memory-limit job; XVC-C-21) + the watchdog. The shared stdlib checkout
-> `ee1a95c` (waves 198-201) crashes `--check` with v0.64.8 (exit -1, no
-> diagnostic); `XVECTOR_STDLIB_BUNDLED=1` uses the working bundled release
-> stdlib. Full 57-probe battery under the guard: suite 177/177 x2 +
+> `ee1a95c` break is **resolved at `750384f`** (bus item acked; the shared
+> tree builds/checks/suite pass again); `XVECTOR_STDLIB_BUNDLED=1` remains a
+> fallback. Full 57-probe battery under the guard: suite 177/177 x2 +
 > libcheck 48/48 + SBOM 48/0 + 57 probes x2 + bench smoke green; the newly
 > capped kill matrix hit a missing `lib.ps1` import in the edited script
 > (fixed) and now runs 4/4 PASS. The next full battery will print the
@@ -3304,12 +3304,12 @@ E:\xiom-packages\packages. Repo stays PRIVATE. Identity "Lefteris Notas
 STATE (2026-10-20): HEAD = the safety commit (parent `17969bd`); 22 commits
 ahead of origin; tree clean. Compiler **v0.64.8 pinned both platforms** (win
 `c31d9c46`, linux `a8c003c0`; v0.64.7 rollback kept; WSL via
-`wsl -d Ubuntu`). Shared stdlib HEAD `ee1a95c` (waves 198-201) **breaks**
-v0.64.8 checks (exit -1, no diagnostic; bus `REL-20261020-1531-xvector`);
-use `XVECTOR_STDLIB_BUNDLED=1` (verified) or the release tag
-`stdlib-v0.64.8` = `0bf5b75` (registry publish blocked upstream
-`publisher_not_mapped`); packages `ca41d483`. Manifest pins: vectors 0.1.0 +
-**pulse 0.3.1** (0.3.1
+`wsl -d Ubuntu`). Shared stdlib HEAD `750384f` (2026-10-21): the
+`ee1a95c` block is **resolved** (bus `REL-20261020-1531-xvector` acked;
+builds/checks/suite 177/177 x2 pass); `XVECTOR_STDLIB_BUNDLED=1` remains a
+fallback; release tag `stdlib-v0.64.8` = `0bf5b75` (registry publish blocked
+upstream `publisher_not_mapped`); packages `ca41d483`. Manifest pins:
+vectors 0.1.0 + **pulse 0.3.1** (0.3.1
 adopted: exact identity + HookCtx + fallback + HEAD trim). Latest packages
 installed both homes: wal 0.1.0, metrics 0.2.0, rate 0.2.0, http 0.1.9,
 vectors 0.2.0 (MOTE), ann 0.2.0, orbitdb 0.2.1, pulse 0.3.1.
@@ -3344,8 +3344,8 @@ Do this, in order:
 2) Re-run the WSL gates when the VM is stable: suite x2 + libcheck 48/48 +
    probe_ui/probe_concurrency/probe_sq_sealed/probe_kernels (and the full
    57-probe sweep if it can run uninterrupted; use `out/wsl-battery.log` and
-   a quiet window -- do not fight VM restarts). Use
-   `XVECTOR_STDLIB_BUNDLED=1` while the shared stdlib is broken. The frozen
+   a quiet window -- do not fight VM restarts). The shared stdlib is fixed
+   at `750384f`; `XVECTOR_STDLIB_BUNDLED=1` is the fallback. The frozen
    copies are reference only; the main tree is at the safety commit.
 3) **P4 IVF/PQ** (v1.1 track: quantized storage, recall/latency curve vs
    HNSW) and **P5 mmap/disk segments** (stdlib-dependent), then **L-6 phase
