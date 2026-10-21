@@ -3508,10 +3508,10 @@ XIOM XVECTOR -- fresh-context continuation prompt (L-6 phase B landed).
 REPO/STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD `383c2d1` (L-6 phase B
   + negative-DotProduct cursor fix), parent `902be21`; clean tree (after
-  this docs/SESSION wrap); 28 commits ahead at the fix, 29 after this
-  wrap commit; tag v1.0.0-rc.1 = `530b041`. The isolated worktree used for the slice
+  this docs/SESSION wrap); 28 commits ahead at the fix, 30 after the L-6
+  wrap + housekeeping commits; tag v1.0.0-rc.1 = `530b041`. The isolated worktree used for the slice
   (C:\Users\lefte\AppData\Local\Temp\kilo\xvector-l6, branch
-  feat/l6-scatter-gather) was fast-forward merged; remove it after the wrap.
+  feat/l6-scatter-gather) was fast-forward merged and removed after the wrap.
 - Compiler v0.64.8 both (win `c31d9c46`, linux `a8c003c0`); shared stdlib
   `750384f` (release tag `0bf5b75`); packages `b133b1a7`. Lane-local homes.
 - WSL: always `wsl -d Ubuntu`; VM restarts are environment noise; logs
