@@ -30,7 +30,8 @@ cap_mb="${XVECTOR_MEM_CAP_MB:-8192}"
 name="$(basename "$src" .xi)"
 exe="$repo_root/out/$name"
 
-"$script_dir/build.sh" "$src" "$name" || exit $?
+build_timeout="${XVECTOR_BUILD_TIMEOUT:-240}"
+"$script_dir/build.sh" "$src" "$name" "$build_timeout" || exit $?
 
 failed_run=0
 i=1

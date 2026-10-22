@@ -58,7 +58,11 @@ elif [ -n "${XVECTOR_STDLIB:-}" ]; then
 else
   _dev_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   _dev_repo="$(cd "$_dev_script_dir/.." && pwd)"
-  if [ -d "$_dev_repo/out/stdlib-pin" ]; then
+  if [ -d "$HOME/.xvector-stdlib-pin" ]; then
+    # WSL ext4 copy: the /mnt/e pin is too slow for the 240s build watchdog
+    # (scatter took ~4m30 cold over 9p). Keep this in sync with out/stdlib-pin.
+    XIOM_STDLIB="$HOME/.xvector-stdlib-pin"
+  elif [ -d "$_dev_repo/out/stdlib-pin" ]; then
     # Reproducible lane pin (750384f for the v0.64.9 cycle); the shared
     # checkout is a live workspace and moved past the L-6-green commit.
     XIOM_STDLIB="$_dev_repo/out/stdlib-pin"
