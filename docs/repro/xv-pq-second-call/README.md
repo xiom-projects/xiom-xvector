@@ -3,9 +3,13 @@
 
 # xv-pq-second-call -- second `Option[PQ]` return crashes (v0.64.8)
 
-**STATUS (2026-10-21): OPEN on v0.64.8.** The P4 IVF-PQ prototype was
-implemented and exposed a compiler memory bug; the prototype code is
-reverted and this repro is retained.
+**STATUS (2026-10-22): FIXED on v0.64.9 (Windows + Linux).** The repro
+prints `built 2000`, `first ok m=8`, `second ok m=8`, exit 0 on the
+official v0.64.9 archives. The lane pin remains **v0.64.8** because the
+v0.64.9 compiler archives are under adoption HOLD
+(`REL-20261022-1501-orbitdb`); the fix is verified on the side-by-side
+archive only. The nested P4 codebook arm re-runs when P4 reopens on a
+fixed archive. Bus item `REL-20261021-1103-xvector` is verified.
 
 ## Symptom
 

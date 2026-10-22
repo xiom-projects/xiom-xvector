@@ -42,7 +42,21 @@ if (Test-Path -LiteralPath $laneCompiler) {
 } else {
     $env:XIOM_COMPILER = Join-Path $env:LOCALAPPDATA "xiom.new\bin\xiom.exe"
 }
-$env:XIOM_STDLIB = "E:\xiom-lang\stdlib"
+# Reproducible lane stdlib. The shared checkout is a live lane workspace and
+# moved past the L-6-green commit during the v0.64.9 cycle; prefer a lane
+# pin when present. Recreate with:
+#   git -C E:\xiom-lang\stdlib archive --format=tar -o out\stdlib-pin.tar 750384f
+#   mkdir out\stdlib-pin; tar -xf out\stdlib-pin.tar -C out\stdlib-pin
+# Set XVECTOR_STDLIB to override (e.g. the stdlib-v0.64.9 tag for release
+# verification); delete out\stdlib-pin to track the shared checkout again.
+$laneStdlib = Join-Path $repoRoot "out\stdlib-pin"
+if ($env:XVECTOR_STDLIB) {
+    $env:XIOM_STDLIB = $env:XVECTOR_STDLIB
+} elseif (Test-Path -LiteralPath $laneStdlib) {
+    $env:XIOM_STDLIB = $laneStdlib
+} else {
+    $env:XIOM_STDLIB = "E:\xiom-lang\stdlib"
+}
 if ($env:XVECTOR_STDLIB_BUNDLED -eq "1") {
     Remove-Item Env:XIOM_STDLIB -ErrorAction SilentlyContinue
     Write-Host "dev-env: XVECTOR_STDLIB_BUNDLED=1 -> compiler bundled stdlib"
