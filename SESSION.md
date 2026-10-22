@@ -3673,6 +3673,15 @@ v0.64.9 RELEASED BUT HELD
   HTTP path; P4 code reopens only after both holds clear. The nested-codebook
   arm still needs a re-run then.
 
+WSL BUILD BUDGET
+- A cold pinned-stdlib scatter build is ~4m25 (commit-heavy monomorph);
+  the 240 s `run-probe.sh` build watchdog kills it. Run targeted WSL gates
+  with `XVECTOR_BUILD_TIMEOUT=600` (now honored). The lane also prefers
+  `~/.xvector-stdlib-pin` (ext4) over `out/stdlib-pin`; both are 750384f.
+- The prior full WSL 58-probe battery was green on the shared 750384f tree;
+  the pin is content-identical but cold/slow. Use Windows for the full
+  battery and WSL for targeted spots unless the cache is warmed.
+
 NEW REPROS
 - `docs/repro/xv-json-header-read/probe.xi` (HttpRequest -> http_header ->
   json_parse -> json_get shape).
