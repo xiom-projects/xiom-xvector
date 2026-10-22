@@ -53,9 +53,19 @@ unset XIOM_RUNTIME_DIR
 # --- stdlib -----------------------------------------------------------------
 if [ "${XVECTOR_STDLIB_BUNDLED:-0}" = "1" ]; then
   unset XIOM_STDLIB
-elif [ -z "${XIOM_STDLIB:-}" ] && [ -d /mnt/e/xiom-lang/stdlib ]; then
-  # WSL on the development machine: use the same lane checkout as Windows.
-  XIOM_STDLIB=/mnt/e/xiom-lang/stdlib
+elif [ -n "${XVECTOR_STDLIB:-}" ]; then
+  XIOM_STDLIB="$XVECTOR_STDLIB"
+else
+  _dev_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  _dev_repo="$(cd "$_dev_script_dir/.." && pwd)"
+  if [ -d "$_dev_repo/out/stdlib-pin" ]; then
+    # Reproducible lane pin (750384f for the v0.64.9 cycle); the shared
+    # checkout is a live workspace and moved past the L-6-green commit.
+    XIOM_STDLIB="$_dev_repo/out/stdlib-pin"
+  elif [ -d /mnt/e/xiom-lang/stdlib ]; then
+    XIOM_STDLIB=/mnt/e/xiom-lang/stdlib
+  fi
+  unset _dev_script_dir _dev_repo
 fi
 [ -n "${XIOM_STDLIB:-}" ] && export XIOM_STDLIB
 

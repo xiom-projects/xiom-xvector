@@ -10,16 +10,20 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-21, 88th pass (**L-6 phase B hash scatter-gather
-  landed**: mapping `split`, create/upsert/get/delete routing, k-way merge,
-  offset + merged after-id pagination, strict/partial, filter pushdown.
-  `probe_scatter_gather` = 51st in the list (58 total), 0 fails x2
-  Windows; suite 177/177 x2; libcheck 49/49. HNSW recall 0.9917/0.9917
-  at oversample 1 and
-  1.000/1.000 at 2-3; filtered 1.000. v1 limits: split batch/range search
-  501, split move 409, split drain 501. **Windows + WSL full 58-probe
-  batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM
-  49/0, bench, kill matrix; logs in `out/`).)
+- **As of:** 2026-10-22, 89th pass (**v0.64.9 post-release verification;
+  adoption HELD**). L-6 phase B remains green on the v0.64.8 pin (Windows
+  + WSL full 58-probe batteries ALL GATES GREEN; `probe_scatter_gather`
+  0 fails x2; suite 177/177 x2; libcheck 49/49; SBOM 49/0; bench + kill
+  matrix). v0.64.9 side-by-side rows: **XVC-C-22 GREEN Windows + Linux**
+  (`docs/repro/xv-pq-second-call`), **1531 16 GB Job Object build GREEN
+  x2** on Windows, **1243 reproduced as a release-mode enum-payload read
+  returning 0** (`REL-20261022-1615-xvector`, likely the 1451/1550
+  family). **stdlib-v0.64.9 `aa8b656` also crashes the HTTP/L-6 probes on
+  both compilers** (`REL-20261022-1640/1702-xvector`); the lane stdlib is
+  pinned to `out/stdlib-pin` = `750384f` (dev-env prefers it; the shared
+  checkout is live/moved). **Pins stay v0.64.8 + 750384f** per
+  `REL-20261022-1501-orbitdb` and the stdlib hold until fixed artifacts
+  are re-cut; the v0.64.9 pair remains side-by-side only.)
 - **Overall:** **90 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1337,6 +1341,26 @@ extraction with the packages lane.
   DotProduct cursor. Suite 177/177 x2; libcheck 49/49; **Windows + WSL
   full 58-probe batteries ALL GATES GREEN** (SBOM 49/0, bench, kill
   matrix). No score change yet (G-3/G-4 and split rebalance remain).
+
+- **2026-10-22 (v0.64.9 verification, adoption held):** verified the
+  xvector release rows on the official side-by-side archives (Windows zip
+  sha256 `1b759541...`, Linux x64 `b331dd4d...`), **without moving the
+  pin**. XVC-C-22 repro prints `second ok m=8`, exit 0 on Windows + Linux
+  (bus `REL-20261021-1103-xvector` verified). 1531 build of
+  `tests/test_conformance.xi` is green x2 under a real 16 GB PROCESS+JOB
+  cap (`REL-20261022-1616-xvector`). 1243 is reproduced as a release-mode
+  enum-payload read returning 0 in a minimal service-shaped probe on
+  v0.64.8 and v0.64.9, shared and bundled stdlib
+  (`REL-20261022-1615-xvector`, high); this is the 1451/1550 class, not
+  JSON-specific. The L-6 exact-f32-bits workaround remains. Official
+  v0.64.9 archives are HELD (`REL-20261022-1501-orbitdb`); pin stays
+  v0.64.8 until a fixed archive. stdlib-v0.64.9 `aa8b656` is independently
+  broken for xvector: HTTP/L-6 probes crash `0xC0000005` on both
+  compilers, while hello/vector-store/pagination pass
+  (`REL-20261022-1640/1702-xvector`). The lane stdlib is pinned to
+  `out/stdlib-pin` = `750384f`; `scripts/dev-env.*` prefer it. P4 is
+  unblocked at the compiler level but not adoptable yet; G-3/G-4 continue
+  on the stable compiler + stdlib pin.
 
 ## Update rule
 

@@ -8,9 +8,11 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-21 (88th: **L-6 phase B hash scatter-gather
-landed** -- mapping `split`, ranked merge, merged after-id pagination,
-strict/partial, filter pushdown; probe 51/58 x2 Windows; see §21).
+**Latest pass:** 2026-10-22 (89th: **v0.64.9 post-release verification** --
+XVC-C-22 GREEN Windows+Linux on the side-by-side archive; 1531 16 GB Job
+Object build GREEN x2; 1243 reproduced as a release-mode enum-payload read
+returning 0; v0.64.9 adoption HELD, pin stays v0.64.8. L-6 phase B was the
+88th; see §21 and the new §22).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -3612,4 +3614,102 @@ reds; bench loops hard-capped; **cap every app/probe run at 8 GB
 (`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
 compiler builds are watchdog + kill-on-close only (XVC-C-21)**; toolchain/
 package homes are lane-local on purpose.
+```
+
+## 22. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-22 16:30Z; supersedes 21)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (v0.64.9 verification; compiler + stdlib HELD).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; L-6 code `383c2d1` + docs and
+  release-evidence wraps on top; clean tree; tag v1.0.0-rc.1 = `530b041`.
+- Compiler pin stays **v0.64.8** both platforms (win `c31d9c46`, linux
+  `a8c003c0`); **lane stdlib pin `out/stdlib-pin` = `750384f`** (dev-env
+  prefers it; the shared `E:\xiom-lang\stdlib` checkout is live and moved
+  to `06b0f4b`); packages `b133b1a7`. Do NOT bump `out\toolchain` /
+  `~/.xvector-toolchain` or the stdlib pin until both v0.64.9 holds clear.
+  Recreate the pin: `git -C E:\xiom-lang\stdlib archive --format=tar -o
+  out\stdlib-pin.tar 750384f`, `mkdir out\stdlib-pin`, `tar -xf ...`.
+- v0.64.9 test archives were used side-by-side only:
+  Windows zip sha256 `1b759541...`, Linux x64 `b331dd4d...` (both match
+  the release digests); extracted under temp/`/tmp`, never the lane pin.
+- WSL: `wsl -d Ubuntu`; restarts are environment noise, logs persist.
+
+v0.64.9 RELEASED BUT HELD
+- compiler tag `v0.64.9` (`ffde5aa0...`) on `2bcf58db5`; release run
+  39791522014; stdlib tag `stdlib-v0.64.9` at `aa8b656`; `xiom-std 0.64.9`
+  live. Announcement `REL-20261022-1406-compiler`.
+- HOLD `REL-20261022-1501-orbitdb`: official archives fail the 1451/1550
+  release-mode fixes (stdlib items `REL-20261022-1410-stdlib` and
+  `-1414-stdlib`). Stay on v0.64.8; do not treat the release as adoptable.
+- **stdlib-v0.64.9 `aa8b656` is ALSO HELD for xvector**: HTTP/L-6 probes
+  crash `0xC0000005` on **both** v0.64.8 and v0.64.9 with that stdlib;
+  `probe_hello`, `probe_vector_store`, and `probe_pagination` pass, while
+  `probe_http_service`, `probe_router_2shards`, and `probe_scatter_gather`
+  crash. Filed `REL-20261022-1640-xvector` + narrowed update
+  `REL-20261022-1702-xvector`; the lane is pinned to `750384f`, where the
+  scatter gate is 0 failed checks x2.
+- xvector rows, completed on the side-by-side archive with the pinned
+  stdlib `750384f`:
+  - **XVC-C-22 GREEN Windows + Linux** (`docs/repro/xv-pq-second-call/probe.xi`
+    prints built 2000 / first ok m=8 / second ok m=8, exit 0; pinned
+    stdlib 750384f). Bus `REL-20261021-1103-xvector` verified + committed
+    (`926503e`). The nested P4 codebook arm still re-runs when P4 reopens.
+  - **1531 GREEN x2** on Windows: `tests/test_conformance.xi` built under a
+    real 16 GB PROCESS+JOB memory cap (`Invoke-XvectorProcess -MaxMemoryMB
+    16384`), exit 0, no hang, exe produced; pinned stdlib 750384f. Info
+    `REL-20261022-1616-xvector`.
+  - **1243 reproduced**: `docs/repro/xv-json-read-min/probe.xi` shows
+    `json_stringify` correct but `match JsonValue.Number(n)` / `json_get`
+    reads 0 on v0.64.8 and v0.64.9, shared and bundled stdlib. This is the
+    release-mode payload-read family, not JSON-specific; filed high as
+    `REL-20261022-1615-xvector`. The L-6 exact-f32-bits workaround stays.
+  - Release-check xvector row updated; `REL-20261022-1617-xvector` records
+    that the scoped commit also carried the compiler's uncommitted hard-gate/
+    stdlib/tag-log sections in the shared clone.
+- P4: the compiler fix is verified (with the pinned stdlib), but the
+  archive/pin is held and stdlib 0.64.9 is independently broken for the
+  HTTP path; P4 code reopens only after both holds clear. The nested-codebook
+  arm still needs a re-run then.
+
+NEW REPROS
+- `docs/repro/xv-json-header-read/probe.xi` (HttpRequest -> http_header ->
+  json_parse -> json_get shape).
+- `docs/repro/xv-json-read-min/probe.xi` (minimal enum payload read; two
+  arms: top-level number and one-key object; prints match_n=0).
+
+NEXT (ordered)
+1) Watch BOTH lanes: compiler release-mode fix / re-cut, and stdlib
+   aa8b656 HTTP/L-6 crash. On a fixed pair re-run 1451/1550 + 1243 +
+   HTTP/L-6, then bump both pins and run the full batteries. Do not adopt
+   either held artifact.
+2) In parallel on v0.64.8: **G-3 read snapshots**, then G-4
+   metrics-under-concurrency, then scale tuning.
+3) P5 when stdlib unblocks; P4 when the archive is fixed; split
+   resharding/rebalance; optional UI editor/three.js.
+4) Release notes/owner gates.
+
+DO FIRST
+1) Relay bus: fetch/merge, `view --lane xvector`; check 1406/1410/1414/
+   1501/1615/1616/1617 and compiler answers.
+2) Verify the lane compiler is v0.64.8 and `out/stdlib-pin` is 750384f;
+   do not adopt stdlib 0.64.9 (HTTP/L-6 crash).
+3) Re-run `probe_scatter_gather` x2 + suite x2 + libcheck before editing.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local on
+purpose.
 ```
