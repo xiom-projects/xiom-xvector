@@ -3693,8 +3693,9 @@ NEXT (ordered)
    aa8b656 HTTP/L-6 crash. On a fixed pair re-run 1451/1550 + 1243 +
    HTTP/L-6, then bump both pins and run the full batteries. Do not adopt
    either held artifact.
-2) In parallel on v0.64.8: **G-3 read snapshots**, then G-4
-   metrics-under-concurrency, then scale tuning.
+2) In parallel on v0.64.8: **G-4 metrics-under-concurrency** first; G-3
+   is design-gated on runtime Send/Sync + a snapshot handle + mutex-bottleneck
+   data (G-PHASE-PLAN section 3), so evaluate it after G-4. Then scale tuning.
 3) P5 when stdlib unblocks; P4 when the archive is fixed; split
    resharding/rebalance; optional UI editor/three.js.
 4) Release notes/owner gates.
