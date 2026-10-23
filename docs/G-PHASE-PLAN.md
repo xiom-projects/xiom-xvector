@@ -110,6 +110,20 @@ Ordered candidate slices, each gated:
 - G-4 metrics/observability under concurrency: atomic counters or
   per-worker rings merged at scrape; the slow-query log stays ordered
   by wall clock.
+  **COMPLETE 2026-10-23 on v0.64.8.** The six service counters are
+  `xiom.sync.atomics` heap-cell atomics (copying `ServiceMetrics` copies
+  the handle, so concurrent `fetch_add`s cannot lose an increment), and
+  the threaded `xvectord` now carries one shared `ServiceState` under the
+  coarse engine mutex (`http_service_handle_state`), so `/metrics` is
+  live in thread mode and the histograms/log ring cannot tear. The log
+  ring records a monotonic completion `ts` and inserts in timestamp
+  order, keeping the slow view wall-clock ordered even when workers
+  finish out of lock order. `probe_concurrency` extends the G-2b gate
+  with exact concurrent counter totals (32/32 upserts/searches), a
+  histogram `_count` equal to `requests_total` (67==67), and a
+  +1-per-scrape atomic check; `probe_metrics` pins the sorted log ring.
+  Also fixes the served-tier auth gap: `service_state_from_env` applies
+  `XVECTOR_API_KEYS`/limit envs at startup.
 - G-5 memory budget + seal/compaction thresholds (M-P P2; NON-GATED --
   can ship before the thread gate): `engine_memory_estimate` + stats
   fields + probe + `docs/OPERATIONS.md` thresholds.
@@ -145,6 +159,7 @@ Ordered candidate slices, each gated:
 P2/G-5 (memory budget, done) -> thread gate GREEN (v0.64.5) -> **G-1
 COMPLETE** (2026-10-18; natural globals + mailbox leg) -> **G-2
 COMPLETE** (2026-10-19 on v0.64.8; threaded accept loop + concurrency
-probe x2 both) -> Q-a2b / M-P (the non-G queue) -> G-4 ->
-(evaluate G-3) -> sharding harness story. Owner-facing claims use the v1
-wording until the post-gate slices are green.
+probe x2 both) -> Q-a2b / M-P (the non-G queue) -> **G-4 COMPLETE**
+(2026-10-23 on v0.64.8; atomic counters + shared state scrape + ordered
+log ring) -> (evaluate G-3) -> sharding harness story. Owner-facing
+claims use the v1 wording until the post-gate slices are green.

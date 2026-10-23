@@ -158,7 +158,7 @@ needed) -> signed commit. Red build = rejection.
 - [x] O2 `/metrics` + `/health` (live/ready) + structured logs + slow-query
   log **(done 2026-10-09)**: public `GET /metrics` (prometheus text;
   counters + histograms + gauges), `/health` carries `ready:true`, bounded
-  JSON-line `LogRing` (method/path/status/ms/slow, sanitized, eviction
+  JSON-line `LogRing` (method/path/status/ms/ts/slow, sanitized, eviction
   count) wired through `http_service_handle_state`; signals asserted by
   `probe_metrics`
 - [x] O3 `docs/OPERATIONS.md` runbook **(done 2026-10-09)**: start/stop +
@@ -173,6 +173,11 @@ needed) -> signed commit. Red build = rejection.
   collection + process-level sharding; in-process threads are post-gate
   (acceptance `docs/repro/xv-thread-abi`); consistency + G-1..G-5 slice
   order defined
+- [x] **G-4 metrics-under-concurrency (done 2026-10-23)**: atomic service
+  counters, shared `ServiceState` in `XVECTORD_THREADS` mode (live
+  `/metrics`, no torn histogram/log updates), wall-clock-ordered `ts` log
+  ring; `probe_concurrency` exact 32/32 concurrent totals + 67==67 parity;
+  Windows full battery + WSL spot green
 - [x] P2 memory budget + seal/compaction thresholds; measured **(done
   2026-10-11, 75th pass: `engine_memory_estimate` + `/stats` `mem_*` +
   `probe_memory_estimate` 17 checks x2 Win+WSL; thresholds + rules of

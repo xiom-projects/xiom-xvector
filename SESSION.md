@@ -8,11 +8,11 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-23 (90th: **v0.64.9 WITHDRAWN; v0.65.0 production
-gate opened**. 1615/1243 enum-payload read is fixed on compiler main
-(`ecd22a225` + `45804b195`); stdlib 1640 HTTP/L-6 crash is fixed on stdlib
-main `f436a5d`, hotfix 0.64.10 pending. Production stays v0.64.8 + stdlib
-`750384f`; see §23).
+**Latest pass:** 2026-10-23 (91st: **G-4 metrics-under-concurrency
+COMPLETE** on v0.64.8 + stdlib `750384f` -- atomic service counters,
+shared-state `/metrics` in `XVECTORD_THREADS` mode, wall-clock-ordered
+`ts` log ring; full Windows battery + WSL spot green. v0.64.9 remains
+withdrawn; the v0.65.0 gate is open; see §24).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->

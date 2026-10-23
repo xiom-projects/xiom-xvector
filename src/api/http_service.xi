@@ -672,6 +672,22 @@ pub fn service_state_new() -> ServiceState {
   };
 }
 
+// Server construction: defaults plus the documented env surface
+// (XVECTOR_MAX_REQUEST_BYTES/TOP_K/BATCH/DIM, XVECTOR_API_KEYS). The socket
+// adapters use this so the served tier actually enables the auth/limits the
+// runbook documents. Nested-field mutation through a &mut param does not
+// persist (XVC-C-09 family): copy each member out, apply, write back once.
+pub fn service_state_from_env() -> ServiceState {
+  var st = service_state_new();
+  var cfg = st.cfg;
+  let _n = service_config_from_env(&mut cfg);
+  st.cfg = cfg;
+  var auth = st.auth;
+  let _a = service_auth_from_env(&mut auth);
+  st.auth = auth;
+  return st;
+}
+
 // Required scope for a routed request; None = public (/health only).
 // Shared with the L-3 router (xiom.vector.api.router): the router edge
 // applies the exact same scope map before forwarding.
@@ -794,7 +810,7 @@ pub fn http_service_handle_state(eng: &mut VectorEngine, raw: &Vec<UInt8], st: &
     service_counter_inc(&mut mt.upsert_ops);
   }
   st.metrics = mt;
-  log_ring_push(&mut st.log, m, p, status, ms);
+  log_ring_push_at(&mut st.log, t1, m, p, status, ms);
   return resp;
 }
 

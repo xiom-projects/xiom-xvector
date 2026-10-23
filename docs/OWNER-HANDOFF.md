@@ -26,10 +26,11 @@ repository stays private; nothing below happens until the owner greenlights.
 - **Kernel seam (P3):** `src/index/kernels.xi` (scalar default, selectable
   unrolled kind) behind the `xiom.vectors` contract; `probe_kernels` (57th);
   scalar baseline preserved; no Float32 accelerated binding yet.
-- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **90 %**
-  today (81 % at the candidate; "release-grade"; remaining gaps are G-3/G-4
-  concurrency, **P4 blocked on XVC-C-22 (v1.1; not a v1 blocker)**, P5
+- **Readiness:** `docs/PRODUCTION-READINESS.md` -- weighted **91 %**
+  today (81 % at the candidate; "release-grade"; remaining gaps are G-3
+  read snapshots, **P4 blocked on XVC-C-22 (v1.1; not a v1 blocker)**, P5
   stdlib-dependent, L-6, and release-runner activation, all documented).
+  G-4 metrics-under-concurrency is complete (2026-10-23).
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
   (48 modules, `unsafe` = 0, compiler v0.64.8, stdlib pin).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel

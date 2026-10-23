@@ -30,6 +30,11 @@ XVC-C-14; see below).
 - **Uniform counters:** `VectorEngine.upserts/deletes` are package
   `Counter`s and the core shim's `Counter` type is **retired** -- one
   `Counter` type in the program (XVC-C-14, below).
+- **G-4 service counters are atomic (2026-10-23):** the served tier's six
+  counters are `xiom.sync.atomics` handles so concurrent workers cannot
+  lose increments; histograms stay package `Histogram`s (mutable values,
+  updated under the shared state lock). The lane seam and `/metrics` text
+  are unchanged.
 - **Wire contract unchanged:** `GET /metrics` output is byte-identical
   (same counters, same `_bucket`/`+Inf`/`_sum`/`_count` lines, same
   p50/p95/p99 lines, same live gauges); the `probe_metrics` expectations
@@ -44,7 +49,7 @@ XVC-C-14; see below).
 | Observe semantics | first-fit bucket + clamp negative to 0 | package first-fit + lane clamp in `histogram_observe` | none |
 | Percentiles | lane `histogram_percentile` (rank = ceil(p/100 x n), +Inf bucket reports last bound + 1) | kept lane-owned (package SPEC: no percentile estimation) | none |
 | Prometheus histogram block | rendered in `http_service.render_hist_lines` | moved into the lane as `histogram_render_lines` (consumers no longer name the value types) | none (byte-identical) |
-| Service counters | shim `Counter {name; value}` with names | package `Counter {value}` via lane seam `service_counter_inc/_value`; render uses the existing literal names | none |
+| Service counters | shim `Counter {name; value}` with names | package `Counter {value}` via lane seam `service_counter_inc/_value`; render uses the existing literal names. **G-4 (2026-10-23):** the service counters moved to `xiom.sync.atomics` heap-cell handles (the package has no atomic counter); the exposed seam and wire output are unchanged. `docs/G-PHASE-PLAN.md` G-4 | none |
 | Counters elsewhere | engine stats on shim counters | engine stats on package counters (`metric_counter_new/_inc`); shim `Counter` deleted | engine counters are write-only today (no reads outside the suite mirror) |
 | Gauges | rendered live from the engine | unchanged (package `Gauge` is available but not stored) | none |
 | Log ring | lane JSON ring | lane-owned (package has no log ring) | none |
