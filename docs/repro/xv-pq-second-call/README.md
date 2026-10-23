@@ -3,13 +3,14 @@
 
 # xv-pq-second-call -- second `Option[PQ]` return crashes (v0.64.8)
 
-**STATUS (2026-10-22): FIXED on v0.64.9 (Windows + Linux).** The repro
-prints `built 2000`, `first ok m=8`, `second ok m=8`, exit 0 on the
-official v0.64.9 archives. The lane pin remains **v0.64.8** because the
-v0.64.9 compiler archives are under adoption HOLD
-(`REL-20261022-1501-orbitdb`); the fix is verified on the side-by-side
-archive only. The nested P4 codebook arm re-runs when P4 reopens on a
-fixed archive. Bus item `REL-20261021-1103-xvector` is verified.
+**STATUS (2026-10-23): FIXED on the withdrawn v0.64.9 (Windows + Linux);
+v0.65.0 acceptance pending.** The repro prints `built 2000`, `first ok
+m=8`, `second ok m=8`, exit 0 on the v0.64.9 archives with the stdlib
+pin. v0.64.9 was **withdrawn** from adoption on 2026-10-22
+(`REL-20261022-1826-compiler`); production remains **v0.64.8 + stdlib
+750384f**. Re-verify this arm on the v0.65.0 archive. The nested P4
+codebook arm re-runs when P4 reopens. Bus item
+`REL-20261021-1103-xvector` is verified.
 
 ## Symptom
 
