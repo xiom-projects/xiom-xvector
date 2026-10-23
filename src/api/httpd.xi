@@ -4,9 +4,12 @@
 module xiom.vector.api.httpd
 
 // Runnable XVECTOR HTTP server: the user-testable face of the DB.
-// Single-threaded sequential-accept loop over the stdlib socket layer
-// (`xiom.net.socket`; the PULSE production pattern), whole requests in /
-// responses out through the transport-agnostic `http_service_handle`.
+// Sequential-accept by default, or a threaded accept loop behind
+// XVECTORD_THREADS (G-2b): one acceptor + bounded workers, every engine
+// and service-state call serialized on one coarse mutex. The shared
+// ServiceState (G-4) keeps the counters/histograms/log ring live and exact
+// under workers. Requests are whole in / responses whole out through the
+// transport-agnostic `http_service_handle_state`.
 // This module only frames sockets: read headers to CRLFCRLF, honor
 // Content-Length, guard the buffer, send, close. The service does the
 // strict HTTP work (parsing, routing, limits, JSON).
@@ -45,6 +48,7 @@ const MAX_REQUEST_BYTES: Int = 33554432;
 // exists; workers reach it only under G_ENGINE_LOCK. Scalar/null-only
 // initializers elsewhere.
 var G_ENGINE: VectorEngine = mem.zeroed[VectorEngine]();
+var G_STATE: ServiceState = mem.zeroed[ServiceState]();
 var G_ENGINE_LOCK: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
 var G_FD_LOCK: mutex.SyncMutex = mutex.SyncMutex{ locked: null };
 var G_INFLIGHT: atomics.AtomicInt = atomics.AtomicInt{ ptr: null };
@@ -231,12 +235,19 @@ fn httpd_ui_response(raw: &Vec[UInt8]) -> Option[Vec[UInt8]] {
 
 // Serve exactly one accepted connection. Returns 0 = served, 1 = served +
 // quit requested, -1 = empty/error. Exposed so the probe can drive the exact
-// same per-connection path the serve loop uses.
+// same per-connection path the serve loop uses. A local state is constructed
+// from the env so this seam keeps the historical per-call config behavior;
+// the serve loop reuses its shared G_STATE instead.
 pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
+  var st = service_state_from_env();
+  return httpd_once_state(eng, client, &mut st);
+}
+
+// State-aware one-connection path (G-4): the shared service state carries
+// the atomic counters, histograms and the wall-clock-ordered log ring.
+pub fn httpd_once_state(eng: &mut VectorEngine, client: Int, st: &mut ServiceState) -> Int {
   // A peer that connects and goes silent must not stall the accept loop.
   let _to = socket.socket_set_timeout(client, 30000);
-  var cfg = service_config_default();
-  let _n = service_config_from_env(&mut cfg);
   let raw = httpd_read_request(client);
   if raw.len() == 0 {
     socket.socket_close(client);
@@ -252,7 +263,7 @@ pub fn httpd_once(eng: &mut VectorEngine, client: Int) -> Int {
     None => {}
   }
   let quit = has_token(&raw, "x-xvector-quit");
-  let resp = http_service_handle_cfg(eng, &raw, &cfg);
+  let resp = http_service_handle_state(eng, &raw, st);
   let ok = send_all(client, &resp);
   socket.socket_close(client);
   if !ok { return -1; }
@@ -299,10 +310,8 @@ fn httpd_worker() -> Int {
       }
       None => {
         let quit = has_token(&raw, "x-xvector-quit");
-        var cfg = service_config_default();
-        let _n = service_config_from_env(&mut cfg);
         mutex.mutex_lock(&mut G_ENGINE_LOCK);
-        let resp = http_service_handle_cfg(&mut G_ENGINE, &raw, &cfg);
+        let resp = http_service_handle_state(&mut G_ENGINE, &raw, &mut G_STATE);
         mutex.mutex_unlock(&mut G_ENGINE_LOCK);
         if send_all(client, &resp) {
           rc = 0;
@@ -447,6 +456,7 @@ pub fn httpd_serve_cfg(bind: Str, port: Int, threads_cfg: Int) -> Int {
   // optional. Without XVECTORD_WAL the server runs in-memory (no durability
   // claim) -- exactly the benchmark/server default before D5.
   G_ENGINE = engine_new();
+  G_STATE = service_state_from_env();
   var wal_path: Str = "";
   var seg_path: Str = "";
   let vw = env.var_opt("XVECTORD_WAL");
@@ -557,7 +567,7 @@ pub fn httpd_serve_cfg(bind: Str, port: Int, threads_cfg: Int) -> Int {
         socket.socket_close(fd);
         return 1;
       }
-      let rc = httpd_once(&mut G_ENGINE, ar.value);
+      let rc = httpd_once_state(&mut G_ENGINE, ar.value, &mut G_STATE);
       if rc == 1 {
         running = false;
         io.println("xvectord: quit requested; shutting down");

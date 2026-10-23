@@ -35,15 +35,16 @@ The boundary that remains is power-loss fault injection (see §5).
 |---|---|---|
 | env | `XVECTOR_MAX_REQUEST_BYTES`, `XVECTOR_MAX_TOP_K`, `XVECTOR_MAX_BATCH`, `XVECTOR_MAX_DIM` | limits; malformed values ignored |
 | env | `XVECTOR_API_KEYS="key1:admin,key2:read"` | enables auth; keys 8..128 `[A-Za-z0-9_.-]` |
+| env | `XVECTORD_THREADS=<n>` | worker threads (1 = sequential default, 2..64); every engine/state call serializes on one coarse mutex |
 | env | `XVECTORD_WAL=<ckpt path>` | durable home (M-D5): fsync-on-ack; `XVECTORD_MANIFEST=<path>` optional |
 | env | `XVECTORD_CHECKPOINT_EVERY=<n>` | auto compact+swap every n commits (M-D6; 0/absent = off; clean quit always swaps) |
 | env | `XVECTORD_SEAL_EVERY=<n>` + `XVECTORD_SEAL_DIR=<dir>` | auto-roll (M-D7): move the active collection into an immutable sealed segment at n points; dir defaults to the durable home's dir; off by default |
 | file | `key=value` lines (`#` comments) via `service_config_load` | unknown keys ignored; malformed line -> `valid=false` |
 | code | `service_config_apply`, `service_auth_add_key`, `rate_limiter_new(capacity, refill_per_sec)` | programmatic control |
 
-Auth is **off** by default (embedded); the socket adapter must enable it
-(register keys or set `XVECTOR_API_KEYS`). Scopes: read < write < admin;
-`/health` and `/metrics` are public.
+Auth is **off** by default (embedded). The socket adapter enables it from
+`XVECTOR_API_KEYS` at startup (register keys programmatically when embedding).
+Scopes: read < write < admin; `/health` and `/metrics` are public.
 
 ## 3. Monitoring
 
@@ -58,9 +59,17 @@ Auth is **off** by default (embedded); the socket adapter must enable it
     `_p50`/`_p95`/`_p99` as bucket upper bounds);
   - gauges `xvector_collections`, `xvector_points_active`, `xvector_lsn`.
 - Structured logs: bounded JSON-line ring (`ServiceState.log`, default
-  256 lines, `slow_ms=250`): `{"method","path","status","ms","slow"}`;
+  256 lines, `slow_ms=250`): `{"method","path","status","ms","ts","slow"}`;
+  `ts` is the monotonic completion time and the ring is kept sorted by it,
+  so the slow-query view stays wall-clock ordered under concurrency;
   `log.dropped` counts evictions. Pipe the ring to stdout/file in the
   adapter; keys never appear in logs.
+- Under `XVECTORD_THREADS>1` the six counters are atomic (no lost
+  increments), while the histograms and log ring update under the shared
+  state lock alongside the engine; `/metrics` renders the same state, so a
+  scrape never sees a torn counter/histogram pair. The coarse lock means a
+  scrape serializes with in-flight work (correct-first; G-3 evaluates
+  non-blocking readers).
 - Suggested alerts: `errors_total` rate, `auth_failures > 0`, p99 above
   your SLO, `rate_limited` sustained, `log.dropped` growing.
 

@@ -19,6 +19,7 @@ module xiom.vector.observability.metrics
 use xiom.convert;
 use xiom.string.slice;
 use xiom.metrics;
+use xiom.sync.atomics;
 
 // ---- Histogram (fixed upper bounds in ms; last bucket is +Inf) ----
 
@@ -139,27 +140,35 @@ pub fn histogram_render_lines(name: Str, h: &Histogram) -> Str {
   return out;
 }
 
-// ---- Service metrics bundle (package value types behind the seam) ----
-
+// ---- Service metrics bundle (G-4: atomics for the counters) ----
+//
+// The counters are heap-cell atomics (`xiom.sync.atomics`), not the
+// package `Counter` (a plain Int): the threaded service updates them from
+// several workers, and an atomic fetch_add cannot lose an increment even
+// when two threads copy the state struct concurrently. Copying
+// `ServiceMetrics` copies the handle (the pointer), so the shared cell is
+// the one that advances. The histograms stay mutable values and are
+// updated under the server's state lock (the `/metrics` scrape reads them
+// under the same lock), so their bucket counts are exact too.
 pub type ServiceMetrics = {
-  requests_total: Counter;
-  errors_total: Counter;
-  search_ops: Counter;
-  upsert_ops: Counter;
-  auth_failures: Counter;
-  rate_limited: Counter;
+  requests_total: atomics.AtomicInt;
+  errors_total: atomics.AtomicInt;
+  search_ops: atomics.AtomicInt;
+  upsert_ops: atomics.AtomicInt;
+  auth_failures: atomics.AtomicInt;
+  rate_limited: atomics.AtomicInt;
   latency_ms: Histogram;
   search_latency_ms: Histogram;
 }
 
 pub fn service_metrics_new() -> ServiceMetrics {
   return ServiceMetrics{
-    requests_total: metric_counter_new(),
-    errors_total: metric_counter_new(),
-    search_ops: metric_counter_new(),
-    upsert_ops: metric_counter_new(),
-    auth_failures: metric_counter_new(),
-    rate_limited: metric_counter_new(),
+    requests_total: atomics.atomic_int_new(0),
+    errors_total: atomics.atomic_int_new(0),
+    search_ops: atomics.atomic_int_new(0),
+    upsert_ops: atomics.atomic_int_new(0),
+    auth_failures: atomics.atomic_int_new(0),
+    rate_limited: atomics.atomic_int_new(0),
     latency_ms: histogram_new(),
     search_latency_ms: histogram_new(),
   };
@@ -168,19 +177,28 @@ pub fn service_metrics_new() -> ServiceMetrics {
 // Counter seam. The names cannot be the package's own (`metric_counter_*`:
 // a module-level definition would shadow the import) and cannot be the
 // core shim's `counter_inc` (http_service imports the shim for CoreError
-// alongside this module), hence the service_* spelling.
-pub fn service_counter_inc(c: &mut Counter) {
-  metric_counter_inc(c);
+// alongside this module), hence the service_* spelling. The atomic handle
+// is mutated through its pointee, so a nested-field `&mut` copy (the
+// XVC-C-09 family) cannot drop the update.
+pub fn service_counter_inc(c: &mut atomics.AtomicInt) {
+  let _ = atomics.atomic_add(c, 1);
 }
 
-pub fn service_counter_value(c: &Counter) -> Int {
-  return metric_counter_value(c);
+pub fn service_counter_value(c: &atomics.AtomicInt) -> Int {
+  return atomics.atomic_load(c);
 }
 
-// ---- Bounded structured-log ring (JSON lines) ----
+// ---- Bounded structured-log ring (JSON lines, wall-clock ordered) ----
+//
+// G-4: each line carries a monotonic completion timestamp (`ts`, ms) and
+// the ring is kept sorted by it, so the slow-query view is ordered by wall
+// clock even when concurrent workers finish out of lock-acquisition order.
+// `stamps[i]` is the timestamp of `lines[i]`; capacity eviction drops the
+// oldest line (index 0) and counts it in `dropped`.
 
 pub type LogRing = {
   lines: Vec[Str];
+  stamps: Vec[Int];
   capacity: Int;
   slow_ms: Int;
   dropped: Int;
@@ -189,7 +207,20 @@ pub type LogRing = {
 pub fn log_ring_new(capacity: Int, slow_ms: Int) -> LogRing {
   var cap: Int = capacity;
   if cap < 1 { cap = 1; }
-  return LogRing{ lines: Vec[Str].new(), capacity: cap, slow_ms: slow_ms, dropped: 0 };
+  return LogRing{ lines: Vec[Str].new(), stamps: Vec[Int].new(), capacity: cap, slow_ms: slow_ms, dropped: 0 };
+}
+
+// Next implicit timestamp for callers that do not supply one: one past the
+// newest line, so `log_ring_push` keeps the historical append behavior.
+fn log_ring_next_ts(r: &LogRing) -> Int {
+  if r.stamps.len() == 0 { return 1; }
+  return r.stamps[r.stamps.len() - 1] + 1;
+}
+
+// Timestamp of line `i` (0 for an out-of-range index).
+pub fn log_ring_stamp(r: &LogRing, i: Int) -> Int {
+  if i < 0 || i >= r.stamps.len() { return 0; }
+  return r.stamps[i];
 }
 
 // Sanitize a string for a JSON line (requests can carry arbitrary bytes):
@@ -210,21 +241,38 @@ fn log_safe(s: Str) -> Str {
   return Str::from_utf8(&out);
 }
 
-pub fn log_ring_push(r: &mut LogRing, method: Str, path: Str, status: Int, ms: Int) {
+// Record one request line at completion timestamp `ts`. The line is
+// inserted at its wall-clock position (equal stamps keep arrival order),
+// then the oldest line is evicted while the ring is over capacity.
+pub fn log_ring_push_at(r: &mut LogRing, ts: Int, method: Str, path: Str, status: Int, ms: Int) {
   var slow: Bool = ms >= r.slow_ms;
   var line = "{\"method\":\"" + log_safe(method)
     + "\",\"path\":\"" + log_safe(path)
     + "\",\"status\":" + convert.int_to_string(status)
     + ",\"ms\":" + convert.int_to_string(ms)
+    + ",\"ts\":" + convert.int_to_string(ts)
     + ",\"slow\":" + (if slow { "true" } else { "false" }) + "}";
-  r.lines.push(line);
-  while r.lines.len() > r.capacity {
-    var i: Int = 0;
-    while i < r.lines.len() - 1 {
-      r.lines[i] = r.lines[i + 1];
+  var at: Int = r.stamps.len();
+  var i: Int = 0;
+  while i < r.stamps.len() {
+    if r.stamps[i] > ts {
+      at = i;
+      i = r.stamps.len();
+    } else {
       i = i + 1;
     }
-    r.lines.pop();
+  }
+  r.lines.insert(at, line);
+  r.stamps.insert(at, ts);
+  while r.lines.len() > r.capacity {
+    r.lines.remove(0);
+    r.stamps.remove(0);
     r.dropped = r.dropped + 1;
   }
+}
+
+// Append at the next implicit timestamp (historical callers/tests).
+pub fn log_ring_push(r: &mut LogRing, method: Str, path: Str, status: Int, ms: Int) {
+  let ts = log_ring_next_ts(r);
+  log_ring_push_at(r, ts, method, path, status, ms);
 }

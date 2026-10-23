@@ -293,6 +293,20 @@ fn main() -> Int {
   log_ring_push(&mut ring3, "GET", "/fast", 200, 5);
   fails = check(body_has(ring3.lines[0], "\"slow\":false"), "ring: slow flag false under threshold", fails);
 
+  // ---- G-4: wall-clock ordering + explicit stamps ----
+  var ring4 = log_ring_new(8, 1000000);
+  log_ring_push_at(&mut ring4, 30, "GET", "/c", 200, 1);
+  log_ring_push_at(&mut ring4, 10, "GET", "/a", 200, 1);
+  log_ring_push_at(&mut ring4, 20, "GET", "/b", 200, 1);
+  log_ring_push_at(&mut ring4, 20, "GET", "/b2", 200, 1);
+  fails = check(log_ring_stamp(&ring4, 0) == 10 && log_ring_stamp(&ring4, 1) == 20
+    && log_ring_stamp(&ring4, 3) == 30
+    && body_has(ring4.lines[0], "/a") && body_has(ring4.lines[1], "/b")
+    && body_has(ring4.lines[2], "/b2") && body_has(ring4.lines[3], "/c"),
+    "ring: lines sorted by wall-clock stamp; equal stamps keep arrival order", fails);
+  fails = check(body_has(ring4.lines[1], "\"ts\":20"),
+    "ring: line carries its explicit ts", fails);
+
   // ---- service-level ring cap in the state ----
   var eng4 = engine_new();
   var st4 = service_state_new();

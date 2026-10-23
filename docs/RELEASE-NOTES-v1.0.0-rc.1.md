@@ -143,9 +143,14 @@ registry package) and **xvector-lattice** (served daemon + stateless router
 
 - **Concurrency is correct-first.** The threaded path is flag-gated
   (`XVECTORD_THREADS`; default sequential) and all engine calls serialize on
-  one coarse mutex. G-3 read snapshots and G-4 metrics-under-concurrency are
-  future work; scale tuning continues. XVC-C-19/C-20 are verified fixed on
-  v0.64.8; the repros stay as regression gates.
+  one coarse mutex. G-3 read snapshots remain future work; scale tuning
+  continues. XVC-C-19/C-20 are verified fixed on v0.64.8; the repros stay as
+  regression gates.
+- **Post-rc.1 update (2026-10-23):** G-4 is complete on the stable pin
+  (v0.64.8 + stdlib `750384f`): atomic service counters, a shared-state
+  `/metrics` in threaded mode, and a wall-clock-ordered slow-log ring;
+  `probe_concurrency` gates exact concurrent totals. The served tier now
+  applies `XVECTOR_API_KEYS` at startup.
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
 - **The web admin is read-only and active-store-scoped.** `/ui` samples the

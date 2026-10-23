@@ -151,6 +151,37 @@ fn body_has(resp: &Vec[UInt8], s: Str) -> Bool {
   return false;
 }
 
+// Parse the decimal integer immediately after `prefix` in the response
+// body (the Prometheus exposition shape `<name> <value>`); -1 when absent.
+fn body_int_after(resp: &Vec[UInt8], prefix: Str) -> Int {
+  let t = slice.str_bytes(prefix);
+  let b0 = body_start(resp);
+  if b0 < 0 || t.len() == 0 { return -1; }
+  var i: Int = b0;
+  while i + t.len() <= resp.len() {
+    var j: Int = 0;
+    var hit: Bool = true;
+    while j < t.len() {
+      if resp[i + j] != t[j] { hit = false; j = t.len(); } else { j = j + 1; }
+    }
+    if hit {
+      var p: Int = i + t.len();
+      var n: Int = 0;
+      var digits: Int = 0;
+      while p < resp.len() && resp[p] >= 48u8 && resp[p] <= 57u8 {
+        n = n * 10 + ((resp[p] - 48u8) as Int);
+        p = p + 1;
+        digits = digits + 1;
+      }
+      if digits > 0 { return n; }
+      // A `# TYPE <name> ...` line also contains `<name> `; keep looking
+      // for the sample line instead of bailing on the first non-digit.
+    }
+    i = i + 1;
+  }
+  return -1;
+}
+
 // ---- server + clients -----------------------------------------------------
 
 fn run_server() -> Int {
@@ -274,6 +305,35 @@ fn main() -> Int {
   let want = CLIENTS * PER_CLIENT;
   fails = check(status_of(&stresp) == 200 && body_has(&stresp, "\"points\":" + int_to_str(want)),
     "stats: exactly " + int_to_str(want) + " points after concurrent writes", fails);
+
+  // ---- G-4: metrics under concurrency -----------------------------------
+  // The 4 clients issued exactly `want` upserts and `want` searches. Both
+  // counters are atomic fetch_adds, so a lost increment shows up as a
+  // short count; the histogram is observed under the shared state lock, so
+  // its count must equal requests_total at scrape time (the scrape renders
+  // before counting itself).
+  let m1 = roundtrip(S_PORT, &mk_req("GET", "/metrics", "", false));
+  let req1 = body_int_after(&m1, "xvector_requests_total ");
+  let lat1 = body_int_after(&m1, "xvector_latency_ms_count ");
+  let ups1 = body_int_after(&m1, "xvector_upsert_ops ");
+  let srch1 = body_int_after(&m1, "xvector_search_ops ");
+  fails = check(status_of(&m1) == 200 && ups1 == want && srch1 == want,
+    "metrics: " + int_to_str(want) + " concurrent upserts + " + int_to_str(want)
+    + " searches counted exactly (got " + int_to_str(ups1) + "/" + int_to_str(srch1) + ")", fails);
+  fails = check(req1 > 0 && lat1 == req1,
+    "metrics: histogram observes every request (count " + int_to_str(lat1)
+    + " == requests_total " + int_to_str(req1) + ")", fails);
+
+  // A second scrape sees the first scrape's own request (counted after its
+  // render), with both counters advancing by exactly one.
+  let m2 = roundtrip(S_PORT, &mk_req("GET", "/metrics", "", false));
+  let req2 = body_int_after(&m2, "xvector_requests_total ");
+  let lat2 = body_int_after(&m2, "xvector_latency_ms_count ");
+  let ups2 = body_int_after(&m2, "xvector_upsert_ops ");
+  let srch2 = body_int_after(&m2, "xvector_search_ops ");
+  fails = check(req2 == req1 + 1 && lat2 == lat1 + 1 && ups2 == ups1 && srch2 == srch1,
+    "metrics: scrape counted once, atomics exact across scrapes ("
+    + int_to_str(req1) + "->" + int_to_str(req2) + ")", fails);
 
   // Quit through a worker; the acceptor stops and joins every worker.
   let qreq = mk_req("GET", "/health", "", true);

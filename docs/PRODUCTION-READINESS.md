@@ -44,13 +44,13 @@ the code merely exists. Blockers are named; blocked work still scores.
 | D | Persistence & durability | 20 | 96 | release-grade | power-loss fault injection |
 | E | Metadata & filtering | 8 | 100 | production | -- |
 | F | API & query surface | 8 | 100 | production | -- |
-| G | Concurrency & scalability | 10 | 65 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg); **G-2 COMPLETE 2026-10-19 on v0.64.8** (threaded accept loop behind `XVECTORD_THREADS`; bounded in-flight, one coarse engine mutex, graceful joins; `probe_concurrency` 54th, green x2 both); C-19 fixed on v0.64.8; remaining G-3 read snapshots / G-4 metrics-under-concurrency / scale tuning |
+| G | Concurrency & scalability | 10 | 72 | buildable | **G-1 COMPLETE 2026-10-18** (natural module-level globals + cross-thread mailbox leg); **G-2 COMPLETE 2026-10-19 on v0.64.8** (threaded accept loop behind `XVECTORD_THREADS`; bounded in-flight, one coarse engine mutex, graceful joins; `probe_concurrency` 54th, green x2 both); C-19 fixed on v0.64.8; **G-4 COMPLETE 2026-10-23** (atomic service counters + shared-state `/metrics` + wall-clock-ordered log ring; `probe_concurrency` exact 32/32 concurrent ops, 67==67 histogram/counter, +1 scrape); remaining G-3 read snapshots / scale tuning |
 | H | Observability & operability | 5 | 88 | release-grade | dashboards/alert wiring (deployment), on-demand recall proxy |
 | I | Testing & verification | 9 | 94 | release-grade | CI runners |
 | J | Ecosystem & release engineering | 8 | 62 | buildable | runners activation, rulesets, staging E2E, xiom.ann/db porter flow (read-only station UI landed) |
 
 **Overall today:** 0.08x95 + 0.10x97 + 0.14x99 + 0.20x95 + 0.08x100 +
-0.08x100 + 0.10x65 + 0.05x88 + 0.09x94 + 0.08x62 = **90.48 -> 90 %**.
+0.08x100 + 0.10x72 + 0.05x88 + 0.09x94 + 0.08x62 = **91.18 -> 91 %**.
 
 ## What 100 % means (definition of production grade)
 
@@ -257,10 +257,18 @@ offset + merged after-id pagination, strict/partial, filter pushdown; gate
 `probe_scatter_gather` 0 fails x2 Windows + full suite/libcheck. v1 limits
 (split batch/range 501, split move 409, split drain 501, fixed part count/
 reshard rebuild) are explicit.
-Remaining: G-3 read snapshots, G-4 metrics-under-concurrency, concurrent
-readers / write serialization model, split resharding/rebalance, scale
-tuning beyond the baseline (`docs/G-PHASE-PLAN.md` slice order); the
-channel handle form (wished) re-opens the channel's own cross-thread leg.
+**G-4 metrics-under-concurrency landed 2026-10-23** on the stable pin:
+the six service counters are heap-cell atomics, the threaded server shares
+one `ServiceState` under the coarse engine mutex (so `/metrics` is live in
+thread mode and histogram/log updates cannot tear), and the log ring is
+sorted by a monotonic completion `ts` so the slow view stays wall-clock
+ordered. `probe_concurrency` proves exact 32/32 concurrent upserts/searches,
+histogram `_count` == `requests_total` (67==67), and +1 per scrape; the
+served tier now applies `XVECTOR_API_KEYS` via `service_state_from_env`.
+Remaining: G-3 read snapshots, concurrent readers / write serialization
+model, split resharding/rebalance, scale tuning beyond the baseline
+(`docs/G-PHASE-PLAN.md` slice order); the channel handle form (wished)
+re-opens the channel's own cross-thread leg.
 
 ### H. Observability & operability -- 88 %
 Done: inline counters + LSN metrics (engine), and the full M-O core:
@@ -271,7 +279,10 @@ sanitized JSON log ring with slow-query flag), the public prometheus-style
 collections/points_active/lsn), `/health` readiness, per-request
 instrumentation through `http_service_handle_state`, and
 `docs/OPERATIONS.md` (runbook + failure domains + backup drill). Gate
-`probe_metrics` (now 24 checks). **`xiom.metrics` 0.2.0 adoption landed
+`probe_metrics` (now 25 checks). **G-4 (2026-10-23)** made the served-tier
+metrics exact under `XVECTORD_THREADS`: atomic counters, a shared-state
+scrape, and a `ts`-sorted slow-log ring (`probe_concurrency` gates the
+concurrent totals). **`xiom.metrics` 0.2.0 adoption landed
 2026-10-10**: the module internals run on the registry package behind the
 same surface (`/metrics` byte-identical; package Histogram/Counter value
 types, lane accessors + percentile helper, package-first-fit buckets),
@@ -1374,8 +1385,24 @@ extraction with the packages lane.
   withdrawn v0.64.9 with the pin. Lane pins stay **v0.64.8 + stdlib
   `750384f`** (Windows `out/stdlib-pin`, WSL `~/.xvector-stdlib-pin`;
   targeted WSL gates use `XVECTOR_BUILD_TIMEOUT=600`). No score change
-  until v0.65.0 + the hotfix are adoptable; G-4 is the next implementable
-  slice, G-3 remains design-gated.
+  until v0.65.0 + the hotfix are adoptable; G-4 was the next implementable
+  slice (now complete below), G-3 remains design-gated.
+
+- **2026-10-23 (G-4 metrics-under-concurrency, 91st pass):** the six
+  service counters are `xiom.sync.atomics` heap-cell atomics; the threaded
+  server shares one `ServiceState` under the coarse engine mutex, so
+  `/metrics` is live in `XVECTORD_THREADS` mode and histogram/log updates
+  cannot tear; the bounded log ring carries a monotonic completion `ts`
+  and inserts in wall-clock order. `probe_concurrency` now gates exact
+  32/32 concurrent upserts/searches, histogram `_count` ==
+  `requests_total` (67==67), and +1 per scrape; `probe_metrics` pins the
+  `ts` ordering (25 checks). The served tier also applies
+  `XVECTOR_API_KEYS`/limit envs through `service_state_from_env`.
+  Evidence: **Windows full battery ALL GATES GREEN** (suite 177/177 x2,
+  libcheck 49/49, SBOM 49 modules/unsafe=0, 58 probes x2, bench smoke,
+  kill matrix); **WSL spot green** (libcheck 49/49, suite 177/177 x2,
+  `probe_metrics` x2, `probe_concurrency` x2 on the 750384f ext4 pin).
+  G 65 -> 72; overall 90 -> 91 %.
 
 ## Update rule
 

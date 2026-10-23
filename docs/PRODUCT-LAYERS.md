@@ -36,8 +36,9 @@ no divergent numeric behavior; the shared suite/probes gate both).
   async replicas via WAL catch-up; no cross-shard transactions needed
   (upserts are last-writer-wins).
 - In-process concurrency: G-2 threaded accept loop is complete behind
-  `XVECTORD_THREADS` (2026-10-19); G-3 read snapshots / G-4
-  metrics-under-concurrency remain (`docs/G-PHASE-PLAN.md`).
+  `XVECTORD_THREADS` (2026-10-19); G-4 atomic counters + shared-state
+  `/metrics` + ordered log ring is complete (2026-10-23); G-3 read
+  snapshots remain (`docs/G-PHASE-PLAN.md`).
 
 ## Gaps before "enterprise tier" claims
 
