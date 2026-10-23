@@ -3831,3 +3831,98 @@ reds; bench loops hard-capped; **cap every app/probe run at 8 GB
 compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
 explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
 ```
+
+## 24. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-23 23:05Z; supersedes 23)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (G-4 complete on the stable pin;
+v0.64.9 still withdrawn; v0.65.0 gate open).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `1fda3d2` (G-4 slice) +
+  this docs-only wrap commit; clean tree; 36 commits ahead before this wrap
+  (37 after); tag v1.0.0-rc.1 = `530b041`.
+- Compiler **v0.64.8** both platforms (lane toolchain; win `c31d9c46`,
+  linux `a8c003c0`); stdlib **pin `750384f`** (`out/stdlib-pin` on Windows,
+  `~/.xvector-stdlib-pin` on WSL; content matches the tag modulo CRLF);
+  packages `b133b1a7`. Do NOT repin to v0.64.9/stdlib-v0.64.9.
+- WSL: always `wsl -d Ubuntu`; targeted WSL gates use
+  `XVECTOR_BUILD_TIMEOUT=600`; the pin is ext4 (fast), the 240s default is
+  only tight for /mnt/e checkouts.
+
+RELEASE STATUS (unchanged)
+- **v0.64.9 WITHDRAWN FROM ADOPTION** (`REL-20261022-1826-compiler`);
+  production stays v0.64.8. The **v0.65.0 production gate** is open
+  (P0 correctness -> P1 hardening -> P2 MCU -> P3 cut;
+  `docs/RELEASE_GATE_v0.65.0.md`, `docs/checklists/v0.65.0.md`).
+- **1615/1243** enum-payload read is fixed on compiler main
+  (`ecd22a225` + `45804b195`; e2e 2646/2646 debug+release) -- v0.65.0
+  acceptance input.
+- **1640/1702** stdlib HTTP/L-6 crash is fixed on stdlib main `f436a5d`
+  (`sb_push_int` stack-buffer miscompile); **hotfix 0.64.10** is prepared on
+  stdlib main (`c2eef6a` release markers) but not yet tagged/published.
+- XVC-C-22 and 1531 remain verified on the withdrawn v0.64.9 with the pin.
+
+G-4 COMPLETE (91st pass, commit `1fda3d2`)
+- Service counters (`src/observability/metrics.xi`) are
+  `xiom.sync.atomics` heap-cell handles, so concurrent `fetch_add`s cannot
+  lose an increment; the lane seam (`service_counter_inc/_value`) and the
+  `/metrics` wire text are unchanged.
+- The threaded server (`src/api/httpd.xi`) owns one shared
+  `G_STATE: ServiceState` initialized by `service_state_from_env()` and
+  updates it under the existing coarse `G_ENGINE_LOCK`; `/metrics` is live
+  in `XVECTORD_THREADS` mode, histograms/log cannot tear, and the served
+  tier now applies `XVECTOR_API_KEYS`/limit envs (closes the documented
+  auth gap). The sequential path reuses the same state via
+  `httpd_once_state`; `httpd_once` keeps its probe seam with a local state.
+- The log ring records a monotonic completion `ts`, inserts in wall-clock
+  order (equal stamps keep arrival order), and evicts the oldest line;
+  `log_ring_push_at` + `log_ring_stamp` are the new seam,
+  `log_ring_push` keeps append behavior for old callers.
+- Gates: `probe_concurrency` now checks exact 32/32 concurrent
+  upserts/searches, histogram `_count` == `requests_total` (67==67), and
+  +1 per scrape; `probe_metrics` (25 checks) pins the `ts` ordering.
+- Evidence: **Windows full battery ALL GATES GREEN** (suite 177/177 x2,
+  libcheck 49/49, SBOM 49 modules/unsafe=0, 58 probes x2, bench smoke,
+  kill matrix); **WSL spot green** (libcheck 49/49, suite 177/177 x2,
+  `probe_metrics` x2, `probe_concurrency` x2). Readiness G 65 -> 72,
+  overall 90 -> 91 %.
+
+NEXT (ordered)
+1) Wait for the **v0.65.0 archive** and **stdlib hotfix 0.64.10**. Then
+   re-pin both, re-run 1615/1243 + 1640/1702 + C-22/1531 + L-6, and the full
+   batteries on both platforms. 1615/1640 are acceptance input.
+2) On stable v0.64.8: **G-3 read snapshots** is now the next G slice but
+   remains design-gated on runtime Send/Sync + a snapshot handle + the
+   mutex-bottleneck data (G-PHASE-PLAN section 3/6). Evaluate/prototype
+   G-3; then scale tuning.
+3) P4 when v0.65.0 + hotfix are adopted (nested codebook arm); P5
+   stdlib-dependent; split resharding/rebalance; optional UI editor/three.js.
+4) Release notes/owner gates (rc.1 greenlight, ann-swap greenlight).
+
+DO FIRST
+1) Bus: `git -C E:\xiom-lang\xiom-relays fetch origin main`, `merge
+   --ff-only`, `python tools/relay.py view --lane xvector`; check 1826
+   (withdrawal/gate), 1615, 1640, 1702, 1945 (bindings restored), 2058
+   (host package store), plus any newer items.
+2) Verify the lane compiler is v0.64.8 and the stdlib pin is 750384f; do not
+   adopt v0.64.9 or stdlib-v0.64.9. Verify the WSL pin too.
+3) Re-run suite x2 + libcheck + `probe_metrics` x2 + `probe_concurrency` x2
+   before editing; WSL targeted with `XVECTOR_BUILD_TIMEOUT=600`.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
+```
+
