@@ -10,20 +10,20 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-22, 89th pass (**v0.64.9 post-release verification;
-  adoption HELD**). L-6 phase B remains green on the v0.64.8 pin (Windows
-  + WSL full 58-probe batteries ALL GATES GREEN; `probe_scatter_gather`
-  0 fails x2; suite 177/177 x2; libcheck 49/49; SBOM 49/0; bench + kill
-  matrix). v0.64.9 side-by-side rows: **XVC-C-22 GREEN Windows + Linux**
-  (`docs/repro/xv-pq-second-call`), **1531 16 GB Job Object build GREEN
-  x2** on Windows, **1243 reproduced as a release-mode enum-payload read
-  returning 0** (`REL-20261022-1615-xvector`, likely the 1451/1550
-  family). **stdlib-v0.64.9 `aa8b656` also crashes the HTTP/L-6 probes on
-  both compilers** (`REL-20261022-1640/1702-xvector`); the lane stdlib is
-  pinned to `out/stdlib-pin` = `750384f` (dev-env prefers it; the shared
-  checkout is live/moved). **Pins stay v0.64.8 + 750384f** per
-  `REL-20261022-1501-orbitdb` and the stdlib hold until fixed artifacts
-  are re-cut; the v0.64.9 pair remains side-by-side only.)
+- **As of:** 2026-10-23, 90th pass (**v0.64.9 WITHDRAWN; v0.65.0
+  production gate opened**). Production stays **v0.64.8 + stdlib
+  `750384f`** (lane pins; dev-env prefers the local copies). L-6 phase B
+  remains green on that pin (Windows + prior WSL full 58-probe batteries
+  ALL GATES GREEN; suite 177/177 x2; libcheck 49/49; SBOM 49/0;
+  `probe_scatter_gather` 0 fails x2; bench + kill matrix). The 89th-pass
+  release rows are now triaged: **XVC-C-22 GREEN Windows + Linux** and
+  **1531 16 GB Job Object build GREEN x2** on the withdrawn v0.64.9
+  archive with the pin; **1615/1243 enum payload read 0 is FIXED on
+  compiler main** (`ecd22a225` + `45804b195`, e2e 2646/2646 debug +
+  release) and is v0.65.0 acceptance input; **1640/1702 stdlib HTTP/L-6
+  crash is FIXED on stdlib main** (`f436a5d`, `sb_push_int` buffer
+  miscompile) with **hotfix 0.64.10 pending**. No score change: no
+  archive is adoptable until v0.65.0 + the stdlib hotfix are green.
 - **Overall:** **90 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1361,6 +1361,21 @@ extraction with the packages lane.
   `out/stdlib-pin` = `750384f`; `scripts/dev-env.*` prefer it. P4 is
   unblocked at the compiler level but not adoptable yet; G-3/G-4 continue
   on the stable compiler + stdlib pin.
+
+- **2026-10-23 (v0.64.9 withdrawn; v0.65.0 gate):** compiler v0.64.9 was
+  withdrawn from adoption (`REL-20261022-1826-compiler`) after the
+  post-release nested-enum/1451/1550 defects; production stays v0.64.8.
+  The v0.65.0 production gate is open (P0 correctness -> P1 hardening ->
+  P2 MCU -> P3 cut; `docs/RELEASE_GATE_v0.65.0.md`). Our high findings are
+  triaged: **1615/1243** enum payload read 0 is fixed on compiler main
+  (`ecd22a225` + `45804b195`; e2e 2646/2646 debug+release), and
+  **1640/1702** stdlib HTTP/L-6 crash is fixed on stdlib main `f436a5d`
+  (hotfix **0.64.10** pending). XVC-C-22 and 1531 remain verified on the
+  withdrawn v0.64.9 with the pin. Lane pins stay **v0.64.8 + stdlib
+  `750384f`** (Windows `out/stdlib-pin`, WSL `~/.xvector-stdlib-pin`;
+  targeted WSL gates use `XVECTOR_BUILD_TIMEOUT=600`). No score change
+  until v0.65.0 + the hotfix are adoptable; G-4 is the next implementable
+  slice, G-3 remains design-gated.
 
 ## Update rule
 
