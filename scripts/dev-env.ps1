@@ -45,9 +45,9 @@ if (Test-Path -LiteralPath $laneCompiler) {
 # Reproducible lane stdlib. The shared checkout is a live lane workspace and
 # moved past the L-6-green commit during the v0.64.9 cycle; prefer a lane
 # pin when present. Recreate with:
-#   git -C E:\xiom-lang\stdlib archive --format=tar -o out\stdlib-pin.tar 750384f
+#   git -C E:\xiom-lang\stdlib archive --format=tar -o out\stdlib-pin.tar stdlib-v0.65.1
 #   mkdir out\stdlib-pin; tar -xf out\stdlib-pin.tar -C out\stdlib-pin
-# Set XVECTOR_STDLIB to override (e.g. the stdlib-v0.64.9 tag for release
+# Set XVECTOR_STDLIB to override (e.g. another release tag for A/B
 # verification); delete out\stdlib-pin to track the shared checkout again.
 $laneStdlib = Join-Path $repoRoot "out\stdlib-pin"
 if ($env:XVECTOR_STDLIB) {

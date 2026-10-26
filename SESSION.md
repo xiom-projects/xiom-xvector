@@ -8,11 +8,11 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-23 (91st: **G-4 metrics-under-concurrency
-COMPLETE** on v0.64.8 + stdlib `750384f` -- atomic service counters,
-shared-state `/metrics` in `XVECTORD_THREADS` mode, wall-clock-ordered
-`ts` log ring; full Windows battery + WSL spot green. v0.64.9 remains
-withdrawn; the v0.65.0 gate is open; see §24).
+**Latest pass:** 2026-10-26 (92nd: **v0.65.1 production ACCEPTED** --
+compiler v0.65.1 + stdlib-v0.65.1 pinned on Windows and WSL; 1615/1243,
+C-22, C-21/1531, 1640/1702 and L-6 verified; Windows **and WSL full
+58-probe batteries ALL GATES GREEN**. v0.64.9 remains withdrawn; v0.65.0
+is superseded; see §25).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -3909,6 +3909,71 @@ DO FIRST
    adopt v0.64.9 or stdlib-v0.64.9. Verify the WSL pin too.
 3) Re-run suite x2 + libcheck + `probe_metrics` x2 + `probe_concurrency` x2
    before editing; WSL targeted with `XVECTOR_BUILD_TIMEOUT=600`.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
+```
+
+## 25. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-26 21:30Z; supersedes 24)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (v0.65.1 accepted; G-4 complete; G-3 next).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `<this wrap commit>` +
+  docs-only handoff; clean tree; 38 commits ahead before this wrap (39
+  after); tag v1.0.0-rc.1 = `530b041`.
+- Compiler **v0.65.1** both platforms (annotated tag `c4329915` on
+  `f2c01cf9c`; Windows archive sha `69de1e27...`, Linux `5785320f...`);
+  lane-local `out\toolchain` / `~/.xvector-toolchain`. Rollback:
+  `out\toolchain-v0648` / `~/.xvector-toolchain-v0648` (v0.64.8).
+- stdlib **v0.65.1** (tag commit `9dc69b3`; full tag archive; release asset
+  sha `d4066233...`), pinned at `out\stdlib-pin` and
+  `~/.xvector-stdlib-pin`. Rollbacks: `out\stdlib-pin-v0648` /
+  `~/.xvector-stdlib-pin-v0648` and `out\stdlib-750384f`.
+- packages `b133b1a7`. v0.64.9 remains withdrawn; v0.65.0 is superseded.
+
+ACCEPTANCE (92nd pass)
+- Official archives + SHA256SUMS verified; pins moved on both platforms.
+- Targeted: **1615/1243 PASS** (`match_n=42`); **XVC-C-22** `second ok m=8`;
+  **1640/1702 + L-6** x2; **1531** 16 GB PROCESS/JOB build x2; C-15 + C-20
+  witnesses green.
+- **Windows full battery ALL GATES GREEN**: suite 177/177 x2, libcheck
+  49/49, SBOM 49/0, 58 probes x2, bench + kill matrix.
+- **WSL full battery ALL GATES GREEN**: same aggregate (suite 177/177 x2,
+  libcheck 49/49, SBOM 49/0, 58 probes x2, bench + kill matrix).
+- v0.65.1 fixes: owned-Vec reclamation + UI soak; C-21/C-22 closed.
+
+NEXT (ordered)
+1) **G-3 read snapshots** is the next feature slice but remains design-gated
+   on runtime Send/Sync + a snapshot handle + mutex-bottleneck data
+   (G-PHASE-PLAN section 3/6). Evaluate/prototype; then scale tuning.
+2) **P4 IVF/PQ** nested codebook arm is unblocked now (C-22 fixed): re-run
+   the P4 build/search/checksum arm before extending.
+3) P5 (stdlib-dependent mmap/disk segments); split resharding/rebalance;
+   optional UI editor/three.js.
+4) Release notes/owner gates (rc.1 greenlight, ann-swap greenlight).
+
+DO FIRST
+1) Bus: `git -C E:\xiom-lang\xiom-relays fetch origin main`, `merge
+   --ff-only`, `python tools/relay.py view --lane xvector`; check the
+   v0.65.1 release item and any newer items.
+2) Verify compiler v0.65.1 and stdlib-v0.65.1 pins on both platforms; do
+   not re-adopt v0.64.9/v0.65.0.
+3) Re-run suite x2 + libcheck + `probe_metrics` x2 + `probe_concurrency` x2
+   before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`.
 
 STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
 

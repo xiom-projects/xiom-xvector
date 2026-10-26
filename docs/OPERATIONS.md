@@ -450,12 +450,13 @@ powershell -File scripts/run-capped.ps1 -FilePath .\out\xvectord.exe `
   -WorkingDirectory . -MaxMemoryMB 8192
 ```
 
-Compiler builds are excluded from the memory cap: the v0.64.8 compiler
-hangs under a memory-limit Job Object. Builds run with a kill-on-close-only
-job (tree cleanup on timeout) plus the watchdog, no RAM limit. This is
-filed as XVC-C-21; revisit when the compiler fix lands.
+Compiler builds default to a kill-on-close-only job (tree cleanup on
+timeout) plus the watchdog. **XVC-C-21 is verified fixed on v0.65.1**
+(2026-10-26: a 16 GB PROCESS/JOB build of `tests/test_conformance.xi` is
+green x2), so the explicit 16 GB cap is safe; the lane keeps the
+conservative default for routine builds.
 
-Shared-stdlib note: the `ee1a95c` (waves 198-201) break was **resolved at
-`750384f`** (2026-10-21; the shared tree builds/checks/suite pass again).
-`XVECTOR_STDLIB_BUNDLED=1` remains a fallback for a broken checkout; the
-release tag `stdlib-v0.64.8` = `0bf5b75` also works.
+Shared-stdlib note: the lane pin is **stdlib-v0.65.1** (tag commit
+`9dc69b3`; `out\stdlib-pin` on Windows, `~/.xvector-stdlib-pin` on WSL).
+The v0.64.8 pin (`750384f`) and `XVECTOR_STDLIB_BUNDLED=1` remain
+rollback/fallback options for a broken checkout.

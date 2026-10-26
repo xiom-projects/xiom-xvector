@@ -151,6 +151,11 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   `/metrics` in threaded mode, and a wall-clock-ordered slow-log ring;
   `probe_concurrency` gates exact concurrent totals. The served tier now
   applies `XVECTOR_API_KEYS` at startup.
+- **Post-rc.1 update (2026-10-26):** the lane accepted **compiler v0.65.1 +
+  stdlib-v0.65.1** (full Windows and WSL batteries green). 1615/1243,
+  C-21/1531, C-22, 1640/1702 and L-6 are verified on the new pin; C-19,
+  C-20, C-21 and C-22 are fixed; P4 is unblocked. v0.64.9 remains
+  withdrawn and v0.64.8 / `750384f` are the rollback pins.
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
 - **The web admin is read-only and active-store-scoped.** `/ui` samples the

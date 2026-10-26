@@ -10,21 +10,17 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-23, 90th pass (**v0.64.9 WITHDRAWN; v0.65.0
-  production gate opened**). Production stays **v0.64.8 + stdlib
-  `750384f`** (lane pins; dev-env prefers the local copies). L-6 phase B
-  remains green on that pin (Windows + prior WSL full 58-probe batteries
-  ALL GATES GREEN; suite 177/177 x2; libcheck 49/49; SBOM 49/0;
-  `probe_scatter_gather` 0 fails x2; bench + kill matrix). The 89th-pass
-  release rows are now triaged: **XVC-C-22 GREEN Windows + Linux** and
-  **1531 16 GB Job Object build GREEN x2** on the withdrawn v0.64.9
-  archive with the pin; **1615/1243 enum payload read 0 is FIXED on
-  compiler main** (`ecd22a225` + `45804b195`, e2e 2646/2646 debug +
-  release) and is v0.65.0 acceptance input; **1640/1702 stdlib HTTP/L-6
-  crash is FIXED on stdlib main** (`f436a5d`, `sb_push_int` buffer
-  miscompile) with **hotfix 0.64.10 pending**. No score change: no
-  archive is adoptable until v0.65.0 + the stdlib hotfix are green.
-- **Overall:** **90 %** (weighted; see method)
+- **As of:** 2026-10-26, 92nd pass (**v0.65.1 production accepted**).
+  Production pins are **compiler v0.65.1** (Windows archive sha
+  `69de1e27...`, Linux `5785320f...`) + **stdlib-v0.65.1** (tag commit
+  `9dc69b3`; full tag archive) on both platforms, with v0.64.8 /
+  `750384f` kept as versioned backups. **Full batteries are green on BOTH
+  platforms**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2,
+  bench + kill matrix. Targeted acceptance on the new pin: **1615/1243
+  PASS** (`match_n=42`), **XVC-C-22** prints `second ok m=8`, **1640/1702 +
+  L-6** x2, **1531 16 GB Job Object build x2**. v0.64.9 remains withdrawn;
+  v0.65.0 is superseded.
+- **Overall:** **91 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
 
@@ -1403,6 +1399,19 @@ extraction with the packages lane.
   kill matrix); **WSL spot green** (libcheck 49/49, suite 177/177 x2,
   `probe_metrics` x2, `probe_concurrency` x2 on the 750384f ext4 pin).
   G 65 -> 72; overall 90 -> 91 %.
+
+- **2026-10-26 (v0.65.1 accepted, 92nd pass):** official Windows
+  (`69de1e27...`) and Linux (`5785320f...`) v0.65.1 archives and the
+  stdlib-v0.65.1 asset (`d4066233...`) were SHA256-verified against
+  SHA256SUMS; v0.65.1 + stdlib-v0.65.1 are now the lane pins on both
+  platforms (v0.64.8 / `750384f` kept as versioned backups). Targeted
+  acceptance is green: 1615/1243 (`match_n=42`, PASS), XVC-C-22
+  (`second ok m=8`), 1640/1702 + L-6 x2, 1531 16 GB Job build x2.
+  **Windows AND WSL full batteries ALL GATES GREEN** (suite 177/177 x2,
+  libcheck 49/49, SBOM 49/0, 58 probes x2, bench smoke, kill matrix);
+  the C-15 and C-20 release-check witnesses are also green on v0.65.1.
+  No score change (toolchain/verification pass); G-3 is the next feature
+  slice.
 
 ## Update rule
 
