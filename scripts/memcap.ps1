@@ -116,8 +116,9 @@ function Set-XvectorMemoryCap {
 }
 
 # Compiler/tool helpers: kill the whole tree on close, but no memory limit.
-# The v0.64.8 compiler hangs under a PROCESS/JOB memory-limit job; this keeps
-# timeout cleanup while leaving compiler memory governed by the watchdog.
+# The v0.64.8 compiler hung under a PROCESS/JOB memory-limit job (XVC-C-21,
+# verified fixed on v0.65.1); this keeps timeout cleanup while leaving
+# routine compiler memory governed by the watchdog.
 function Set-XvectorJobKillOnClose {
     param([Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process)
     if ($Process.HasExited) { return [IntPtr]::Zero }

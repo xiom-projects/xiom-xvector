@@ -1,33 +1,27 @@
 <!-- Copyright (c) 2026 Eleftherios Notas and The XIOM Authors -->
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 
-> **Coordination bus (2026-10-20):** cross-lane items live in the private
-> `xiom-lang/xiom-relays` repo. XVC-C-19 (module-level call/allocating
-> initializer hang) and XVC-C-20 (module-level aggregate global mutation
-> loss) are verified fixed on v0.64.8. **XVC-C-21 is OPEN on v0.64.8:** a
-> compiler build hangs under a Job Object with PROCESS/JOB memory limits
-> (16 GB); a kill-on-close-only job builds normally -- the lane memory-caps
-> app/probe runs but not compiler/tool builds. **XVC-C-22 is OPEN on
-> v0.64.8:** a second `pq_train` call (Option[struct with a Vec]) crashes
-> `0xC0000005`, and one `ivf_pq_build` returns a corrupted nested codebook
-> (P4 prototype reverted; repro `docs/repro/xv-pq-second-call/`). XVC-C-13/
-> C-14/C-16/C-17/C-18 are verified fixed; C-15 and the phantom controls stay
-> green. The shared stdlib `ee1a95c` break is **resolved at `750384f`** (bus
-> `REL-20261020-1531-xvector` acked; `XVECTOR_STDLIB_BUNDLED=1` remains a
-> fallback).
+> **Coordination bus (2026-10-26):** cross-lane items live in the private
+> `xiom-lang/xiom-relays` repo. **XVC-C-19, C-20, C-21 and C-22 are all
+> verified fixed on v0.65.1** (C-21: the 16 GB PROCESS/JOB build is green
+> x2; C-22: `second ok m=8`); **1615/1243** (release-mode enum payload read
+> 0) is fixed on v0.65.1 too. XVC-C-13/C-14/C-16/C-17/C-18 are verified
+> fixed; C-15 and the phantom controls stay green. Lane pins are
+> **compiler v0.65.1 + stdlib-v0.65.1** (tag commit `9dc69b3`; v0.64.8 /
+> `750384f` kept as backups).
 
 # Compiler findings from the XVECTOR lane
 
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.64.5** (current pin; released 2026-10-15,
-tag `84f761c5`, run 38792051847; installed lane-local on Windows
-(`out\toolchain`) and WSL (`~/.xvector-toolchain`); see the isolation note
-in `SESSION.md`),
-Windows + Linux/WSL; stdlib `E:\xiom-lang\stdlib`
-(`/mnt/e/xiom-lang/stdlib` in WSL; tree `ea1c312b` at the v0.64.5 battery);
-registry packages consumed:
+Instrument: **XIOM Compiler v0.65.1** (current pin; released 2026-10-26,
+annotated tag `c4329915` on `f2c01cf9c`; installed lane-local on Windows
+(`out\toolchain`) and WSL (`~/.xvector-toolchain`); Windows archive sha
+`69de1e27...`, Linux `5785320f...`),
+Windows + Linux/WSL; **stdlib-v0.65.1** (tag commit `9dc69b3`; full tag
+archive at `out\stdlib-pin` / `~/.xvector-stdlib-pin`; release asset sha
+`d4066233...`); registry packages consumed:
 `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
 lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
 `docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
@@ -139,8 +133,8 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-16 | **[VERIFIED FIXED on v0.64.6 (m346), both platforms]** **XVC-C-18: JSON object Map-key reads through a `match` enum binding return garbage Strs** -- iterating `entries.keys[i]` where `entries` is bound by `match cv { Object(entries) => ... }` (the keys of a parsed JSON object) reads pointer-shaped garbage instead of the key text; a `Str` charset validator therefore rejects VALID keys (found in `router_mapping_load`, L-3 slice: a valid mapping was refused with "collection name invalid"). Extra datum: `name.len()` on the inferred local is rejected at COMPILE time (`error[T001]: cannot call 'len' on this expression` -- receiver type unresolved) while the same value still coerces into a `Str` parameter => silent garbage instead of a type error. Controls that read correctly: an explicitly-typed local, and copy-out of `entries.keys` into a local Vec before the loop. | `docs/repro/xv-object-key-iter/` (probe + README): v0.64.5 Windows prints `key=[1946864332608]` -> exit 1; expected `key=[docs]`/`[logs]` -> exit 0. No v0.64.4 A/B (tree incompatibility); suspected C-09/C-14/C-16 family, sort against the m339 wave | lane ships the copy-out workaround (`var ks = entries.keys; var name = ks[i];`) -- `probe_router_2shards` 72/72 green; filed `REL-20261016-1541-xvector` (high) | silent wrong string data + valid inputs refused wherever object keys are consumed through match bindings |
 | 2026-10-18 | **[VERIFIED FIXED v0.64.8 (2026-10-19), both platforms]** **XVC-C-19: module-level function-call / allocating `var` initializers hang the compiler** -- a 15-line module with `var G_CH: channel.Channel[Int] = channel.channel_new[Int](4);` or `var G_V: Vec[Int] = Vec[Int].new();` + `var G_CALL: Int = five();` compiles >2 min with no output and no exit (orphaned compiler processes; watchdog-class kill). SHAPE-SENSITIVE: the same channel-call initializer COMPILED inside the much larger `probe_thread_sync` module, whose process then HUNG AT STARTUP before `main` printed (the global initializer appears to run before the runtime/heap is ready). Null-only literal globals are fine. | `docs/repro/xv-global-init-hang/` (probe + README; deliberately NOT in the battery -- it hangs the build). v0.64.7 Windows, 2026-10-18. | lane G-1 probe uses scalar-only globals + a single-slot mailbox under the shared spinlock (14 checks green x2 both platforms); filed `REL-20261018-1518-xvector` (high); channel handle form wished to stdlib (`REL-20261018-1518-xvector-2`) | v0.64.8 (arena/Vec fixes) resolved it: the repro builds+runs (`main started` / `vec global ok`) on Windows + WSL; the natural global-initializer / channel form is usable again |
 | 2026-10-18 | **[VERIFIED FIXED v0.64.8 (2026-10-19), both platforms]** **XVC-C-20: module-level `VectorEngine` global loses mutations through `&mut`** -- `var G: VectorEngine = mem.zeroed[VectorEngine](); G = engine_new(); engine_create_named(&mut G, "scratch", 3, Cosine)` returns `Ok`, but `engine_collection_count(&G)` is `0` and a SECOND create with the same name also returns `Ok` (the first vanished); a later `engine_upsert` violates the active-collection contract (`engine/core.xi:1297`). G-1's small `SyncMutex`/`AtomicInt` globals still work cross-thread; the defect is specific to the large imported-type aggregate with nested container fields. | `docs/repro/xv-global-engine-mutation/` (probe + README): v0.64.7 Windows prints `count after create = 0 (expected 1)` / `second create = Ok (BUG...)`, exit 1. Workarounds: global `Vec[VectorEngine]`/`Vec[Mini]` holder crashes before `main` (exit `-2147483645`, XVC-C-19 family); heap-cell `ptr.read`/`ptr.write` needs a typed pointer cast rejected outside `unsafe` (SBOM gate forbids). | G-2b threaded accept-loop slice implemented, then REVERTED pending the fix (the threaded server started; every post-setup request saw an empty engine); filed `REL-20261018-1815-xvector` (high) | **blocks in-process concurrency** (G-2b/G-3/G-4 sharing patterns); single-writer server + batteries unaffected. Compiler fix (main `56d362a31`): `&mut` on a module-level aggregate passed a temporary; the `&x` Ident path now resolves module globals (aggregate -> `@symbol`, scalar -> slot, pointer -> stored pointer); repro green on main release+debug. Shipped in v0.64.8; lane verified both platforms (count 1 / second create Err); G-2b threaded accept loop landed. |
-| 2026-10-20 | **[OPEN on v0.64.8]** **XVC-C-21: compiler build hangs under a Job Object with PROCESS/JOB memory limits** -- a 16 GB memory-limit job (the all-lane RAM-cap practice) makes the v0.64.8 compiler build hang to the watchdog; `--check` and builds without the job are fine; a kill-on-close-only job builds normally. Workaround: do not memory-cap compiler/tool processes; cap app/probe runs instead (verified: a 1 GB allocation under a 256 MB job raises OOM, and the capped daemon serves normally). | `scripts/memcap.ps1` + `scripts/lib.ps1 -NoMemoryCap`; bus `REL-20261020-1531-xvector-2`; app cap verified | prevents memory-capping compiler lanes; apps unaffected |
-| 2026-10-21 | **[OPEN on v0.64.8]** **XVC-C-22: second `pq_train` call crashes `0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook** -- the P4 IVF-PQ prototype exposed a layout-sensitive aggregate/Vec bug: the second call to the PQ trainer (returns `Option[PQ]` with a `Vec[Float32]`) dies after the first; one build's nested codebook is corrupted (checksum `370608086` -> `534399819`, mean recon L2 `0.84` -> `4.48e28`) and the exact rescore at nprobe=nlist is `0.958-0.964`, not 1.0. Minimal `Option[struct with Vec]` and nested `Inner/Outer` tests pass; the P4 code is reverted. | `docs/repro/xv-pq-second-call/` (self-contained; prints `first ok` then exits `-1073741819`) | blocks P4 IVF/PQ; Flat/HNSW/SQ unaffected |
+| 2026-10-20 | **[VERIFIED FIXED v0.65.1 (2026-10-26)]** **XVC-C-21: compiler build hangs under a Job Object with PROCESS/JOB memory limits** -- a 16 GB memory-limit job (the all-lane RAM-cap practice) makes the v0.64.8 compiler build hang to the watchdog; `--check` and builds without the job are fine; a kill-on-close-only job builds normally. Workaround: do not memory-cap compiler/tool processes; cap app/probe runs instead (verified: a 1 GB allocation under a 256 MB job raises OOM, and the capped daemon serves normally). | `scripts/memcap.ps1` + `scripts/lib.ps1 -NoMemoryCap`; bus `REL-20261020-1531-xvector-2`; app cap verified | prevents memory-capping compiler lanes; apps unaffected. **v0.65.1: 16 GB PROCESS/JOB build of `tests/test_conformance.xi` green x2** |
+| 2026-10-21 | **[VERIFIED FIXED v0.65.1 (2026-10-26)]** **XVC-C-22: second `pq_train` call crashes `0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook** -- the P4 IVF-PQ prototype exposed a layout-sensitive aggregate/Vec bug: the second call to the PQ trainer (returns `Option[PQ]` with a `Vec[Float32]`) dies after the first; one build's nested codebook is corrupted (checksum `370608086` -> `534399819`, mean recon L2 `0.84` -> `4.48e28`) and the exact rescore at nprobe=nlist is `0.958-0.964`, not 1.0. Minimal `Option[struct with Vec]` and nested `Inner/Outer` tests pass; the P4 code is reverted. | `docs/repro/xv-pq-second-call/` (self-contained; prints `first ok` then exits `-1073741819`) | blocks P4 IVF/PQ; Flat/HNSW/SQ unaffected. **v0.65.1: repro prints `second ok m=8`, exit 0** |
 
 ## Notes for the compiler lane
 
@@ -198,6 +192,15 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   C-16/C-17 filings) is bus-routed (`REL-20261015-2142-xvector`,
   `REL-20261015-2216-xvector`, and the closed items). C-01/C-02/C-04 stay
   as deliberate lane choices.
+- Archive status (2026-10-26): **v0.65.1 ACCEPTED** on Windows + WSL
+  (annotated tag `c4329915` on `f2c01cf9c`; win archive sha `69de1e27...`,
+  linux `5785320f...`; stdlib-v0.65.1 tag commit `9dc69b3`, asset sha
+  `d4066233...`). Full batteries ALL GATES GREEN both platforms (suite
+  177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench + kill
+  matrix). Acceptance: 1615/1243 PASS, C-22 `second ok m=8`, 1640/1702 +
+  L-6 x2, 1531 16 GB Job x2; C-15 + C-20 witnesses green. v0.64.9 stays
+  withdrawn; v0.65.0 superseded; v0.64.8 / `750384f` are the rollback
+  pins.
 - Archive status (2026-10-16): **v0.64.5** installed lane-local on Windows
   + WSL (release run `38792051847`, tag `84f761c5`; assets sha256-verified:
   win `bd71e2d3`, linux `246e5e82`). Full re-test: thread gate GREEN on
