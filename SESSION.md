@@ -3932,9 +3932,9 @@ explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
 XIOM XVECTOR -- fresh-context continuation (v0.65.1 accepted; G-4 complete; G-3 next).
 
 STATE
-- E:\xiom-projects\xiom-xvector; branch main; HEAD `<this wrap commit>` +
-  docs-only handoff; clean tree; 38 commits ahead before this wrap (39
-  after); tag v1.0.0-rc.1 = `530b041`.
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `56aa8d6` (v0.65.1
+  adoption) + this docs-only wrap commit; clean tree; 38 commits ahead
+  before this wrap (39 after); tag v1.0.0-rc.1 = `530b041`.
 - Compiler **v0.65.1** both platforms (annotated tag `c4329915` on
   `f2c01cf9c`; Windows archive sha `69de1e27...`, Linux `5785320f...`);
   lane-local `out\toolchain` / `~/.xvector-toolchain`. Rollback:
