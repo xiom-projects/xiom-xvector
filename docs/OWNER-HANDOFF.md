@@ -15,6 +15,12 @@ repository stays private; nothing below happens until the owner greenlights.
   49/49, SBOM/unsafe gate (49 modules, 0 unsafe), 58 probes x2, bench smoke
   + kill matrix. Targeted acceptance: 1615/1243 PASS, XVC-C-22
   `second ok m=8`, 1640/1702 + L-6 x2, 1531 16 GB Job build x2.
+- **v0.65.2 rejected (2026-10-27):** the new aggregate-move reclaim frees
+  a named `Struct{Vec}` after `Vec[Struct].push`, corrupting WAL
+  load/recovery (`probe_wal_file` 10 failures vs 0; repro
+  `docs/repro/xv-vec-struct-push/`). The lane restored v0.65.1 +
+  stdlib-v0.65.1; v0.65.2 is **not** the production pin. Blocker
+  `REL-20261027-1956-xvector`, pending v0.65.3.
 - **Station UI:** read-only web admin at `/ui` (sampled active-store
   scatter + point inspector + search hit highlighting; `probe_ui`); the
   editor/three.js upgrade is a later slice (`docs/UI.md`).
@@ -81,7 +87,7 @@ from the GitHub release set below.
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
-| compiler archive | **v0.65.1 accepted 2026-10-26 -- pins COMPLETE on BOTH platforms** (annotated tag `c4329915` on `f2c01cf9c`; win archive sha `69de1e27...`, linux `5785320f...`; stdlib-v0.65.1 tag commit `9dc69b3`, asset sha `d4066233...`; v0.64.8 / `750384f` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, 1640/1702, L-6 verified**; G-4 complete; **P4 unblocked** | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
+| compiler archive | **v0.65.1 accepted 2026-10-26 -- current pin on BOTH platforms** (annotated tag `c4329915` on `f2c01cf9c`; win archive sha `69de1e27...`, linux `5785320f...`; stdlib-v0.65.1 tag commit `9dc69b3`, asset sha `d4066233...`; v0.64.8 / `750384f` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, 1640/1702, L-6 verified**; G-4 complete; **P4 unblocked**. **v0.65.2 was rejected on 2026-10-27** (named `Struct{Vec}` push reclaim corrupts WAL; `REL-20261027-1956-xvector`), pending v0.65.3 | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
 
 ## 4. Evidence index
 

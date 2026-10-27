@@ -20,6 +20,13 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   PASS** (`match_n=42`), **XVC-C-22** prints `second ok m=8`, **1640/1702 +
   L-6** x2, **1531 16 GB Job Object build x2**. v0.64.9 remains withdrawn;
   v0.65.0 is superseded.
+- **2026-10-27: v0.65.2 REJECTED -- lane restored to v0.65.1.** The
+  named `Struct{..., Vec}` push reclaim regression corrupts WAL
+  load/recovery (`docs/repro/xv-vec-struct-push/`: v0.65.2 `bad=23..32`
+  vs v0.65.1 `bad=0`; `probe_wal_file` 10 failures vs 0). Targeted
+  acceptance was red and the Windows battery aborted with 9+ probe
+  failures. v0.65.1 + stdlib-v0.65.1 remain the accepted pins; the
+  blocker is `REL-20261027-1956-xvector`, pending v0.65.3.
 - **Overall:** **91 %** (weighted; see method)
 - **Level scale:** 0 none - 25 scaffold - 50 buildable - 75 hardened core -
   90 release-grade - 100 production.
@@ -1412,6 +1419,19 @@ extraction with the packages lane.
   the C-15 and C-20 release-check witnesses are also green on v0.65.1.
   No score change (toolchain/verification pass); G-3 is the next feature
   slice.
+
+- **2026-10-27 (v0.65.2 REJECTED, 93rd pass):** v0.65.2 + stdlib-v0.65.2
+  were SHA256-verified and installed, but targeted acceptance went RED:
+  the new aggregate-move reclaim frees a named `Struct{Vec}` after
+  `Vec[Struct].push`, corrupting `wal_load` records (`probe_wal_file`
+  10 failed checks vs 0 on v0.65.1). The minimal repro
+  `docs/repro/xv-vec-struct-push/` is `bad=23..32` on v0.65.2 and `bad=0`
+  on v0.65.1; the Windows battery was aborted with 9+ probe failures
+  (WAL, service limits, orbitdb package, snapshots, multisegment, batch,
+  mote, collection move). Pins were restored to v0.65.1 +
+  stdlib-v0.65.1; v0.65.2 copies are kept for repro only. Blocker
+  `REL-20261027-1956-xvector`; no score change (the lane rejected the
+  release and kept the accepted pin).
 
 ## Update rule
 

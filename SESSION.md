@@ -8,11 +8,12 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-26 (92nd: **v0.65.1 production ACCEPTED** --
-compiler v0.65.1 + stdlib-v0.65.1 pinned on Windows and WSL; 1615/1243,
-C-22, C-21/1531, 1640/1702 and L-6 verified; Windows **and WSL full
-58-probe batteries ALL GATES GREEN**. v0.64.9 remains withdrawn; v0.65.0
-is superseded; see §25).
+**Latest pass:** 2026-10-27 (93rd: **v0.65.2 REJECTED -- lane restored
+to v0.65.1**. The named-struct `Vec[Struct]` push reclaim regression
+corrupts WAL load/recovery (`docs/repro/xv-vec-struct-push/`); targeted
+acceptance was red and the Windows battery aborted with 9+ probe failures.
+v0.65.1 + stdlib-v0.65.1 remain the accepted pins; blocker filed for
+v0.65.3; see §26).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -3991,3 +3992,83 @@ compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
 explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
 ```
 
+
+
+## 26. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-27 20:15Z; supersedes 25)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (v0.65.2 REJECTED; v0.65.1 accepted;
+G-4 complete; G-3 next).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `26095b8` (struct-push
+  repro) + this docs-only wrap commit; clean tree; 43 commits ahead before
+  this wrap (44 after); tag v1.0.0-rc.1 = `530b041`.
+- Production pins are **v0.65.1 + stdlib-v0.65.1** on Windows and WSL
+  (compiler win sha `c31d9c46`, linux `a8c003c0`; stdlib tag `9dc69b3`).
+  v0.64.8 / `750384f` are the older rollback; v0.65.2 copies are kept for
+  repro at `out\toolchain-v0652`, `out\stdlib-pin-v0652`,
+  `~/.xvector-toolchain-v0652`, `~/.xvector-stdlib-pin-v0652`.
+- v0.64.9 remains withdrawn; v0.65.0 and **v0.65.2 are not accepted**;
+  v0.65.1 stays the production pin.
+
+V0.65.2 ACCEPTANCE = RED (93rd pass)
+- Release facts: compiler v0.65.2 production (tag `fe1994b1` on
+  `8ec0904a5`, release 40566604850; win `0a328560...`, linux
+  `ca55a088...`); stdlib-v0.65.2 tag `7d4d48f` (asset `25bc1bd0...`).
+- Target passes: 1615/1243 PASS, C-22 `second ok m=8`, 1640/1702 + L-6 x2,
+  1531 16 GB Job x2, C-15 + C-20 witnesses green, packed-Vec byte gate
+  PASS.
+- **Blocker:** named `var r = R{ id, xs }; rs.push(r);` frees `r.xs` at
+  scope exit although the Vec element retains it. v0.65.2:
+  named-literal `bad=23..32`; v0.65.1 control: `bad=0`; inline literal is
+  green. Repro `docs/repro/xv-vec-struct-push/` (commit `26095b8`).
+- Lane impact: `wal_load` builds `var rec = WalRecord{... payload};
+  w.records.push(rec);`; `probe_wal_file` 10 failed checks on v0.65.2 vs 0
+  on v0.65.1. Windows battery aborted after 9+ probe failures:
+  probe_wal_file, probe_service_limits, probe_package_orbitdb,
+  probe_wal_segment, probe_snapshot, probe_multisegment, probe_batch_ops,
+  probe_mote_embedded, probe_collection_move. Raw file-byte IO,
+  probe_manifest_file and probe_replica were green.
+- Suspect: v0.65.2 borrowed/aggregate Vec reclaim (`8ec0904a5`); aggregate
+  drop survives the `Vec.push` shallow copy. Blocker item
+  `REL-20261027-1956-xvector` (compiler). The v0.65.2 release-check rows
+  were NOT marked verified; re-run on the fixed release.
+
+NEXT (ordered)
+1) Wait for **v0.65.3** with the named-struct push fix. Re-run
+   `docs/repro/xv-vec-struct-push/probe.xi` and `probe_wal_file` first,
+   then 1615/1243, C-21/1531, C-22, 1640/1702, L-6, C-15/C-20, then the
+   full Windows + WSL batteries. Fill the new release-check verdicts.
+2) G-3 read snapshots (design-gated: Send/Sync + snapshot handle +
+   mutex-bottleneck data); then scale tuning.
+3) P4 IVF/PQ nested-codebook re-run (unblocked); P5 mmap; split
+   resharding/rebalance; optional UI editor.
+4) Release notes/owner gates (rc.1 greenlight, ann-swap greenlight).
+5) Website status brief `docs/WEBSITE-STATUS.md`: v0.65.1 accepted;
+   **do not announce v0.65.2** (fixed in the next release). Relay updated.
+
+DO FIRST
+1) Bus: fetch/merge xiom-relays; `python tools/relay.py view --lane
+   xvector`; check the v0.65.2 blocker `REL-20261027-1956-xvector`, the
+   v0.65.2 release item, and any v0.65.3 release item.
+2) Verify compiler v0.65.1 + stdlib-v0.65.1 pins on both platforms; do not
+   re-adopt v0.65.2 without the struct-push repro green.
+3) Re-run suite x2 + libcheck + probe_wal_file x2 + probe_concurrency x2
+   before editing; WSL with XVECTOR_BUILD_TIMEOUT=600.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
+```
