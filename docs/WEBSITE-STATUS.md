@@ -44,7 +44,7 @@ deploy served, no migration.
 
 | Item | Current value | Notes |
 |---|---|---|
-| Project version | **`v1.0.0-rc.1`** | Local candidate tag `530b041`; repository is private |
+| Project version | **`v1.0.0-rc.1`** | Local candidate tag `530b041` (internal; omit the hash from public copy); repository is private |
 | Accepted compiler | **v0.65.1** | Released 2026-10-26; GitHub release `40388025015` |
 | Standard library | **stdlib-v0.65.1** | Tag commit `9dc69b3` |
 | Latest stable compiler | **v0.65.1** | v0.64.9 is **withdrawn**; v0.65.0 is superseded |
