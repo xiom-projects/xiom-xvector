@@ -45,9 +45,9 @@ deploy served, no migration.
 | Item | Current value | Notes |
 |---|---|---|
 | Project version | **`v1.0.0-rc.1`** | Local candidate tag `530b041` (internal; omit the hash from public copy); repository is private |
-| Accepted compiler | **v0.65.1** | Released 2026-10-26; GitHub release `40388025015` |
+| Accepted compiler (xvector) | **v0.65.1** | Released 2026-10-26; GitHub release `40388025015` |
 | Standard library | **stdlib-v0.65.1** | Tag commit `9dc69b3` |
-| Latest stable compiler | **v0.65.1** | v0.64.9 is **withdrawn**; v0.65.0 is superseded |
+| Upstream latest compiler | **v0.65.2** | Released 2026-10-27 but **NOT accepted by xvector** (XVC-C-23 WAL regression); do not pin xvector users to it |
 | Rollback pins | v0.64.8 + stdlib `750384f` | Kept for rollback; do not advertise as latest |
 | Internal readiness | **91 %** (weighted) | "Release-grade"; not "100 % production" |
 | Verified platforms | **Windows x64 + Linux x64** | Full batteries on both; WSL is the Linux test host |
@@ -158,8 +158,16 @@ If it describes "current main", they are included.
 6. **Link to the current public artifacts only after owner greenlight:**
    release notes, docs, and the v0.65.1 toolchain release. The xvector GitHub
    release remains owner-gated.
-7. **Fix the "latest stable" label:** v0.65.1 is latest stable; v0.64.9 is
-   withdrawn; v0.64.8 is rollback-only.
+7. **Fix the "latest stable" label:** v0.65.2 is the upstream latest
+   compiler release, but **xvector has not accepted it**. Keep the xvector
+   install pin on **v0.65.1 + stdlib-v0.65.1**; if the site mirrors compiler
+   releases, label v0.65.2 as upstream-only / not yet xvector-validated until
+   the named `Struct{Vec}` push regression (XVC-C-23) is fixed and the lane
+   re-pins.
+8. **Do not update xvector to v0.65.2.** The 2026-10-27 acceptance was red:
+   WAL load/recovery corruption (`probe_wal_file` 10 failures vs 0 on
+   v0.65.1; repro `docs/repro/xv-vec-struct-push/`). v0.65.1 is the
+   production pin; v0.64.9 stays withdrawn.
 
 ---
 
@@ -238,3 +246,7 @@ Refresh and re-relay when any of these happen:
 - **2026-10-27** -- created after the v0.65.1 acceptance pass. Project
   `v1.0.0-rc.1`, compiler v0.65.1, stdlib-v0.65.1, readiness 91 %, full
   Windows + WSL batteries green; G-3/P4/P5 still outstanding.
+- **2026-10-27 (later)** -- v0.65.2 was released upstream but **rejected
+  by xvector** (named `Struct{Vec}` push reclaim corrupts WAL; XVC-C-23).
+  The xvector pin remains v0.65.1 + stdlib-v0.65.1; do not announce
+  v0.65.2 for xvector until the fixed release is accepted.

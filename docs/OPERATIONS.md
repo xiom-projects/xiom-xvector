@@ -461,6 +461,13 @@ Shared-stdlib note: the lane pin is **stdlib-v0.65.1** (tag commit
 The v0.64.8 pin (`750384f`) and `XVECTOR_STDLIB_BUNDLED=1` remain
 rollback/fallback options for a broken checkout.
 
+**v0.65.2 is not adopted.** The 2026-10-27 acceptance found a named
+`Struct{..., Vec}` push reclaim regression (XVC-C-23) that corrupts WAL
+load/recovery; the lane restored v0.65.1 + stdlib-v0.65.1. v0.65.2
+copies are kept only for repro (`out\toolchain-v0652`,
+`out\stdlib-pin-v0652`, and the WSL `-v0652` names). Wait for the fixed
+release before re-pinning.
+
 Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
 the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was
 restored (17 dirs) and the canonical list is in

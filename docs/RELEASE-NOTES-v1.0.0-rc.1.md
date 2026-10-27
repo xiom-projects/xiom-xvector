@@ -156,6 +156,10 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   C-21/1531, C-22, 1640/1702 and L-6 are verified on the new pin; C-19,
   C-20, C-21 and C-22 are fixed; P4 is unblocked. v0.64.9 remains
   withdrawn and v0.64.8 / `750384f` are the rollback pins.
+- **2026-10-27:** v0.65.2 was released upstream but **rejected by this
+  lane** after acceptance: its named `Struct{Vec}` push reclaim corrupts
+  WAL load/recovery (XVC-C-23). Production stays v0.65.1 +
+  stdlib-v0.65.1 until the fixed release.
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
 - **The web admin is read-only and active-store-scoped.** `/ui` samples the
