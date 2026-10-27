@@ -460,3 +460,12 @@ Shared-stdlib note: the lane pin is **stdlib-v0.65.1** (tag commit
 `9dc69b3`; `out\stdlib-pin` on Windows, `~/.xvector-stdlib-pin` on WSL).
 The v0.64.8 pin (`750384f`) and `XVECTOR_STDLIB_BUNDLED=1` remain
 rollback/fallback options for a broken checkout.
+
+Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
+the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was
+restored (17 dirs) and the canonical list is in
+`REL-20261026-2110-orbitdb`. Before a package-dependent gate after a
+toolchain refresh, confirm the shared store or rely on the lane-local
+`XIOM_HOME` (`out\xiom-home` on Windows, `~/.xvector-home` on WSL). Always
+use `wsl -d Ubuntu ...`: the default distro on this host is
+`docker-desktop`, where `bash`/`xiom` are unavailable.
