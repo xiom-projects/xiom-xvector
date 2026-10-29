@@ -250,3 +250,6 @@ Refresh and re-relay when any of these happen:
   by xvector** (named `Struct{Vec}` push reclaim corrupts WAL; XVC-C-23).
   The xvector pin remains v0.65.1 + stdlib-v0.65.1; do not announce
   v0.65.2 for xvector until the fixed release is accepted.
+- **2026-10-29** -- compiler candidate `ab97014d9` pre-verified green on
+  the xvector XVC-C-23/WAL regression and the v0.65.2-red probes; the pin
+  still stays v0.65.1 until the v0.65.3 archive is accepted.
