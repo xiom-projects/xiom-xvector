@@ -12,8 +12,10 @@ collections, segments, WAL-backed durable writes; the working tree is the
 to v0.65.1**. The named-struct `Vec[Struct]` push reclaim regression
 corrupts WAL load/recovery (`docs/repro/xv-vec-struct-push/`); targeted
 acceptance was red and the Windows battery aborted with 9+ probe failures.
-v0.65.1 + stdlib-v0.65.1 remain the accepted pins; blocker filed for
-v0.65.3; see §26).
+v0.65.1 + stdlib-v0.65.1 remain the accepted pins. Compiler main
+`bb8eccf5a` fixes XVC-C-23; candidate `ab97014d9` is pre-verified green on
+the repro/WAL/all v0.65.2-red probes/station/C-21, but the v0.65.3 archive
+is still awaited; see §26).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -4032,14 +4034,20 @@ V0.65.2 ACCEPTANCE = RED (93rd pass)
   probe_manifest_file and probe_replica were green.
 - Suspect: v0.65.2 borrowed/aggregate Vec reclaim (`8ec0904a5`); aggregate
   drop survives the `Vec.push` shallow copy. Blocker item
-  `REL-20261027-1956-xvector` (compiler). The v0.65.2 release-check rows
-  were NOT marked verified; re-run on the fixed release.
+  `REL-20261027-1956-xvector` (compiler).
+- **Update 2026-10-29:** fixed on main `bb8eccf5a`. Candidate
+  `ab97014d9` (SHA `6D9F2ED0...`) is pre-verified green on XVC-C-23 x2,
+  `probe_wal_file` x2, all nine v0.65.2-red probes, `probe_ui` /
+  `probe_http_server`, and the C-21 16 GB build. Item
+  `REL-20261029-1243-xvector`. The v0.65.3 archive is still awaited; pins
+  stay v0.65.1.
 
 NEXT (ordered)
-1) Wait for **v0.65.3** with the named-struct push fix. Re-run
-   `docs/repro/xv-vec-struct-push/probe.xi` and `probe_wal_file` first,
-   then 1615/1243, C-21/1531, C-22, 1640/1702, L-6, C-15/C-20, then the
-   full Windows + WSL batteries. Fill the new release-check verdicts.
+1) On the **v0.65.3 archive** (fix pre-verified on candidate
+   `ab97014d9`): re-verify `docs/repro/xv-vec-struct-push/probe.xi` and
+   `probe_wal_file` first, then 1615/1243, C-21/1531, C-22, 1640/1702,
+   L-6, C-15/C-20, packed-Vec, then the full Windows + WSL batteries.
+   Fill the new release-check verdicts.
 2) G-3 read snapshots (design-gated: Send/Sync + snapshot handle +
    mutex-bottleneck data); then scale tuning.
 3) P4 IVF/PQ nested-codebook re-run (unblocked); P5 mmap; split
