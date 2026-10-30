@@ -464,10 +464,11 @@ Shared-stdlib note: the lane pin is **stdlib-v0.65.3** (tag commit
 **v0.65.3 is adopted (2026-10-30).** It fixes the v0.65.2 named
 `Struct{..., Vec}` push regression (XVC-C-23) and the WAL recovery
 corruption; both full batteries are green. v0.65.2 and v0.64.9 are
-rejected/superseded. **Known Linux robustness issue:** a client that
-closes during a response can terminate `xvectord` with SIGPIPE; filed as
-`REL-20261030-1645-xvector` (socket_send needs MSG_NOSIGNAL/SIG_IGN).
-Windows is unaffected.
+rejected/superseded. **SIGPIPE-on-disconnect** is fixed in stdlib-v0.65.4
+(`d267317`); the v0.65.4 RC passed `probe_concurrency` x2 and the full WSL
+battery. The production pin v0.65.3 still carries the old runtime until
+the public v0.65.4 is accepted, so treat Linux client disconnects as
+potentially fatal on the current pin. Windows is unaffected.
 
 Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
 the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was

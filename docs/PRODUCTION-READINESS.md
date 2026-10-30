@@ -19,8 +19,9 @@ M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
   x2, bench + kill matrix. Targeted acceptance: **1615/1243 PASS**
   (`match_n=42`), **XVC-C-22** `second ok m=8`, **1640/1702 + L-6** x2,
   **1531 16 GB Job Object build x2**, and the **XVC-C-23 repro x2**.
-  v0.65.2 is rejected/superseded; the SIGPIPE-on-disconnect issue is filed
-  separately (`REL-20261030-1645-xvector`).
+  v0.65.2 is rejected/superseded; the SIGPIPE-on-disconnect issue is
+  **fixed in stdlib-v0.65.4** and verified on the v0.65.4 RC (full WSL
+  battery green), pending the public v0.65.4 acceptance.
 - **2026-10-27: v0.65.2 REJECTED -- lane restored to v0.65.1.** The
   named `Struct{..., Vec}` push reclaim regression corrupts WAL
   load/recovery (`docs/repro/xv-vec-struct-push/`: v0.65.2 `bad=23..32`
@@ -1452,6 +1453,12 @@ extraction with the packages lane.
   `probe_concurrency` run hit a transient SIGPIPE; the targeted retry and
   full rerun were green, and the runtime issue is filed as
   `REL-20261030-1645-xvector`. No score change (toolchain acceptance).
+
+- **2026-10-30 (v0.65.4 RC verified, not yet accepted):** stdlib-v0.65.4
+  (`d267317`) fixes the Linux SIGPIPE-on-disconnect issue. The v0.65.4 RC
+  passed `probe_concurrency` x2 and the full WSL battery ALL GATES GREEN;
+  `REL-20261030-1645-xvector` is verified. The production pin stays
+  v0.65.3 + stdlib-v0.65.3 until the public v0.65.4 archive is accepted.
 
 ## Update rule
 

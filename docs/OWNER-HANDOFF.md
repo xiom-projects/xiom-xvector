@@ -19,9 +19,11 @@ repository stays private; nothing below happens until the owner greenlights.
 - **v0.65.3 accepted (2026-10-30):** published Windows (`8383aa5b...`),
   Linux (`987752c4...`) and stdlib-v0.65.3 (`728db62d...`) assets verified;
   C-23/WAL fixed. **v0.65.2 was rejected** for the named `Struct{Vec}` push
-  reclaim; v0.65.1 is the rollback. **SIGPIPE-on-disconnect** is filed
-  separately (`REL-20261030-1645-xvector`): a Linux client that closes
-  during a response can terminate `xvectord`; Windows is unaffected.
+  reclaim; v0.65.1 is the rollback. **SIGPIPE-on-disconnect** is fixed in
+  stdlib-v0.65.4 (`d267317`); the v0.65.4 RC passed `probe_concurrency` x2
+  and the full WSL battery. The production pin v0.65.3 still carries the
+  old runtime until v0.65.4 is published and accepted; Windows is
+  unaffected.
 - **Station UI:** read-only web admin at `/ui` (sampled active-store
   scatter + point inspector + search hit highlighting; `probe_ui`); the
   editor/three.js upgrade is a later slice (`docs/UI.md`).

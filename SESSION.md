@@ -4108,26 +4108,30 @@ ACCEPTANCE (94th pass)
   `release-checks/packages-compiler-v0.65.3.md`; bus item
   `REL-20261030-1717-xvector`.
 
-OPEN RUNTIME ISSUE
-- **XVC-C-24 / `REL-20261030-1645-xvector`**: Linux client disconnect
-  during a response can kill `xvectord` with SIGPIPE (exit 141).
-  `xiom_socket_send` needs `MSG_NOSIGNAL` or SIGPIPE ignored; Windows is
-  unaffected. The WSL full battery had one transient run-1 failure; the
-  targeted retry and full rerun were green. Treat as a production
-  robustness gap until fixed. Do not regress the server on disconnect.
+RUNTIME ISSUE (FIXED in v0.65.4 RC)
+- **XVC-C-24 / `REL-20261030-1645-xvector`**: SIGPIPE-on-disconnect is
+  fixed in stdlib-v0.65.4 (`d267317`, MSG_NOSIGNAL/SIG_IGN). The v0.65.4
+  RC passed `probe_concurrency` x2 and the **full WSL battery ALL GATES
+  GREEN**; item 1645 is verified. Production pin is still v0.65.3, so the
+  shipped pin still has the bug: verify the published v0.65.4 archive and
+  run the full acceptance before moving the pin.
 
 NEXT (ordered)
-1) G-3 read snapshots (design-gated: runtime Send/Sync + snapshot handle
+1) v0.65.4: when the public release lands, verify the published
+   Windows/Linux archives + stdlib-v0.65.4, re-run C-23/WAL and the full
+   Windows + WSL batteries, fill the v0.65.4 release-check, then move the
+   pin.
+2) G-3 read snapshots (design-gated: runtime Send/Sync + snapshot handle
    + mutex-bottleneck data); then scale tuning.
-2) P4 IVF/PQ nested-codebook re-run (C-22 fixed); P5 stdlib mmap; split
+3) P4 IVF/PQ nested-codebook re-run (C-22 fixed); P5 stdlib mmap; split
    resharding/rebalance; optional UI editor.
-3) Top-tier parity program: freeze the reference clones (M0) and fill
+4) Top-tier parity program: freeze the reference clones (M0) and fill
    `docs/TOP-TIER-PARITY-MATRIX.md`; `docs/TOP-TIER-PARITY.md` defines the
    unit method (package and standalone scored separately, never blended
    with the 91 % v1 readiness).
-4) Website status brief `docs/WEBSITE-STATUS.md` now says v0.65.3 accepted
+5) Website status brief `docs/WEBSITE-STATUS.md` now says v0.65.3 accepted
    and v0.65.2 superseded; relay it if the website has not applied it.
-5) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
+6) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
 
 DO FIRST
 1) Bus: fetch/merge xiom-relays; `python tools/relay.py view --lane
@@ -4136,7 +4140,9 @@ DO FIRST
 2) Verify compiler v0.65.3 + stdlib-v0.65.3 pins on both platforms; do not
    re-adopt v0.65.2.
 3) Re-run suite x2 + libcheck + `probe_concurrency` x2 + `probe_wal_file`
-   x2 before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`.
+   x2 before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`. Watch for the
+   **public v0.65.4** release (SIGPIPE fixed); pin stays v0.65.3 until it
+   is accepted.
 
 STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
 
