@@ -10,16 +10,17 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-26, 92nd pass (**v0.65.1 production accepted**).
-  Production pins are **compiler v0.65.1** (Windows archive sha
-  `69de1e27...`, Linux `5785320f...`) + **stdlib-v0.65.1** (tag commit
-  `9dc69b3`; full tag archive) on both platforms, with v0.64.8 /
-  `750384f` kept as versioned backups. **Full batteries are green on BOTH
-  platforms**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2,
-  bench + kill matrix. Targeted acceptance on the new pin: **1615/1243
-  PASS** (`match_n=42`), **XVC-C-22** prints `second ok m=8`, **1640/1702 +
-  L-6** x2, **1531 16 GB Job Object build x2**. v0.64.9 remains withdrawn;
-  v0.65.0 is superseded.
+- **As of:** 2026-10-30, 94th pass (**v0.65.3 production accepted**).
+  Production pins are **compiler v0.65.3** (Windows archive sha
+  `8383aa5b...`, Linux `987752c4...`) + **stdlib-v0.65.3** (tag commit
+  `26ede85`; release asset sha `728db62d...`) on both platforms, with
+  v0.65.1 / `9dc69b3` kept as the rollback. **Full batteries are green on
+  BOTH platforms**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes
+  x2, bench + kill matrix. Targeted acceptance: **1615/1243 PASS**
+  (`match_n=42`), **XVC-C-22** `second ok m=8`, **1640/1702 + L-6** x2,
+  **1531 16 GB Job Object build x2**, and the **XVC-C-23 repro x2**.
+  v0.65.2 is rejected/superseded; the SIGPIPE-on-disconnect issue is filed
+  separately (`REL-20261030-1645-xvector`).
 - **2026-10-27: v0.65.2 REJECTED -- lane restored to v0.65.1.** The
   named `Struct{..., Vec}` push reclaim regression corrupts WAL
   load/recovery (`docs/repro/xv-vec-struct-push/`: v0.65.2 `bad=23..32`
@@ -1432,6 +1433,17 @@ extraction with the packages lane.
   stdlib-v0.65.1; v0.65.2 copies are kept for repro only. Blocker
   `REL-20261027-1956-xvector`; no score change (the lane rejected the
   release and kept the accepted pin).
+
+- **2026-10-30 (v0.65.3 accepted, 94th pass):** published Windows
+  (`8383aa5b...`) and Linux (`987752c4...`) archives and stdlib-v0.65.3
+  (`728db62d...`, tag `26ede85`) were verified; pins moved on both
+  platforms (v0.65.1 kept as rollback). XVC-C-23 repro x2, WAL x2,
+  1615/1243, C-22, 1640/1702 + L-6 x2 and 1531 16 GB Job x2 are green.
+  **Windows AND WSL full 58-probe batteries ALL GATES GREEN** (suite
+  177/177 x2, libcheck 49/49, SBOM 49/0, bench + kill matrix). One WSL
+  `probe_concurrency` run hit a transient SIGPIPE; the targeted retry and
+  full rerun were green, and the runtime issue is filed as
+  `REL-20261030-1645-xvector`. No score change (toolchain acceptance).
 
 ## Update rule
 

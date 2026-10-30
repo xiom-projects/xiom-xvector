@@ -8,14 +8,12 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-27 (93rd: **v0.65.2 REJECTED -- lane restored
-to v0.65.1**. The named-struct `Vec[Struct]` push reclaim regression
-corrupts WAL load/recovery (`docs/repro/xv-vec-struct-push/`); targeted
-acceptance was red and the Windows battery aborted with 9+ probe failures.
-v0.65.1 + stdlib-v0.65.1 remain the accepted pins. Compiler main
-`bb8eccf5a` fixes XVC-C-23; candidate `ab97014d9` is pre-verified green on
-the repro/WAL/all v0.65.2-red probes/station/C-21, but the v0.65.3 archive
-is still awaited; see §26).
+**Latest pass:** 2026-10-30 (94th: **v0.65.3 production ACCEPTED** --
+compiler v0.65.3 + stdlib-v0.65.3 pinned on Windows and WSL; published
+assets verified (win `8383aa5b...`, linux `987752c4...`, stdlib
+`728db62d...`); C-23/WAL fixed; 1615/1243, C-22, 1531, 1640/1702 and L-6
+green; Windows and WSL full 58-probe batteries ALL GATES GREEN. v0.65.2
+rejected/superseded; SIGPIPE-on-disconnect filed separately; see section 27).
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -4064,6 +4062,76 @@ DO FIRST
    re-adopt v0.65.2 without the struct-push repro green.
 3) Re-run suite x2 + libcheck + probe_wal_file x2 + probe_concurrency x2
    before editing; WSL with XVECTOR_BUILD_TIMEOUT=600.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
+```
+
+
+## 27. PASTE PROMPT for the next XVECTOR session (refresh 2026-10-30 18:20Z; supersedes 26)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (v0.65.3 ACCEPTED; G-4 complete;
+G-3 next).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `<this wrap commit>` +
+  docs-only handoff; clean tree; 45 commits ahead before this wrap (46
+  after); tag v1.0.0-rc.1 = `530b041`.
+- Production pins: **compiler v0.65.3** (win archive sha `8383aa5b...`,
+  linux `987752c4...`) + **stdlib-v0.65.3** (tag `26ede85`, asset
+  `728db62d...`) on Windows and WSL. Rollback: v0.65.1 (`9dc69b3`).
+- v0.65.2 is rejected/superseded; v0.64.9 stays withdrawn.
+
+ACCEPTANCE (94th pass)
+- Published assets verified (not the RC): win `8383aa5b...`, linux
+  `987752c4...`, stdlib `728db62d...`; both tools 0.65.3.
+- **Windows full battery ALL GATES GREEN** and **WSL full battery ALL
+  GATES GREEN**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes
+  x2, bench + kill matrix.
+- Targeted: **XVC-C-23 x2**, **WAL x2**, 1615/1243 PASS, C-22
+  `second ok m=8`, 1640/1702 + L-6 x2, 1531 16 GB Job x2, C-15/C-20
+  green. v0.65.3 xvector verdict filed in
+  `release-checks/packages-compiler-v0.65.3.md`; bus item
+  `REL-20261030-1717-xvector`.
+
+OPEN RUNTIME ISSUE
+- **XVC-C-24 / `REL-20261030-1645-xvector`**: Linux client disconnect
+  during a response can kill `xvectord` with SIGPIPE (exit 141).
+  `xiom_socket_send` needs `MSG_NOSIGNAL` or SIGPIPE ignored; Windows is
+  unaffected. The WSL full battery had one transient run-1 failure; the
+  targeted retry and full rerun were green. Treat as a production
+  robustness gap until fixed. Do not regress the server on disconnect.
+
+NEXT (ordered)
+1) G-3 read snapshots (design-gated: runtime Send/Sync + snapshot handle
+   + mutex-bottleneck data); then scale tuning.
+2) P4 IVF/PQ nested-codebook re-run (C-22 fixed); P5 stdlib mmap; split
+   resharding/rebalance; optional UI editor.
+3) Website status brief `docs/WEBSITE-STATUS.md` now says v0.65.3 accepted
+   and v0.65.2 superseded; relay it if the website has not applied it.
+4) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
+
+DO FIRST
+1) Bus: fetch/merge xiom-relays; `python tools/relay.py view --lane
+   xvector`; check for a SIGPIPE runtime fix, a v0.65.4 release, and any
+   new xvector items.
+2) Verify compiler v0.65.3 + stdlib-v0.65.3 pins on both platforms; do not
+   re-adopt v0.65.2.
+3) Re-run suite x2 + libcheck + `probe_concurrency` x2 + `probe_wal_file`
+   x2 before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`.
 
 STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
 

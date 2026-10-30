@@ -7,33 +7,31 @@
 > x2; C-22: `second ok m=8`); **1615/1243** (release-mode enum payload read
 > 0) is fixed on v0.65.1 too. XVC-C-13/C-14/C-16/C-17/C-18 are verified
 > fixed; C-15 and the phantom controls stay green. Lane pins are
-> **compiler v0.65.1 + stdlib-v0.65.1** (tag commit `9dc69b3`; v0.64.8 /
-> `750384f` kept as backups).
+> **compiler v0.65.3 + stdlib-v0.65.3** (tag `26ede85`; v0.65.1 /
+> `9dc69b3` kept as rollback).
 >
 > **v0.65.2 REJECTED (2026-10-27):** the new aggregate-move reclaim frees
 > a named `Struct{..., Vec}` after `Vec[Struct].push` (XVC-C-23),
-> corrupting WAL load/recovery. Lane restored v0.65.1 + stdlib-v0.65.1;
-> v0.65.2 copies are kept for repro only. See
+> corrupting WAL load/recovery. v0.65.2 is superseded. See
 > `docs/repro/xv-vec-struct-push/` and `REL-20261027-1956-xvector`.
 >
-> **Candidate pre-verification (2026-10-29):** compiler `ab97014d9`
-> (SHA256 `6D9F2ED0...`) is green on XVC-C-23 x2, `probe_wal_file` x2,
-> all nine probes that were red on v0.65.2, `probe_ui`/`probe_http_server`,
-> and the C-21 16 GB build. Pin stays v0.65.1 until the v0.65.3 archive is
-> accepted.
+> **v0.65.3 ACCEPTED (2026-10-30):** published Win `8383aa5b...`, Linux
+> `987752c4...`, stdlib `728db62d...`; the C-23/WAL fix is verified;
+> Windows and WSL full batteries are green. Candidate `ab97014d9` was
+> pre-verified on 2026-10-29.
 
 # Compiler findings from the XVECTOR lane
 
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.65.1** (current accepted pin; released
-2026-10-26, annotated tag `c4329915` on `f2c01cf9c`; installed lane-local
+Instrument: **XIOM Compiler v0.65.3** (current accepted pin; released
+2026-10-30, annotated tag `8cf720c3` on `e2f238cb6`; installed lane-local
 on Windows (`out\toolchain`) and WSL (`~/.xvector-toolchain`); Windows
-archive sha `69de1e27...`, Linux `5785320f...`),
-Windows + Linux/WSL; **stdlib-v0.65.1** (tag commit `9dc69b3`; full tag
+archive sha `8383aa5b...`, Linux `987752c4...`),
+Windows + Linux/WSL; **stdlib-v0.65.3** (tag commit `26ede85`; full tag
 archive at `out\stdlib-pin` / `~/.xvector-stdlib-pin`; release asset sha
-`d4066233...`); registry packages consumed:
+`728db62d...`); registry packages consumed:
 `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
 lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
 `docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
@@ -147,7 +145,8 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
 | 2026-10-18 | **[VERIFIED FIXED v0.64.8 (2026-10-19), both platforms]** **XVC-C-20: module-level `VectorEngine` global loses mutations through `&mut`** -- `var G: VectorEngine = mem.zeroed[VectorEngine](); G = engine_new(); engine_create_named(&mut G, "scratch", 3, Cosine)` returns `Ok`, but `engine_collection_count(&G)` is `0` and a SECOND create with the same name also returns `Ok` (the first vanished); a later `engine_upsert` violates the active-collection contract (`engine/core.xi:1297`). G-1's small `SyncMutex`/`AtomicInt` globals still work cross-thread; the defect is specific to the large imported-type aggregate with nested container fields. | `docs/repro/xv-global-engine-mutation/` (probe + README): v0.64.7 Windows prints `count after create = 0 (expected 1)` / `second create = Ok (BUG...)`, exit 1. Workarounds: global `Vec[VectorEngine]`/`Vec[Mini]` holder crashes before `main` (exit `-2147483645`, XVC-C-19 family); heap-cell `ptr.read`/`ptr.write` needs a typed pointer cast rejected outside `unsafe` (SBOM gate forbids). | G-2b threaded accept-loop slice implemented, then REVERTED pending the fix (the threaded server started; every post-setup request saw an empty engine); filed `REL-20261018-1815-xvector` (high) | **blocks in-process concurrency** (G-2b/G-3/G-4 sharing patterns); single-writer server + batteries unaffected. Compiler fix (main `56d362a31`): `&mut` on a module-level aggregate passed a temporary; the `&x` Ident path now resolves module globals (aggregate -> `@symbol`, scalar -> slot, pointer -> stored pointer); repro green on main release+debug. Shipped in v0.64.8; lane verified both platforms (count 1 / second create Err); G-2b threaded accept loop landed. |
 | 2026-10-20 | **[VERIFIED FIXED v0.65.1 (2026-10-26)]** **XVC-C-21: compiler build hangs under a Job Object with PROCESS/JOB memory limits** -- a 16 GB memory-limit job (the all-lane RAM-cap practice) makes the v0.64.8 compiler build hang to the watchdog; `--check` and builds without the job are fine; a kill-on-close-only job builds normally. Workaround: do not memory-cap compiler/tool processes; cap app/probe runs instead (verified: a 1 GB allocation under a 256 MB job raises OOM, and the capped daemon serves normally). | `scripts/memcap.ps1` + `scripts/lib.ps1 -NoMemoryCap`; bus `REL-20261020-1531-xvector-2`; app cap verified | prevents memory-capping compiler lanes; apps unaffected. **v0.65.1: 16 GB PROCESS/JOB build of `tests/test_conformance.xi` green x2** |
 | 2026-10-21 | **[VERIFIED FIXED v0.65.1 (2026-10-26)]** **XVC-C-22: second `pq_train` call crashes `0xC0000005`; one `ivf_pq_build` returns a corrupted nested codebook** -- the P4 IVF-PQ prototype exposed a layout-sensitive aggregate/Vec bug: the second call to the PQ trainer (returns `Option[PQ]` with a `Vec[Float32]`) dies after the first; one build's nested codebook is corrupted (checksum `370608086` -> `534399819`, mean recon L2 `0.84` -> `4.48e28`) and the exact rescore at nprobe=nlist is `0.958-0.964`, not 1.0. Minimal `Option[struct with Vec]` and nested `Inner/Outer` tests pass; the P4 code is reverted. | `docs/repro/xv-pq-second-call/` (self-contained; prints `first ok` then exits `-1073741819`) | blocks P4 IVF/PQ; Flat/HNSW/SQ unaffected. **v0.65.1: repro prints `second ok m=8`, exit 0** |
-| 2026-10-27 | **[FIXED on main `bb8eccf5a`; candidate `ab97014d9` green; awaiting v0.65.3 archive]** **XVC-C-23: a named `Struct{..., Vec}` pushed into `Vec[Struct]` has its Vec freed at scope exit** -- `var r = R{ id: i, xs: xs }; rs.push(r);` stores a shallow copy of the Vec handle in the element, then the aggregate drop for `r` frees `r.xs`; later allocations reuse the buffer and element fields read as corrupt values. The inline form `rs.push(R{ id: i, xs: ys });` is green. This is the v0.65.2 borrowed/aggregate Vec reclaim (`8ec0904a5`) over-reaching across `Vec.push`. | `docs/repro/xv-vec-struct-push/` (probe + README): v0.65.2 named-literal `bad=23..32 first=0`, inline `bad=0`; v0.65.1 control both `bad=0`, `PASS`. Lane impact: `wal_load` builds `var rec = WalRecord{... payload}; w.records.push(rec);`; `probe_wal_file` 10 failed checks vs 0 on v0.65.1. | Restore v0.65.1 + stdlib-v0.65.1; the inline-literal form is green if forced. Do not adopt v0.65.2. | **Release blocker**: WAL recovery/payload paths corrupt; Windows battery aborted with 9+ probe failures. Bus `REL-20261027-1956-xvector`; fixed on main `bb8eccf5a`, candidate `ab97014d9` green on XVC-C-23/WAL/all v0.65.2-red probes/C-21; await v0.65.3 archive. |
+| 2026-10-27 | **[VERIFIED FIXED v0.65.3 (2026-10-30)]** **XVC-C-23: a named `Struct{..., Vec}` pushed into `Vec[Struct]` has its Vec freed at scope exit** -- `var r = R{ id: i, xs: xs }; rs.push(r);` stores a shallow copy of the Vec handle in the element, then the aggregate drop for `r` frees `r.xs`; later allocations reuse the buffer and element fields read as corrupt values. The inline form `rs.push(R{ id: i, xs: ys });` is green. This is the v0.65.2 borrowed/aggregate Vec reclaim (`8ec0904a5`) over-reaching across `Vec.push`. | `docs/repro/xv-vec-struct-push/` (probe + README): v0.65.2 named-literal `bad=23..32 first=0`, inline `bad=0`; v0.65.1 control both `bad=0`, `PASS`. Lane impact: `wal_load` builds `var rec = WalRecord{... payload}; w.records.push(rec);`; `probe_wal_file` 10 failed checks vs 0 on v0.65.1. | Restore v0.65.1 + stdlib-v0.65.1; the inline-literal form is green if forced. Do not adopt v0.65.2. | **Release blocker**: WAL recovery/payload paths corrupt; Windows battery aborted with 9+ probe failures. Bus `REL-20261027-1956-xvector`; v0.65.3 published: C-23/WAL/all v0.65.2-red probes/C-21 green. |
+| 2026-10-30 | **[OPEN on v0.65.3; Linux/WSL only]** **XVC-C-24: a client disconnect during a response can kill `xvectord` with SIGPIPE (exit 141)** -- `xiom_socket_send` calls POSIX `send` without `MSG_NOSIGNAL` and the process does not ignore SIGPIPE; `os.on_signal` is an empty stub and `signal_handle` is unavailable. | WSL full battery: `probe_concurrency` run 1 exit 141 after setup; run 2 green; targeted retry x2 green. Windows unaffected. | Pin stays v0.65.3; treat Linux client disconnects as potentially fatal until the runtime fix. | **Production robustness**: client disconnect can terminate the server; item `REL-20261030-1645-xvector`. |
 
 ## Notes for the compiler lane
 
@@ -205,6 +204,13 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   C-16/C-17 filings) is bus-routed (`REL-20261015-2142-xvector`,
   `REL-20261015-2216-xvector`, and the closed items). C-01/C-02/C-04 stay
   as deliberate lane choices.
+- Archive status (2026-10-30): **v0.65.3 ACCEPTED** on Windows + WSL
+  (tag `8cf720c3` on `e2f238cb6`; win archive sha `8383aa5b...`, linux
+  `987752c4...`; stdlib-v0.65.3 tag `26ede85`, asset `728db62d...`). Full
+  batteries ALL GATES GREEN both platforms; C-23/WAL fixed; 1615/1243,
+  C-22, C-21/1531, 1640/1702, L-6 verified. v0.65.1 is the rollback;
+  v0.65.2 is rejected/superseded. SIGPIPE-on-disconnect remains open
+  (XVC-C-24).
 - Archive status (2026-10-27): **v0.65.2 REJECTED**. Archives and
   stdlib-v0.65.2 were SHA256-verified and installed, but the named
   `Struct{Vec}` push regression (XVC-C-23) corrupted WAL load/recovery:

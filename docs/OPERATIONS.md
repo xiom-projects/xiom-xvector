@@ -456,17 +456,18 @@ timeout) plus the watchdog. **XVC-C-21 is verified fixed on v0.65.1**
 green x2), so the explicit 16 GB cap is safe; the lane keeps the
 conservative default for routine builds.
 
-Shared-stdlib note: the lane pin is **stdlib-v0.65.1** (tag commit
-`9dc69b3`; `out\stdlib-pin` on Windows, `~/.xvector-stdlib-pin` on WSL).
-The v0.64.8 pin (`750384f`) and `XVECTOR_STDLIB_BUNDLED=1` remain
-rollback/fallback options for a broken checkout.
+Shared-stdlib note: the lane pin is **stdlib-v0.65.3** (tag commit
+`26ede85`; asset sha `728db62d...`; `out\stdlib-pin` on Windows,
+`~/.xvector-stdlib-pin` on WSL). The v0.65.1 pin (`9dc69b3`) and
+`XVECTOR_STDLIB_BUNDLED=1` remain rollback/fallback options.
 
-**v0.65.2 is not adopted.** The 2026-10-27 acceptance found a named
-`Struct{..., Vec}` push reclaim regression (XVC-C-23) that corrupts WAL
-load/recovery; the lane restored v0.65.1 + stdlib-v0.65.1. v0.65.2
-copies are kept only for repro (`out\toolchain-v0652`,
-`out\stdlib-pin-v0652`, and the WSL `-v0652` names). Wait for the fixed
-release before re-pinning.
+**v0.65.3 is adopted (2026-10-30).** It fixes the v0.65.2 named
+`Struct{..., Vec}` push regression (XVC-C-23) and the WAL recovery
+corruption; both full batteries are green. v0.65.2 and v0.64.9 are
+rejected/superseded. **Known Linux robustness issue:** a client that
+closes during a response can terminate `xvectord` with SIGPIPE; filed as
+`REL-20261030-1645-xvector` (socket_send needs MSG_NOSIGNAL/SIG_IGN).
+Windows is unaffected.
 
 Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
 the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was

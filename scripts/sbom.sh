@@ -8,7 +8,7 @@ mkdir -p "$out"
 stdlib_pin="$(git -C /mnt/e/xiom-lang/stdlib rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # `|| true` absorbs the pipefail/SIGPIPE race when head closes early; without
 # it the fallback echo would append "unknown" to the captured version line.
-compiler="$(xiom --version 2>/dev/null | head -n 1 || true)"
+compiler="$("${XIOM_COMPILER:-xiom}" --version 2>/dev/null | head -n 1 || true)"
 if [ -z "$compiler" ]; then compiler="unknown"; fi
 app_version="$(head -1 "$root/VERSION" 2>/dev/null || echo unknown)"
 

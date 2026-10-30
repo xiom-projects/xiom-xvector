@@ -26,7 +26,7 @@ in one engine and one on-disk format.
 
 **Current project status:** `v1.0.0-rc.1` (release candidate, private repository;
 public release is owner-gated), internal readiness **91 %**, accepted toolchain
-**compiler v0.65.1 + stdlib-v0.65.1**.
+**compiler v0.65.3 + stdlib-v0.65.3**.
 
 Two shapes of the same engine:
 
@@ -45,17 +45,17 @@ deploy served, no migration.
 | Item | Current value | Notes |
 |---|---|---|
 | Project version | **`v1.0.0-rc.1`** | Local candidate tag `530b041` (internal; omit the hash from public copy); repository is private |
-| Accepted compiler (xvector) | **v0.65.1** | Released 2026-10-26; GitHub release `40388025015` |
-| Standard library | **stdlib-v0.65.1** | Tag commit `9dc69b3` |
-| Upstream latest compiler | **v0.65.2** | Released 2026-10-27 but **NOT accepted by xvector** (XVC-C-23 WAL regression); do not pin xvector users to it |
-| Rollback pins | v0.64.8 + stdlib `750384f` | Kept for rollback; do not advertise as latest |
+| Accepted compiler (xvector) | **v0.65.3** | Released 2026-10-30; published assets verified |
+| Standard library | **stdlib-v0.65.3** | Tag commit `26ede85`; asset sha `728db62d...` |
+| Upstream latest compiler | **v0.65.3** | Accepted by xvector; v0.65.2 rejected/superseded, v0.64.9 withdrawn |
+| Rollback pins | v0.65.1 + stdlib `9dc69b3` | Kept for rollback; do not advertise as latest |
 | Internal readiness | **91 %** (weighted) | "Release-grade"; not "100 % production" |
 | Verified platforms | **Windows x64 + Linux x64** | Full batteries on both; WSL is the Linux test host |
 | Release ownership | mote = registry package; lattice = ops-owned release set | xvector GitHub release is owner-gated while the repo is private |
 
 **Do not confuse the two version lines on the site:** `v1.0.0-rc.1` is the
-xiom-vector project. `v0.65.1` is the XIOM compiler/toolchain that builds it.
-Do not label the xvector product "v0.65.1".
+xiom-vector project. `v0.65.3` is the XIOM compiler/toolchain that builds it.
+Do not label the xvector product "v0.65.3".
 
 ---
 
@@ -139,16 +139,16 @@ If it describes "current main", they are included.
 
 ## 5. Website changes to make now
 
-1. **Remove the v0.64.9 HELD banner.** v0.65.1 is the accepted production
-   toolchain (released 2026-10-26). v0.64.9 stays withdrawn; v0.65.0 is
-   superseded.
+1. **Remove the v0.64.9 HELD banner.** v0.65.3 is the accepted production
+   toolchain (released 2026-10-30). v0.64.9 stays withdrawn; v0.65.0 and
+   v0.65.2 are superseded.
 2. **Update install pins** on download/install pages:
-   - compiler: `--version v0.65.1`
-   - stdlib: `stdlib-v0.65.1`
-   - rollback: `v0.64.8` + stdlib `750384f`
-   - Do not present v0.64.9 or v0.65.0 as current.
+   - compiler: `--version v0.65.3`
+   - stdlib: `stdlib-v0.65.3`
+   - rollback: `v0.65.1` + stdlib `9dc69b3`
+   - Do not present v0.64.9, v0.65.0 or v0.65.2 as current.
 3. **Keep the product version distinct:** xvector is `v1.0.0-rc.1`; the
-   toolchain is v0.65.1.
+   toolchain is v0.65.3.
 4. **Refresh the feature matrix** to include: L-6 intra-collection
    scatter-gather (post-rc.1), router/replicas/move-drain, auth scopes + rate
    limiting, `/metrics` + ordered log ring, read-only `/ui`.
@@ -156,18 +156,15 @@ If it describes "current main", they are included.
    readiness", not "full production". Put TLS/encryption-at-rest and
    read-snapshot limitations in the operations/security notes.
 6. **Link to the current public artifacts only after owner greenlight:**
-   release notes, docs, and the v0.65.1 toolchain release. The xvector GitHub
+   release notes, docs, and the v0.65.3 toolchain release. The xvector GitHub
    release remains owner-gated.
-7. **Fix the "latest stable" label:** v0.65.2 is the upstream latest
-   compiler release, but **xvector has not accepted it**. Keep the xvector
-   install pin on **v0.65.1 + stdlib-v0.65.1**; if the site mirrors compiler
-   releases, label v0.65.2 as upstream-only / not yet xvector-validated until
-   the named `Struct{Vec}` push regression (XVC-C-23) is fixed and the lane
-   re-pins.
-8. **Do not update xvector to v0.65.2.** The 2026-10-27 acceptance was red:
-   WAL load/recovery corruption (`probe_wal_file` 10 failures vs 0 on
-   v0.65.1; repro `docs/repro/xv-vec-struct-push/`). v0.65.1 is the
-   production pin; v0.64.9 stays withdrawn.
+7. **Latest stable label:** v0.65.3 is the accepted production toolchain
+   (published 2026-10-30). Keep the xvector install pin on **v0.65.3 +
+   stdlib-v0.65.3**; v0.65.2 is rejected/superseded and v0.64.9 stays
+   withdrawn.
+8. **v0.65.3 is the first release that fixes the XVC-C-23 WAL regression**
+   (named `Struct{Vec}` push). Do not resurrect v0.65.2 in any download or
+   install snippet.
 
 ---
 
@@ -253,3 +250,7 @@ Refresh and re-relay when any of these happen:
 - **2026-10-29** -- compiler candidate `ab97014d9` pre-verified green on
   the xvector XVC-C-23/WAL regression and the v0.65.2-red probes; the pin
   still stays v0.65.1 until the v0.65.3 archive is accepted.
+- **2026-10-30** -- **v0.65.3 accepted and pinned** (Win
+  `8383aa5b...`, Linux `987752c4...`, stdlib `728db62d...`). Full
+  Windows + WSL batteries green; XVC-C-23/WAL fixed. v0.65.2 is
+  superseded. SIGPIPE-on-disconnect remains a runtime robustness item.
