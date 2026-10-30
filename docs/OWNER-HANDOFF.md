@@ -37,9 +37,17 @@ repository stays private; nothing below happens until the owner greenlights.
   and release-runner activation, all documented). G-4
   metrics-under-concurrency is complete (2026-10-23); **XVC-C-21/C-22/C-23
   are verified fixed on v0.65.3**, unblocking P4.
+- **Top-tier parity program (new):** the 91 % is v1 scope, not market
+  parity. [`TOP-TIER-PARITY.md`](TOP-TIER-PARITY.md) defines a unit-for-unit
+  method (package and standalone scored separately, never blended with v1
+  readiness); [`TOP-TIER-PARITY-MATRIX.md`](TOP-TIER-PARITY-MATRIX.md) is the
+  working inventory (118 seeded rows; 131 candidate slots). **M0 freezes the
+  reference commits** (FAISS/DiskANN/sqlite-vec cloned; Qdrant/Milvus/
+  Weaviate/pgvector/Vespa clones pending) before any parity percentage is
+  quoted.
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
-  (48 modules at the candidate, `unsafe` = 0; current pin compiler v0.65.1,
-  stdlib-v0.65.1).
+  (48 modules at the candidate, `unsafe` = 0; current pin compiler v0.65.3,
+  stdlib-v0.65.3).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
   fidelity pinned by `probe_reference_oracle`.
 

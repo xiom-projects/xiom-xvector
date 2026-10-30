@@ -72,6 +72,14 @@ the code merely exists. Blockers are named; blocked work still scores.
 7. Docs match code (this file, ROADMAP, SPEC, ARCHITECTURE, SESSION) and the
    relay docs are current.
 
+**Parity is a separate denominator.** The 91 % above is readiness against
+our own v1 A-J plan. Market-top-tier parity is tracked unit-for-unit in
+[`TOP-TIER-PARITY.md`](TOP-TIER-PARITY.md) and
+[`TOP-TIER-PARITY-MATRIX.md`](TOP-TIER-PARITY-MATRIX.md), separately for the
+package and standalone surfaces against frozen reference commits. A 100 %
+v1 score does **not** imply top-tier parity, and no top-tier percentage is
+claimed until the reference inventory is frozen.
+
 ## Phase detail -- remaining work per phase
 
 ### A. Core data model & vector math -- 95 %

@@ -4121,9 +4121,13 @@ NEXT (ordered)
    + mutex-bottleneck data); then scale tuning.
 2) P4 IVF/PQ nested-codebook re-run (C-22 fixed); P5 stdlib mmap; split
    resharding/rebalance; optional UI editor.
-3) Website status brief `docs/WEBSITE-STATUS.md` now says v0.65.3 accepted
+3) Top-tier parity program: freeze the reference clones (M0) and fill
+   `docs/TOP-TIER-PARITY-MATRIX.md`; `docs/TOP-TIER-PARITY.md` defines the
+   unit method (package and standalone scored separately, never blended
+   with the 91 % v1 readiness).
+4) Website status brief `docs/WEBSITE-STATUS.md` now says v0.65.3 accepted
    and v0.65.2 superseded; relay it if the website has not applied it.
-4) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
+5) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
 
 DO FIRST
 1) Bus: fetch/merge xiom-relays; `python tools/relay.py view --lane
