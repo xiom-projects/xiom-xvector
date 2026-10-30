@@ -4087,9 +4087,10 @@ XIOM XVECTOR -- fresh-context continuation (v0.65.3 ACCEPTED; G-4 complete;
 G-3 next).
 
 STATE
-- E:\xiom-projects\xiom-xvector; branch main; HEAD `<this wrap commit>` +
-  docs-only handoff; clean tree; 45 commits ahead before this wrap (46
-  after); tag v1.0.0-rc.1 = `530b041`.
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `ef1f050` (acceptance
+  docs) + this docs-only handoff commit; clean tree; origin/main is at
+  `ff927e9` (push these two docs commits when the owner requests); tag
+  v1.0.0-rc.1 = `530b041`.
 - Production pins: **compiler v0.65.3** (win archive sha `8383aa5b...`,
   linux `987752c4...`) + **stdlib-v0.65.3** (tag `26ede85`, asset
   `728db62d...`) on Windows and WSL. Rollback: v0.65.1 (`9dc69b3`).
