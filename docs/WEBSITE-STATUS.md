@@ -44,7 +44,7 @@ deploy served, no migration.
 
 | Item | Current value | Notes |
 |---|---|---|
-| Project version | **`v1.0.0-rc.1`** | Local candidate tag `530b041` (internal; omit the hash from public copy); repository is private |
+| Project version | **`v1.0.0-rc.1`** | Local candidate tag `v1.0.0-rc.1` (internal; omit the hash from public copy); repository is private |
 | Accepted compiler (xvector) | **v0.65.4** | Released 2026-10-30; published assets verified |
 | Standard library | **stdlib-v0.65.4** | Tag commit `407c92d`; asset sha `c033f899...` |
 | Upstream latest compiler | **v0.65.4** | Accepted by xvector; v0.65.3 is rollback, v0.65.2 rejected, v0.64.9 withdrawn |

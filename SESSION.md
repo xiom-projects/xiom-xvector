@@ -15,6 +15,13 @@ assets verified (win `49e02478...`, linux `0e8a7418...`, stdlib
 1531, 1640/1702, L-6 and the C-23 repro green; Windows and WSL full
 58-probe batteries ALL GATES GREEN. v0.65.3 is rollback; v0.65.2
 rejected/superseded; see section 28).
+**History rewrite (2026-10-31):** the xvector history was rewritten to
+replace author/committer/sign-off `lefteris@hugintech.com` with
+`lefterisnotas@gmail.com`; all commit hashes changed. Hashes in sections
+1-27 refer to the pre-rewrite history; use `git log` by subject. Tree
+content is bit-identical (verified against the backup bundle). The tag name
+`v1.0.0-rc.1` is unchanged; its target is now `cc25659`.
+
 **Last updated:** 2026-10-16 (83 continuation passes: bootstrap -> Phase 2
 durability -> Phase 3 payload filtering -> payload durability -> 4 extraction
 waves -> v0.64.1 re-test -> FloatVal unwind -> final extraction wave ->
@@ -165,7 +172,7 @@ green both platforms; verdicts + closures filed on the bus -> 78th-80th passes: 
 ## 0. STATE (hand-off point)
 
 **Repo:** private, no pushes. HEAD `bc53af7` (README tiers) + this pass's
-commits (L-3 router v1 + wrap); tag `v1.0.0-rc.1` still on `530b041`.
+commits (L-3 router v1 + wrap); tag `v1.0.0-rc.1` still on `v1.0.0-rc.1`.
 **Installed lane-local: compiler v0.64.5** (was v0.64.4; old dirs parked
 OUT of the repo: `%TEMP%\kilo\xvector-toolchain-v0.64.4.bak` (+ a second
 copy at `%TEMP%\kilo\v0645\toolchain-v0.64.4.bak` from a concurrent
@@ -252,7 +259,7 @@ commits, DCO `git commit -s`.
 | compiler | **v0.64.8 pinned -- re-pin COMPLETE both platforms (2026-10-19)**; Windows `out\toolchain` (sha256 `c31d9c46`; v0.64.7 rollback at `out\toolchain-v0647`, sha `16a436c4`) + WSL `~/.xvector-toolchain` (linux sha `a8c003c0`; v0.64.7 rollback at `~/.xvector-toolchain-v0647`, sha `153f0cc9`; **always target `wsl -d Ubuntu`**); release 2026-10-19T17:49Z (tag `4d040604b`, run 39296778685); arena / zero-cap Vec / Vec-drop reclaim + **XVC-C-20**; **C-20 repro GREEN both platforms** (count 1 / second create Err); **G-2b threaded accept loop GREEN** (54th probe x2 both; Windows full battery ALL GATES GREEN; WSL suite 177/177 x2 + `probe_ui`/`probe_concurrency`/service family x2 green; WSL long sweeps were environment-interrupted by repeated VM restarts -- targeted re-runs queued); E001 build warnings reappear (non-fatal, suite green) | lane-local + `%LOCALAPPDATA%\xiom.new` fallback; WSL `~/.xvector-toolchain` |
 | stdlib | lane HEAD `750384f` (2026-10-21; **shared-tree block RESOLVED** -- v0.64.8 `--check`/build/suite pass again; bus `REL-20261020-1531-xvector` acked; `XVECTOR_STDLIB_BUNDLED=1` remains a fallback); release pin tag `stdlib-v0.64.8` = `0bf5b75` (asset sha256 `6ea77968...`); **registry publish BLOCKED -- `publisher_not_mapped` for xiom-lang/stdlib (bus `REL-20261019-1755-stdlib`); registry latest remains 0.64.7**; latest-tree protocol enforced each pass | `E:\xiom-lang\stdlib` (= `/mnt/e/xiom-lang/stdlib`; WSL via `wsl -d Ubuntu`) |
 | packages | lane HEAD `b133b1a7` (2026-10-21; lane consumes the registry, not this checkout; stdlib block resolved; `xiom.epos` 0.1.0 / `xiom.jev` 0.2.0 are unrelated); **latest set installed both homes: xiom.wal 0.1.0 + xiom.metrics 0.2.0 + xiom.rate 0.2.0 + xiom.http 0.1.9 + xiom.vectors 0.1.0 declared / 0.2.0 installed (MOTE, eco-v0.1.198) + xiom.ann 0.2.0 + xiom.orbitdb 0.2.1 (Satellite; `probe_package_orbitdb`) + xiom.pulse 0.3.1 declared + installed (Beacon; adopted 2026-10-19 -- exact identity + HookCtx + fallback + HEAD-trim probe x2 both platforms)**; the 0.2.1/0.2.2 pulse version-identity note is superseded; `xiom.ann` swap owner-gated; `xiom.vectors` live + swapped | `E:\xiom-packages\packages` |
-| xvector | `6b417b2` + this handoff commit (rc tag `v1.0.0-rc.1` = `530b041`) | this repo |
+| xvector | `6b417b2` + this handoff commit (rc tag `v1.0.0-rc.1`) | this repo |
 
 `XIOM_RUNTIME_DIR` retired (env-free builds). `xiom.toml` has
 `root = "src"`, `source-roots = ["src"]` (C-PULSE-02 workaround).
@@ -2194,7 +2201,7 @@ stays PRIVATE; no pushes. Identity "Lefteris Notas
 
 Orientation: HEAD `9f00836` (feat: reference study 01 P-a -- generous
 level 0 + codec v3) +
-the wrap commit; tag `v1.0.0-rc.1` on `530b041`; clean tree;
+the wrap commit; tag `v1.0.0-rc.1` on `v1.0.0-rc.1`; clean tree;
 `git log --oneline -12` shows the recent slice commits. Lane pins:
 stdlib `35e6d87` (fsync chain still stubs), packages `511dd0f5`
 (xiom.ann extracted in-tree, publication pending OPS LIVE; xiom.vectors
@@ -2432,7 +2439,7 @@ xiom-relays bus. Identity "Lefteris Notas <lefterisnotas@gmail.com>";
 conventional commits, DCO -s.
 
 Orientation: HEAD 5fce3cf (feat: byte-level fast upsert scanner) + this
-wrap commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is
+wrap commit; tag v1.0.0-rc.1 on v1.0.0-rc.1; clean tree. The lane is
 USER-TESTABLE and benchmark-integrated: out\xvectord.exe (HTTP server,
 curl-verified, /version, index config at create, per-request ef_search),
 bench/adapters (ann-benchmarks drop-in module+config, stdlib client,
@@ -2514,7 +2521,7 @@ xiom-relays bus. Identity "Lefteris Notas <lefterisnotas@gmail.com>";
 conventional commits, DCO -s.
 
 Orientation: HEAD de151d6 (feat: xiom.http 0.1.6 re-sync) + the 73rd wrap
-commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is USER-TESTABLE
+commit; tag v1.0.0-rc.1 on v1.0.0-rc.1; clean tree. The lane is USER-TESTABLE
 and benchmark-integrated: out\xvectord.exe (HTTP server; /version, index
 config at create, per-request ef_search), bench/adapters (ann-benchmarks
 + VectorDBBench drop-ins + stdlib client + smoke.py + smoke_db.py +
@@ -2602,7 +2609,7 @@ pushes except the private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
 Orientation: HEAD 6da4c32 (wave-113 re-verification records) + the wrap
-commit; tag v1.0.0-rc.1 on 530b041; clean tree. The lane is
+commit; tag v1.0.0-rc.1 on v1.0.0-rc.1; clean tree. The lane is
 USER-TESTABLE and benchmark-integrated: out\xvectord.exe, bench/adapters
 (ann-benchmarks + VectorDBBench drop-ins + smoke.py/smoke_db.py/
 quick_bench.py), the byte-level fast upsert scanner (228-case gate; fit
@@ -2697,7 +2704,7 @@ pushes except the private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
 State at 2026-10-12T13:25: HEAD 8627c69 + the handoff commit; clean
-tree; tag v1.0.0-rc.1 on 530b041. The lane has been QUIET since the
+tree; tag v1.0.0-rc.1 on v1.0.0-rc.1. The lane has been QUIET since the
 76th wrap (the successor session dropped after writing section 10).
 Lane pins: stdlib f501b65 on a996f7b (wave 113; fsync/mmap still Err
 stubs), packages fb73c5c8 (xiom.ann 0.2.0 live+verified; sdl3 0.15.0),
@@ -2771,7 +2778,7 @@ private xiom-relays bus. Identity "Lefteris Notas
 <lefterisnotas@gmail.com>"; conventional commits, DCO -s.
 
 State at 2026-10-13T23:30: HEAD 2552824 + the 80th-wrap commit; clean
-tree; tag v1.0.0-rc.1 on 530b041. **D5 + D6 + D7 are DONE (fsync-on-ack +
+tree; tag v1.0.0-rc.1 on v1.0.0-rc.1. **D5 + D6 + D7 are DONE (fsync-on-ack +
 kill matrix + compact/swap + snapshots + the multi-segment read path;
 board 86 %).** v0.64.4 archive pass DONE (C-15 + phantom imports verified
 fixed; C-13/C-14 + thread gate still red on v0.64.4; **v0.64.5 candidate
@@ -3512,7 +3519,7 @@ XIOM XVECTOR -- fresh-context continuation prompt (L-6 phase B landed).
 REPO/STATE
 - E:\xiom-projects\xiom-xvector; branch main; L-6 code `383c2d1` (phase B
   + negative-DotProduct cursor fix, parent `902be21`) with the docs/SESSION
-  wrap commits on top; clean tree; tag v1.0.0-rc.1 = `530b041`. The
+  wrap commits on top; clean tree; tag v1.0.0-rc.1. The
   isolated worktree used for the slice
   (C:\Users\lefte\AppData\Local\Temp\kilo\xvector-l6, branch
   feat/l6-scatter-gather) was fast-forward merged and removed after the wrap.
@@ -3625,7 +3632,7 @@ XIOM XVECTOR -- fresh-context continuation (v0.64.9 verification; compiler + std
 
 STATE
 - E:\xiom-projects\xiom-xvector; branch main; L-6 code `383c2d1` + docs and
-  release-evidence wraps on top; clean tree; tag v1.0.0-rc.1 = `530b041`.
+  release-evidence wraps on top; clean tree; tag v1.0.0-rc.1.
 - Compiler pin stays **v0.64.8** both platforms (win `c31d9c46`, linux
   `a8c003c0`); **lane stdlib pin `out/stdlib-pin` = `750384f`** (dev-env
   prefers it; the shared `E:\xiom-lang\stdlib` checkout is live and moved
@@ -3734,7 +3741,7 @@ XIOM XVECTOR -- fresh-context continuation (v0.64.9 withdrawn; v0.65.0 gate; sta
 STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD `b4f3d07` + this session
   wrap commit; clean tree; 34 commits ahead before this wrap (35 after);
-  tag v1.0.0-rc.1 = `530b041`.
+  tag v1.0.0-rc.1.
 - Compiler **v0.64.8** both platforms (lane toolchain; win `c31d9c46`,
   linux `a8c003c0`); stdlib **pin `750384f`** (`out/stdlib-pin` on Windows,
   `~/.xvector-stdlib-pin` on WSL; `scripts/dev-env.*` prefer them); packages
@@ -3843,7 +3850,7 @@ v0.64.9 still withdrawn; v0.65.0 gate open).
 STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD `1fda3d2` (G-4 slice) +
   this docs-only wrap commit; clean tree; 36 commits ahead before this wrap
-  (37 after); tag v1.0.0-rc.1 = `530b041`.
+  (37 after); tag v1.0.0-rc.1.
 - Compiler **v0.64.8** both platforms (lane toolchain; win `c31d9c46`,
   linux `a8c003c0`); stdlib **pin `750384f`** (`out/stdlib-pin` on Windows,
   `~/.xvector-stdlib-pin` on WSL; content matches the tag modulo CRLF);
@@ -3936,7 +3943,7 @@ XIOM XVECTOR -- fresh-context continuation (v0.65.1 accepted; G-4 complete; G-3 
 STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD `56aa8d6` (v0.65.1
   adoption) + this docs-only wrap commit; clean tree; 38 commits ahead
-  before this wrap (39 after); tag v1.0.0-rc.1 = `530b041`.
+  before this wrap (39 after); tag v1.0.0-rc.1.
 - Compiler **v0.65.1** both platforms (annotated tag `c4329915` on
   `f2c01cf9c`; Windows archive sha `69de1e27...`, Linux `5785320f...`);
   lane-local `out\toolchain` / `~/.xvector-toolchain`. Rollback:
@@ -4002,9 +4009,9 @@ XIOM XVECTOR -- fresh-context continuation (v0.65.2 REJECTED; v0.65.1 accepted;
 G-4 complete; G-3 next).
 
 STATE
-- E:\xiom-projects\xiom-xvector; branch main; HEAD `26095b8` (struct-push
+- E:\xiom-projects\xiom-xvector; branch main; HEAD `abc9fad` (struct-push
   repro) + this docs-only wrap commit; clean tree; 43 commits ahead before
-  this wrap (44 after); tag v1.0.0-rc.1 = `530b041`.
+  this wrap (44 after); tag v1.0.0-rc.1.
 - Production pins are **v0.65.1 + stdlib-v0.65.1** on Windows and WSL
   (compiler win sha `c31d9c46`, linux `a8c003c0`; stdlib tag `9dc69b3`).
   v0.64.8 / `750384f` are the older rollback; v0.65.2 copies are kept for
@@ -4023,7 +4030,7 @@ V0.65.2 ACCEPTANCE = RED (93rd pass)
 - **Blocker:** named `var r = R{ id, xs }; rs.push(r);` frees `r.xs` at
   scope exit although the Vec element retains it. v0.65.2:
   named-literal `bad=23..32`; v0.65.1 control: `bad=0`; inline literal is
-  green. Repro `docs/repro/xv-vec-struct-push/` (commit `26095b8`).
+  green. Repro `docs/repro/xv-vec-struct-push/` (commit `abc9fad`).
 - Lane impact: `wal_load` builds `var rec = WalRecord{... payload};
   w.records.push(rec);`; `probe_wal_file` 10 failed checks on v0.65.2 vs 0
   on v0.65.1. Windows battery aborted after 9+ probe failures:
@@ -4091,7 +4098,7 @@ STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD `ef1f050` (acceptance
   docs) + this docs-only handoff commit; clean tree; origin/main is at
   `ff927e9` (push these two docs commits when the owner requests); tag
-  v1.0.0-rc.1 = `530b041`.
+  v1.0.0-rc.1.
 - Production pins: **compiler v0.65.3** (win archive sha `8383aa5b...`,
   linux `987752c4...`) + **stdlib-v0.65.3** (tag `26ede85`, asset
   `728db62d...`) on Windows and WSL. Rollback: v0.65.1 (`9dc69b3`).
@@ -4171,7 +4178,7 @@ G-3 next).
 STATE
 - E:\xiom-projects\xiom-xvector; branch main; HEAD after the v0.65.4
   acceptance docs + this docs-only handoff; clean tree; check
-  `git rev-list --count origin/main..HEAD`; tag v1.0.0-rc.1 = `530b041`.
+  `git rev-list --count origin/main..HEAD`; tag v1.0.0-rc.1.
 - Production pins: **compiler v0.65.4** (win archive sha `49e02478...`,
   linux `0e8a7418...`) + **stdlib-v0.65.4** (tag commit `407c92d`, asset
   `c033f899...`) on Windows and WSL. Rollback: v0.65.3 (`26ede85`).
