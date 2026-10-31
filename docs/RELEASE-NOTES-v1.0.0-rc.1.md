@@ -160,12 +160,15 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   lane** after acceptance: its named `Struct{Vec}` push reclaim corrupts
   WAL load/recovery (XVC-C-23). Production stays v0.65.1 +
   stdlib-v0.65.1 until the fixed release.
-- **2026-10-30:** **v0.65.3 accepted** — compiler v0.65.3 + stdlib-v0.65.3
-  (Win `8383aa5b...`, Linux `987752c4...`, stdlib `728db62d...`); XVC-C-23
-  and WAL are fixed, targeted acceptance is green, and both full batteries
-  are green. v0.65.2 is superseded; v0.65.1 is the rollback. A Linux
-  SIGPIPE-on-disconnect runtime issue remains filed
-  (`REL-20261030-1645-xvector`).
+- **2026-10-30:** **v0.65.3 accepted** -- compiler v0.65.3 + stdlib-v0.65.3
+  (Win `8383aa5b...`, Linux `987752c4...`, stdlib `728db62d...`);
+  XVC-C-23 and WAL are fixed, targeted acceptance is green, and both full
+  batteries are green. v0.65.2 is superseded; v0.65.1 was the rollback.
+- **2026-10-30 (later):** **v0.65.4 accepted** -- compiler v0.65.4 +
+  stdlib-v0.65.4 (Win `49e02478...`, Linux `0e8a7418...`, stdlib `407c92d`
+  / `c033f899...`); C-23/WAL and SIGPIPE are fixed, targeted acceptance is
+  green, and both full batteries are green. v0.65.3 is the rollback.
+
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.
 - **The web admin is read-only and active-store-scoped.** `/ui` samples the

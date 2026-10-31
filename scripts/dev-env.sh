@@ -63,7 +63,7 @@ else
     # (scatter took ~4m30 cold over 9p). Keep this in sync with out/stdlib-pin.
     XIOM_STDLIB="$HOME/.xvector-stdlib-pin"
   elif [ -d "$_dev_repo/out/stdlib-pin" ]; then
-    # Reproducible lane pin (stdlib-v0.65.3); the shared
+    # Reproducible lane pin (stdlib-v0.65.4); the shared
     # checkout is a live workspace and moved past the L-6-green commit.
     XIOM_STDLIB="$_dev_repo/out/stdlib-pin"
   elif [ -d /mnt/e/xiom-lang/stdlib ]; then

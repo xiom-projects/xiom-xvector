@@ -456,19 +456,16 @@ timeout) plus the watchdog. **XVC-C-21 is verified fixed on v0.65.1**
 green x2), so the explicit 16 GB cap is safe; the lane keeps the
 conservative default for routine builds.
 
-Shared-stdlib note: the lane pin is **stdlib-v0.65.3** (tag commit
-`26ede85`; asset sha `728db62d...`; `out\stdlib-pin` on Windows,
-`~/.xvector-stdlib-pin` on WSL). The v0.65.1 pin (`9dc69b3`) and
+Shared-stdlib note: the lane pin is **stdlib-v0.65.4** (tag commit
+`407c92d`; asset sha `c033f899...`; `out\stdlib-pin` on Windows,
+`~/.xvector-stdlib-pin` on WSL). The v0.65.3 pin (`26ede85`) and
 `XVECTOR_STDLIB_BUNDLED=1` remain rollback/fallback options.
 
-**v0.65.3 is adopted (2026-10-30).** It fixes the v0.65.2 named
-`Struct{..., Vec}` push regression (XVC-C-23) and the WAL recovery
-corruption; both full batteries are green. v0.65.2 and v0.64.9 are
-rejected/superseded. **SIGPIPE-on-disconnect** is fixed in stdlib-v0.65.4
-(`d267317`); the v0.65.4 RC passed `probe_concurrency` x2 and the full WSL
-battery. The production pin v0.65.3 still carries the old runtime until
-the public v0.65.4 is accepted, so treat Linux client disconnects as
-potentially fatal on the current pin. Windows is unaffected.
+**v0.65.4 is adopted (2026-10-30).** It fixes the v0.65.2 named
+`Struct{..., Vec}` push regression (XVC-C-23), the WAL recovery
+corruption, and the Linux SIGPIPE-on-disconnect issue (XVC-C-24); both
+full batteries are green. v0.65.3 is the rollback; v0.65.2 and v0.64.9
+are rejected/superseded.
 
 Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
 the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was
