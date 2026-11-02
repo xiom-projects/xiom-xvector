@@ -10,16 +10,16 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-10-30, 95th pass (**v0.65.4 production accepted**).
-  Production pins are **compiler v0.65.4** (Windows archive sha
-  `49e02478...`, Linux `0e8a7418...`) + **stdlib-v0.65.4** (tag commit
-  `407c92d`; release asset sha `c033f899...`) on both platforms, with
-  v0.65.3 / `26ede85` kept as the rollback. **Full batteries are green on
+- **As of:** 2026-11-02, 96th pass (**v0.65.5 production accepted**).
+  Production pins are **compiler v0.65.5** (Windows archive sha
+  `86a253a5...`, Linux `cae74441...`) + **stdlib-v0.65.5** (tag commit
+  `88f3c12`; release asset sha `0ed34f95...`) on both platforms, with
+  v0.65.4 / `407c92d` kept as the rollback. **Full batteries are green on
   BOTH platforms**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes
   x2, bench + kill matrix. Targeted acceptance: **1615/1243 PASS**
   (`match_n=42`), **XVC-C-22** `second ok m=8`, **1640/1702 + L-6** x2,
   **1531 16 GB Job Object build x2**, and the **XVC-C-23 repro x2**.
-  **SIGPIPE-on-disconnect is fixed and verified** (v0.65.4). v0.65.3 is
+  **SIGPIPE-on-disconnect remains fixed and verified**. v0.65.4 is
   rollback; v0.65.2 is rejected/superseded.
 - **2026-10-27: v0.65.2 REJECTED -- lane restored to v0.65.1.** The
   named `Struct{..., Vec}` push reclaim regression corrupts WAL
@@ -1466,6 +1466,14 @@ extraction with the packages lane.
   1615/1243, C-22, 1640/1702 + L-6 x2, 1531 16 GB Job x2 and C-23 repro
   x2 are green. **Windows AND WSL full 58-probe batteries ALL GATES
   GREEN**; SIGPIPE item verified. No score change (toolchain acceptance).
+
+- **2026-11-02 (v0.65.5 accepted, 96th pass):** published Windows
+  (`86a253a5...`) and Linux (`cae74441...`) archives and stdlib-v0.65.5
+  (`88f3c12`, asset `0ed34f95...`) were verified; pins moved on both
+  platforms (v0.65.4 as rollback). C-23/WAL and SIGPIPE remain fixed;
+  1615/1243, C-22, 1640/1702 + L-6 x2, 1531 16 GB Job x2 and C-23 repro
+  x2 are green. **Windows AND WSL full 58-probe batteries ALL GATES
+  GREEN**; no xvector blocker. No score change (toolchain acceptance).
 
 ## Update rule
 

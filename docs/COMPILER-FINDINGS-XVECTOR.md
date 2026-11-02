@@ -30,13 +30,13 @@
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.65.4** (current accepted pin; released
-2026-10-30, annotated tag `v0.65.4` on `c0104e21e`; installed lane-local
+Instrument: **XIOM Compiler v0.65.5** (current accepted pin; released
+2026-11-02, annotated tag `v0.65.5` on `05e575db`; installed lane-local
 on Windows (`out\toolchain`) and WSL (`~/.xvector-toolchain`); Windows
-archive sha `49e02478...`, Linux `0e8a7418...`),
-Windows + Linux/WSL; **stdlib-v0.65.4** (tag commit `407c92d`; full tag
+archive sha `86a253a5...`, Linux `cae74441...`),
+Windows + Linux/WSL; **stdlib-v0.65.5** (tag commit `88f3c12`; full tag
 archive at `out\stdlib-pin` / `~/.xvector-stdlib-pin`; release asset sha
-`c033f899...`); registry packages consumed:
+`0ed34f95...`); registry packages consumed:
 `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
 lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
 `docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
@@ -209,6 +209,11 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   C-16/C-17 filings) is bus-routed (`REL-20261015-2142-xvector`,
   `REL-20261015-2216-xvector`, and the closed items). C-01/C-02/C-04 stay
   as deliberate lane choices.
+- Archive status (2026-11-02, **v0.65.5 ACCEPTED**): published Windows
+  `86a253a5...`, Linux `cae74441...`, stdlib-v0.65.5 `88f3c12`
+  (asset `0ed34f95...`); C-23/WAL and SIGPIPE remain fixed; 1615/1243,
+  C-22, C-21/1531, 1640/1702, L-6 verified; full Windows + WSL batteries
+  ALL GATES GREEN. v0.65.4 is the rollback.
 - Archive status (2026-10-30, **v0.65.4 ACCEPTED**): published Windows
   `49e02478...`, Linux `0e8a7418...`, stdlib-v0.65.4 `407c92d`
   (asset `c033f899...`); C-23/WAL and SIGPIPE fixed; 1615/1243, C-22,

@@ -10,17 +10,16 @@ repository stays private; nothing below happens until the owner greenlights.
 
 - **Candidate:** `v1.0.0-rc.1` (annotated tag, local, no push). `VERSION` =
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
-- **Batteries (at the accepted pin, v0.65.4 + stdlib-v0.65.4):** Windows
+- **Batteries (at the accepted pin, v0.65.5 + stdlib-v0.65.5):** Windows
   **and WSL** full batteries ALL GATES GREEN -- suite 177/177 x2, libcheck
   49/49, SBOM/unsafe gate (49 modules, 0 unsafe), 58 probes x2, bench smoke
   + kill matrix. Targeted acceptance: 1615/1243 PASS, XVC-C-22
   `second ok m=8`, 1640/1702 + L-6 x2, 1531 16 GB Job build x2, XVC-C-23
-  repro x2, and `probe_concurrency` x2 (SIGPIPE fixed).
-- **v0.65.4 accepted (2026-10-30):** published Windows (`49e02478...`),
-  Linux (`0e8a7418...`) and stdlib-v0.65.4 (`407c92d`, asset
-  `c033f899...`) assets verified; C-23/WAL and SIGPIPE fixed. **v0.65.3 is
-  the rollback**; v0.65.2 was rejected for the named `Struct{Vec}` push
-  reclaim and is superseded.
+  repro x2, and `probe_concurrency` x2.
+- **v0.65.5 accepted (2026-11-02):** published Windows (`86a253a5...`),
+  Linux (`cae74441...`) and stdlib-v0.65.5 (`88f3c12`, asset
+  `0ed34f95...`) assets verified; C-23/WAL and SIGPIPE remain fixed.
+  **v0.65.4 is the rollback**; v0.65.2 was rejected and is superseded.
 - **Station UI:** read-only web admin at `/ui` (sampled active-store
   scatter + point inspector + search hit highlighting; `probe_ui`); the
   editor/three.js upgrade is a later slice (`docs/UI.md`).
@@ -35,7 +34,7 @@ repository stays private; nothing below happens until the owner greenlights.
   read snapshots, the P4 nested codebook re-run, P5 stdlib-dependent mmap,
   and release-runner activation, all documented). G-4
   metrics-under-concurrency is complete (2026-10-23); **XVC-C-21/C-22/C-23/C-24
-  are verified fixed on v0.65.4**, unblocking P4.
+  are verified fixed on v0.65.5**, unblocking P4.
 - **Top-tier parity program (new):** the 91 % is v1 scope, not market
   parity. [`TOP-TIER-PARITY.md`](TOP-TIER-PARITY.md) defines a unit-for-unit
   method (package and standalone scored separately, never blended with v1
@@ -45,8 +44,8 @@ repository stays private; nothing below happens until the owner greenlights.
   Weaviate/pgvector/Vespa clones pending) before any parity percentage is
   quoted.
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
-  (49 modules at the accepted pin, `unsafe` = 0; current compiler v0.65.4,
-  stdlib-v0.65.4).
+  (49 modules at the accepted pin, `unsafe` = 0; current compiler v0.65.5,
+  stdlib-v0.65.5).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
   fidelity pinned by `probe_reference_oracle`.
 
@@ -95,7 +94,7 @@ from the GitHub release set below.
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
-| compiler archive | **v0.65.4 accepted 2026-10-30 -- current pin on BOTH platforms** (win archive sha `49e02478...`, linux `0e8a7418...`; stdlib-v0.65.4 tag `407c92d`, asset `c033f899...`; v0.65.3 / `26ede85` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, C-23, C-24, 1640/1702, L-6 verified**; G-4 complete; **P4 unblocked**. v0.65.2 rejected/superseded; SIGPIPE fixed | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
+| compiler archive | **v0.65.5 accepted 2026-11-02 -- current pin on BOTH platforms** (win archive sha `86a253a5...`, linux `cae74441...`; stdlib-v0.65.5 tag `88f3c12`, asset `0ed34f95...`; v0.65.4 / `407c92d` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, C-23, C-24, 1640/1702, L-6 verified**; G-4 complete; **P4 unblocked**. v0.65.2 rejected/superseded; SIGPIPE fixed | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
 
 ## 4. Evidence index
 

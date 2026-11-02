@@ -39,7 +39,7 @@ evidence.
 |---|---|
 | Project | **`v1.0.0-rc.1`** (private candidate; public release owner-gated) |
 | Internal v1 readiness | **91 %** weighted (release-grade) |
-| Accepted toolchain | **v0.65.4** (v0.65.5 is in final acceptance at writing) |
+| Accepted toolchain | **v0.65.5** (published 2026-11-02; Windows + WSL batteries green) |
 | Verification | suite **177/177** x2, **58 probes x2** on Windows + WSL, libcheck 49/49, SBOM 49/0 |
 | Product shape | mote package + lattice daemon/router/replicas/scatter-gather + read-only `/ui` |
 | Next engineering | **G-3 read snapshots**, then scale tuning |
@@ -143,12 +143,11 @@ read-only web admin at `/ui` (sample scatter, inspector, hit highlighting).
 `v1.0.0-rc.1` froze the v1 scope: 177/177 suite x2, 58 probes x2, libcheck
 49/49, SBOM 49/0, bench + kill matrix. Honest limits documented.
 
-### Phase 8 -- Toolchain hardening (Current)
+### Phase 8 -- Toolchain hardening (Done)
 Latest-toolchain protocol: SHA-verified archives, lane-local pins, repros
-for every fixed defect, full batteries per archive. Recent releases fixed
-the named-struct/WAL regression and the Linux SIGPIPE-on-disconnect issue.
-This phase closes when the current v0.65.x line is accepted with both
-platform batteries green.
+for every fixed defect, full batteries per archive. The v0.65.5 line is
+accepted with both platform batteries green; recent releases fixed the
+named-struct/WAL regression and the Linux SIGPIPE-on-disconnect issue.
 
 ### Phase 9 -- Read snapshots and scale (Next)
 G-3: MVCC/read snapshots so readers do not block writers; then scale
@@ -193,8 +192,7 @@ visually distinct (not "done").
 Use these badges/labels:
 
 - `v1.0.0-rc.1` · **release-grade, 91 % internal readiness**
-- **Toolchain:** v0.65.4 accepted (update to v0.65.5 only after the public
-  acceptance is complete)
+- **Toolchain:** v0.65.5 accepted
 - **58 probes x2 · 177/177 suite x2 · Windows + Linux/WSL**
 - **Now:** G-3 read snapshots + parity M0
 - **Next:** P0 parity, then P1, then P2

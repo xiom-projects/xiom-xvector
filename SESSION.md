@@ -8,13 +8,12 @@ database engine for XIOM (dense vectors, metrics, flat + HNSW ANN,
 collections, segments, WAL-backed durable writes; the working tree is the
 `src/engine.xi` facade over `src/engine/core.xi` + the extracted modules).
 **Written:** 2026-10-07 (bootstrap by the PULSE lane).
-**Latest pass:** 2026-10-30 (95th: **v0.65.4 production ACCEPTED** --
-compiler v0.65.4 + stdlib-v0.65.4 pinned on Windows and WSL; published
-assets verified (win `49e02478...`, linux `0e8a7418...`, stdlib
-`407c92d` / `c033f899...`); C-23/WAL and SIGPIPE fixed; 1615/1243, C-22,
-1531, 1640/1702, L-6 and the C-23 repro green; Windows and WSL full
-58-probe batteries ALL GATES GREEN. v0.65.3 is rollback; v0.65.2
-rejected/superseded; see section 28).
+**Latest pass:** 2026-11-02 (96th: **v0.65.5 production ACCEPTED** --
+compiler v0.65.5 + stdlib-v0.65.5 pinned on Windows and WSL; published
+assets verified (win `86a253a5...`, linux `cae74441...`, stdlib
+`88f3c12` / `0ed34f95...`); C-23/WAL and SIGPIPE remain fixed; 1615/1243,
+C-22, 1531, 1640/1702, L-6 and the C-23 repro green; Windows and WSL full
+58-probe batteries ALL GATES GREEN. v0.65.4 is rollback; see section 29).
 **History rewrite (2026-10-31):** the xvector history was rewritten to
 replace author/committer/sign-off `lefteris@hugintech.com` with
 `lefterisnotas@gmail.com`; all commit hashes changed. Hashes in sections
@@ -4223,6 +4222,69 @@ DO FIRST
    xvector`; check for a v0.65.5 release and any new xvector items.
 2) Verify compiler v0.65.4 + stdlib-v0.65.4 pins on both platforms; do not
    re-adopt v0.65.2/v0.65.3 as current.
+3) Re-run suite x2 + libcheck + `probe_concurrency` x2 + `probe_wal_file`
+   x2 before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`.
+
+STANDING OWNER ITEMS: rc.1 GitHub release greenlight; ann-swap greenlight.
+
+DISCIPLINE: struct literals list every field; locals initialized; Str by
+value (XVC-C-13); json.json_* qualified; bodies as BYTES; copy nested
+map/vec data into locals before iterating (XVC-C-18); C-19/C-20 fixed;
+src/ modules import `xiom.vector.primitives`, NEVER `xiom.vectors`; run
+`scripts/libcheck.ps1` / `.sh` before a carve/wrap; the SBOM gate scans the
+literal token "unsafe" in comments too; suite x2 + WSL spot before any
+wrap; one verified slice at a time; signed commits; keep edits scoped (a
+backstop session may share the tree); check free memory before trusting
+reds; bench loops hard-capped; **cap every app/probe run at 8 GB
+(`lib.ps1`/`run-capped`; WSL `ulimit -v`) and never launch the app bare;
+compiler builds are watchdog + kill-on-close only (XVC-C-21), except the
+explicit 16 GB 1531 test**; toolchain/package homes are lane-local.
+```
+
+
+## 29. PASTE PROMPT for the next XVECTOR session (refresh 2026-11-02 17:30Z; supersedes 28)
+
+```text
+XIOM XVECTOR -- fresh-context continuation (v0.65.5 ACCEPTED; G-4 complete;
+G-3 next).
+
+STATE
+- E:\xiom-projects\xiom-xvector; branch main; HEAD after the v0.65.5
+  acceptance docs + this docs-only handoff; clean tree; check
+  `git rev-list --count origin/main..HEAD`; tag v1.0.0-rc.1.
+- Production pins: **compiler v0.65.5** (win archive `86a253a5...`,
+  linux `cae74441...`) + **stdlib-v0.65.5** (tag `88f3c12`, asset
+  `0ed34f95...`) on Windows and WSL. Rollback: v0.65.4 (`407c92d`).
+- v0.65.2 rejected/superseded; v0.64.9 withdrawn.
+
+ACCEPTANCE (96th pass)
+- Published assets verified; **Windows full battery ALL GATES GREEN** and
+  **WSL full battery ALL GATES GREEN**: suite 177/177 x2, libcheck 49/49,
+  SBOM 49/0, 58 probes x2, bench + kill matrix.
+- Targeted: C-23 repro x2, WAL x2, packed-Vec gate, 1615/1243 PASS,
+  C-22 `second ok m=8`, 1640/1702 + L-6 x2, 1531 16 GB Job x2,
+  C-15/C-20 green.
+- The first Windows run had two transient compiler build exits (-1) on
+  `probe_wal_file` and `probe_http_service`; both probes passed x2 in
+  isolation and the full rerun was ALL GATES GREEN. No functional failure
+  reproduced; a compiler-stability follow-up only if it recurs.
+- v0.65.5 release-check xvector rows filled; acceptance item
+  `REL-20261102-1716-xvector`.
+
+NEXT (ordered)
+1) G-3 read snapshots (design-gated: runtime Send/Sync + snapshot handle
+   + mutex-bottleneck data); then scale tuning.
+2) Top-tier parity M0: clone/pin Qdrant/Milvus/Weaviate/pgvector/Vespa and
+   freeze `X_pkg`/`X_srv` in `docs/TOP-TIER-PARITY-MATRIX.md`.
+3) P4 IVF/PQ nested-codebook re-run (C-22 fixed); P5 stdlib mmap; split
+   resharding/rebalance; optional UI editor.
+4) Release/owner gates (rc.1 greenlight, ann-swap greenlight).
+
+DO FIRST
+1) Bus: fetch/merge xiom-relays; `python tools/relay.py view --lane
+   xvector`; check for a v0.65.6 release and any new xvector items.
+2) Verify compiler v0.65.5 + stdlib-v0.65.5 pins on both platforms; do not
+   re-adopt v0.65.2/v0.65.3/v0.65.4 as current.
 3) Re-run suite x2 + libcheck + `probe_concurrency` x2 + `probe_wal_file`
    x2 before editing; WSL with `XVECTOR_BUILD_TIMEOUT=600`.
 
