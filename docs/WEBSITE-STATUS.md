@@ -13,7 +13,8 @@ the internal-only sections into public pages.
 and evidence), [`RELEASE-NOTES-v1.0.0-rc.1.md`](RELEASE-NOTES-v1.0.0-rc.1.md)
 (what the candidate contains), [`OPERATIONS.md`](OPERATIONS.md) (deployment and
 limits), [`PRODUCT-LAYERS.md`](PRODUCT-LAYERS.md) (mote/lattice naming),
-[`SESSION.md`](../SESSION.md) section 25 (latest engineering pass).
+[`ROADMAP-WEBSITE.md`](ROADMAP-WEBSITE.md) (the public phase narrative to
+Tier-X), [`SESSION.md`](../SESSION.md) section 28 (latest engineering pass).
 
 ---
 
