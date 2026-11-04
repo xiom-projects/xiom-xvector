@@ -14,6 +14,13 @@ assets verified (win `86a253a5...`, linux `cae74441...`, stdlib
 `88f3c12` / `0ed34f95...`); C-23/WAL and SIGPIPE remain fixed; 1615/1243,
 C-22, 1531, 1640/1702, L-6 and the C-23 repro green; Windows and WSL full
 58-probe batteries ALL GATES GREEN. v0.65.4 is rollback; see section 29).
+**v0.65.6 attempt (2026-11-04):** targeted acceptance GREEN, but the
+published archive is **not accepted**: Windows full battery hit intermittent
+silent compiler exit `-1` on random builds (retries green), the WSL battery
+was killed by a VM restart at 45/58, and `stdlib-v0.65.6` has no GitHub
+release asset. Production pin stays **v0.65.5 + stdlib-v0.65.5**; details in
+`REL-20261104-1829-xvector`.
+
 **History rewrite (2026-10-31):** the xvector history was rewritten to
 replace author/committer/sign-off `lefteris@hugintech.com` with
 `lefterisnotas@gmail.com`; all commit hashes changed. Hashes in sections

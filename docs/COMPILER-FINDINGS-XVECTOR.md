@@ -209,6 +209,13 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   C-16/C-17 filings) is bus-routed (`REL-20261015-2142-xvector`,
   `REL-20261015-2216-xvector`, and the closed items). C-01/C-02/C-04 stay
   as deliberate lane choices.
+- Archive status (2026-11-04, **v0.65.6 ATTEMPTED / BLOCKED**): published
+  Windows `a52b8cf3...`, Linux `a8fc6668...`, bundled stdlib 0.65.6;
+  targeted acceptance GREEN, but the Windows full battery hit intermittent
+  **compiler exit -1** on random builds (libcheck modules,
+  `probe_manifest_file`, `probe_http_service`; immediate retries green), the
+  WSL battery was killed by a VM restart at 45/58, and stdlib-v0.65.6 has no
+  release asset. Not accepted; pin stays v0.65.5 (`REL-20261104-1829-xvector`).
 - Archive status (2026-11-02, **v0.65.5 ACCEPTED**): published Windows
   `86a253a5...`, Linux `cae74441...`, stdlib-v0.65.5 `88f3c12`
   (asset `0ed34f95...`); C-23/WAL and SIGPIPE remain fixed; 1615/1243,

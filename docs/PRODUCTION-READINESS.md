@@ -1475,6 +1475,13 @@ extraction with the packages lane.
   x2 are green. **Windows AND WSL full 58-probe batteries ALL GATES
   GREEN**; no xvector blocker. No score change (toolchain acceptance).
 
+- **2026-11-04 (v0.65.6 attempted, blocked):** targeted acceptance GREEN on
+  the published compiler archive + bundled stdlib 0.65.6, but Windows full
+  battery hit intermittent silent compiler exits `-1` on random builds
+  (retries green), WSL was killed by a VM restart at 45/58, and
+  stdlib-v0.65.6 has no GitHub release asset. **Not accepted**; production
+  pin stays v0.65.5 + stdlib-v0.65.5. No score change.
+
 ## Update rule
 
 Recompute at every wrap: adjust phase scores, recompute the weighted overall,
