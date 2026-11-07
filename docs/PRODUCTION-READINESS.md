@@ -10,17 +10,18 @@ the missing work. **Programme:** `docs/PRODUCTION-PLAN.md` (v1.0 milestones
 M-G/M-D/M-Q/M-S/M-O/M-P/M-R + slice backlog) and
 `docs/requirements/production-v1.md`.
 
-- **As of:** 2026-11-02, 96th pass (**v0.65.5 production accepted**).
-  Production pins are **compiler v0.65.5** (Windows archive sha
-  `86a253a5...`, Linux `cae74441...`) + **stdlib-v0.65.5** (tag commit
-  `88f3c12`; release asset sha `0ed34f95...`) on both platforms, with
-  v0.65.4 / `407c92d` kept as the rollback. **Full batteries are green on
+- **As of:** 2026-11-07, 97th pass (**v0.65.7 production accepted**).
+  Production pins are **compiler v0.65.7** (Windows archive sha
+  `6db7c15d...`, Linux `eabc06f6...`) + **stdlib tag `4ec2055`**
+  (stdlib-v0.65.7; release asset still pending) on both platforms, with
+  v0.65.5 / `88f3c12` kept as the rollback. **Full batteries are green on
   BOTH platforms**: suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes
   x2, bench + kill matrix. Targeted acceptance: **1615/1243 PASS**
   (`match_n=42`), **XVC-C-22** `second ok m=8`, **1640/1702 + L-6** x2,
   **1531 16 GB Job Object build x2**, and the **XVC-C-23 repro x2**.
-  **SIGPIPE-on-disconnect remains fixed and verified**. v0.65.4 is
-  rollback; v0.65.2 is rejected/superseded.
+  **SIGPIPE-on-disconnect remains fixed**; T001 required the
+  `probe_sq_sealed` diagnostic fix (`ddb9fe6`). v0.65.5 is rollback;
+  v0.65.2 is rejected/superseded.
 - **2026-10-27: v0.65.2 REJECTED -- lane restored to v0.65.1.** The
   named `Struct{..., Vec}` push reclaim regression corrupts WAL
   load/recovery (`docs/repro/xv-vec-struct-push/`: v0.65.2 `bad=23..32`
@@ -1481,6 +1482,15 @@ extraction with the packages lane.
   (retries green), WSL was killed by a VM restart at 45/58, and
   stdlib-v0.65.6 has no GitHub release asset. **Not accepted**; production
   pin stays v0.65.5 + stdlib-v0.65.5. No score change.
+
+- **2026-11-07 (v0.65.7 accepted, 97th pass):** published Windows
+  (`6db7c15d...`) and Linux (`eabc06f6...`) archives and stdlib tag
+  `4ec2055` (package 0.65.7; release asset pending) were verified; pins
+  moved on both platforms (v0.65.5 as rollback). Full Windows + WSL
+  58-probe batteries are ALL GATES GREEN; targeted acceptance and C-23
+  repro are green. T001 required the `probe_sq_sealed` diagnostic fix
+  (`ddb9fe6`); no silent compiler `-1` recurred on the clean host. No
+  score change (toolchain acceptance).
 
 ## Update rule
 

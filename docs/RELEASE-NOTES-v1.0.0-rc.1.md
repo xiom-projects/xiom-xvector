@@ -172,6 +172,11 @@ registry package) and **xvector-lattice** (served daemon + stateless router
   (Win `86a253a5...`, Linux `cae74441...`, stdlib `88f3c12` /
   `0ed34f95...`); C-23/WAL and SIGPIPE remain fixed, targeted acceptance
   is green, and both full batteries are green. v0.65.4 is the rollback.
+- **2026-11-07:** **v0.65.7 accepted** -- compiler v0.65.7 + stdlib tag
+  `4ec2055` (Win `6db7c15d...`, Linux `eabc06f6...`; stdlib release asset
+  pending); C-23/WAL and SIGPIPE remain fixed, the T001 probe compatibility
+  fix is in, targeted acceptance is green, and both full batteries are
+  green. v0.65.5 is the rollback; v0.65.6 is blocked/superseded.
 
 - **No TLS and no encryption at rest.** TLS/proxying is deployment-side;
   there is no built-in encryption for WAL/manifest/segments.

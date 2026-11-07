@@ -10,16 +10,17 @@ repository stays private; nothing below happens until the owner greenlights.
 
 - **Candidate:** `v1.0.0-rc.1` (annotated tag, local, no push). `VERSION` =
   `1.0.0-rc.1`. HEAD and pins are recorded in `SESSION.md`.
-- **Batteries (at the accepted pin, v0.65.5 + stdlib-v0.65.5):** Windows
+- **Batteries (at the accepted pin, v0.65.7 + stdlib `4ec2055`):** Windows
   **and WSL** full batteries ALL GATES GREEN -- suite 177/177 x2, libcheck
   49/49, SBOM/unsafe gate (49 modules, 0 unsafe), 58 probes x2, bench smoke
   + kill matrix. Targeted acceptance: 1615/1243 PASS, XVC-C-22
   `second ok m=8`, 1640/1702 + L-6 x2, 1531 16 GB Job build x2, XVC-C-23
   repro x2, and `probe_concurrency` x2.
-- **v0.65.5 accepted (2026-11-02):** published Windows (`86a253a5...`),
-  Linux (`cae74441...`) and stdlib-v0.65.5 (`88f3c12`, asset
-  `0ed34f95...`) assets verified; C-23/WAL and SIGPIPE remain fixed.
-  **v0.65.4 is the rollback**; v0.65.2 was rejected and is superseded.
+- **v0.65.7 accepted (2026-11-07):** published Windows (`6db7c15d...`)
+  and Linux (`eabc06f6...`) assets verified; stdlib tag `4ec2055`
+  (release asset pending); C-23/WAL and SIGPIPE remain fixed; T001
+  required the `probe_sq_sealed` diagnostic fix (`ddb9fe6`). **v0.65.5 is
+  the rollback**; v0.65.6 was blocked and is superseded.
 - **Station UI:** read-only web admin at `/ui` (sampled active-store
   scatter + point inspector + search hit highlighting; `probe_ui`); the
   editor/three.js upgrade is a later slice (`docs/UI.md`).
@@ -44,8 +45,8 @@ repository stays private; nothing below happens until the owner greenlights.
   Weaviate/pgvector/Vespa clones pending) before any parity percentage is
   quoted.
 - **Security:** `docs/SECURITY.md` + `docs/sbom-v1.0.0-rc.1.json`
-  (49 modules at the accepted pin, `unsafe` = 0; current compiler v0.65.5,
-  stdlib-v0.65.5).
+  (49 modules at the accepted pin, `unsafe` = 0; current compiler v0.65.7,
+  stdlib `4ec2055`).
 - **Benchmark:** `docs/BENCHMARKS.md` (baseline + protocol) with kernel
   fidelity pinned by `probe_reference_oracle`.
 
@@ -94,7 +95,7 @@ from the GitHub release set below.
 | stdlib `xiom.net` socket layer | CLOSED for the lane -- `xvectord` ships on it (sequential accept; 2026-10-11) | TLS/proxy deployment (ops-side) |
 | stdlib `mmap` | pending (`mmap_anonymous` still an Err stub at `cd281b7`) | P5 memory-mapped reads |
 | packages adoptions | `xiom.wal` + `xiom.metrics` + `xiom.rate` + `xiom.http` (status subset) + `xiom.vectors` all wired + gated; **`xiom.vectors` internals swap EXECUTED** (2026-10-10); **`xiom.ann` 0.2.0 live + verified** | the `xiom.ann` swap awaits owner greenlight (`REL-20261011-1308-xvector`) |
-| compiler archive | **v0.65.5 accepted 2026-11-02 -- current pin on BOTH platforms** (win archive sha `86a253a5...`, linux `cae74441...`; stdlib-v0.65.5 tag `88f3c12`, asset `0ed34f95...`; v0.65.4 / `407c92d` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, C-23, C-24, 1640/1702, L-6 verified**; G-4 complete; **P4 unblocked**. v0.65.2 rejected/superseded; SIGPIPE fixed | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
+| compiler archive | **v0.65.7 accepted 2026-11-07 -- current pin on BOTH platforms** (win archive sha `6db7c15d...`, linux `eabc06f6...`; stdlib tag `4ec2055`; v0.65.5 / `88f3c12` kept as rollback); **full Windows AND WSL batteries ALL GATES GREEN** (suite 177/177 x2, libcheck 49/49, SBOM 49/0, 58 probes x2, bench, kill matrix); **1615/1243, C-21/1531, C-22, C-23, C-24, 1640/1702, L-6 verified**; T001 probe fix `ddb9fe6`; G-4 complete; **P4 unblocked**. v0.65.6 blocked/superseded; SIGPIPE fixed | keep the latest-toolchain protocol: re-run repros -> suite -> probes -> bench at each archive |
 
 ## 4. Evidence index
 

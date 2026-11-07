@@ -27,7 +27,7 @@ in one engine and one on-disk format.
 
 **Current project status:** `v1.0.0-rc.1` (release candidate, private repository;
 public release is owner-gated), internal readiness **91 %**, accepted toolchain
-**compiler v0.65.5 + stdlib-v0.65.5**.
+**compiler v0.65.7 + stdlib tag `4ec2055`**.
 
 Two shapes of the same engine:
 
@@ -46,17 +46,17 @@ deploy served, no migration.
 | Item | Current value | Notes |
 |---|---|---|
 | Project version | **`v1.0.0-rc.1`** | Local candidate tag `v1.0.0-rc.1` (internal; omit the hash from public copy); repository is private |
-| Accepted compiler (xvector) | **v0.65.5** | Released 2026-11-02; published assets verified |
-| Standard library | **stdlib-v0.65.5** | Tag commit `88f3c12`; asset sha `0ed34f95...` |
-| Upstream latest compiler | **v0.65.5** | Accepted by xvector; v0.65.4 is rollback, v0.65.2 rejected, v0.64.9 withdrawn |
-| Rollback pins | v0.65.4 + stdlib `407c92d` | Kept for rollback; do not advertise as latest |
+| Accepted compiler (xvector) | **v0.65.7** | Released 2026-11-07; published assets verified |
+| Standard library | **stdlib tag `4ec2055`** | stdlib-v0.65.7; release asset pending |
+| Upstream latest compiler | **v0.65.7** | Accepted by xvector; v0.65.5 is rollback, v0.65.6 blocked, v0.64.9 withdrawn |
+| Rollback pins | v0.65.5 + stdlib `88f3c12` | Kept for rollback; do not advertise as latest |
 | Internal readiness | **91 %** (weighted) | "Release-grade"; not "100 % production" |
 | Verified platforms | **Windows x64 + Linux x64** | Full batteries on both; WSL is the Linux test host |
 | Release ownership | mote = registry package; lattice = ops-owned release set | xvector GitHub release is owner-gated while the repo is private |
 
 **Do not confuse the two version lines on the site:** `v1.0.0-rc.1` is the
-xiom-vector project. `v0.65.5` is the XIOM compiler/toolchain that builds it.
-Do not label the xvector product "v0.65.5".
+xiom-vector project. `v0.65.7` is the XIOM compiler/toolchain that builds it.
+Do not label the xvector product "v0.65.7".
 
 ---
 
@@ -140,16 +140,16 @@ If it describes "current main", they are included.
 
 ## 5. Website changes to make now
 
-1. **Remove the v0.64.9 HELD banner.** v0.65.5 is the accepted production
-   toolchain (released 2026-11-02). v0.64.9 stays withdrawn; v0.65.0,
-   v0.65.2 and v0.65.3 are superseded/rollback.
+1. **Remove the v0.64.9 HELD banner.** v0.65.7 is the accepted production
+   toolchain (released 2026-11-07). v0.64.9 stays withdrawn; v0.65.0,
+   v0.65.2, v0.65.3 and v0.65.6 are superseded/blocked.
 2. **Update install pins** on download/install pages:
-   - compiler: `--version v0.65.5`
-   - stdlib: `stdlib-v0.65.5`
-   - rollback: `v0.65.4` + stdlib `407c92d`
+   - compiler: `--version v0.65.7`
+   - stdlib: `stdlib-v0.65.7`
+   - rollback: `v0.65.5` + stdlib `88f3c12`
    - Do not present v0.64.9, v0.65.0 or v0.65.2 as current.
 3. **Keep the product version distinct:** xvector is `v1.0.0-rc.1`; the
-   toolchain is v0.65.5.
+   toolchain is v0.65.7.
 4. **Refresh the feature matrix** to include: L-6 intra-collection
    scatter-gather (post-rc.1), router/replicas/move-drain, auth scopes + rate
    limiting, `/metrics` + ordered log ring, read-only `/ui`.
@@ -157,7 +157,7 @@ If it describes "current main", they are included.
    readiness", not "full production". Put TLS/encryption-at-rest and
    read-snapshot limitations in the operations/security notes.
 6. **Link to the current public artifacts only after owner greenlight:**
-   release notes, docs, and the v0.65.5 toolchain release. The xvector GitHub
+   release notes, docs, and the v0.65.7 toolchain release. The xvector GitHub
    release remains owner-gated.
 7. **Latest stable label:** v0.65.5 is the accepted production toolchain
    (published 2026-11-02). Keep the xvector install pin on **v0.65.5 +
@@ -184,7 +184,7 @@ If it describes "current main", they are included.
 
 ### Status badge (only if the owner wants the readiness metric public)
 
-> `v1.0.0-rc.1` · release-grade · 91 % internal readiness
+> `v1.0.0-rc.1` Â· release-grade Â· 91 % internal readiness
 
 ### Three feature bullets
 
@@ -263,3 +263,7 @@ Refresh and re-relay when any of these happen:
   Linux `cae74441...`, stdlib `88f3c12` / `0ed34f95...`). Full Windows +
   WSL batteries green; C-23/WAL and SIGPIPE remain fixed. v0.65.4 is
   rollback-only.
+- **2026-11-07** -- **v0.65.7 accepted and pinned** (Win `6db7c15d...`,
+  Linux `eabc06f6...`, stdlib tag `4ec2055`; release asset pending).
+  Full Windows + WSL batteries green; T001 probe compatibility fixed;
+  v0.65.5 is rollback-only; v0.65.6 is blocked/superseded.

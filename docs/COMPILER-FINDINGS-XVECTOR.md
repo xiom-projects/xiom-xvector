@@ -30,13 +30,13 @@
 Findings collected while building the xiom-xvector vector database with the
 latest toolchain (owner policy: track latest; no fixed pin).
 
-Instrument: **XIOM Compiler v0.65.5** (current accepted pin; released
-2026-11-02, annotated tag `v0.65.5` on `05e575db`; installed lane-local
-on Windows (`out\toolchain`) and WSL (`~/.xvector-toolchain`); Windows
-archive sha `86a253a5...`, Linux `cae74441...`),
-Windows + Linux/WSL; **stdlib-v0.65.5** (tag commit `88f3c12`; full tag
-archive at `out\stdlib-pin` / `~/.xvector-stdlib-pin`; release asset sha
-`0ed34f95...`); registry packages consumed:
+Instrument: **XIOM Compiler v0.65.7** (current accepted pin; released
+2026-11-07, tag `v0.65.7` on `9b535146`; installed lane-local on Windows
+(`out\toolchain`) and WSL (`~/.xvector-toolchain`); Windows archive sha
+`6db7c15d...`, Linux `eabc06f6...`),
+Windows + Linux/WSL; **stdlib-v0.65.7** (tag commit `4ec2055`; full tag
+archive at `out\stdlib-pin` / `~/.xvector-stdlib-pin`; release asset
+pending); registry packages consumed:
 `xiom.wal` 0.1.0 + `xiom.metrics` 0.2.0 + `xiom.rate` 0.2.0 from the
 lane-local package home (`docs/XIOM-WAL-ADOPTION.md` /
 `docs/XIOM-METRICS-ADOPTION.md` / `docs/XIOM-RATE-ADOPTION.md`).
@@ -209,6 +209,11 @@ byte-wise file parsing + `file_size` guard (C-11/C-12, defense in depth).
   C-16/C-17 filings) is bus-routed (`REL-20261015-2142-xvector`,
   `REL-20261015-2216-xvector`, and the closed items). C-01/C-02/C-04 stay
   as deliberate lane choices.
+- Archive status (2026-11-07, **v0.65.7 ACCEPTED**): published Windows
+  `6db7c15d...`, Linux `eabc06f6...`, stdlib tag `4ec2055`; full Windows +
+  WSL batteries ALL GATES GREEN; T001 probe diagnostic fix `ddb9fe6`; no
+  silent compiler `-1` recurred on the clean host; stdlib release asset
+  pending. v0.65.5 is the rollback.
 - Archive status (2026-11-04, **v0.65.6 ATTEMPTED / BLOCKED**): published
   Windows `a52b8cf3...`, Linux `a8fc6668...`, bundled stdlib 0.65.6;
   targeted acceptance GREEN, but the Windows full battery hit intermittent

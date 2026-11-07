@@ -456,15 +456,16 @@ timeout) plus the watchdog. **XVC-C-21 is verified fixed on v0.65.1**
 green x2), so the explicit 16 GB cap is safe; the lane keeps the
 conservative default for routine builds.
 
-Shared-stdlib note: the lane pin is **stdlib-v0.65.5** (tag commit
-`88f3c12`; asset sha `0ed34f95...`; `out\stdlib-pin` on Windows,
-`~/.xvector-stdlib-pin` on WSL). The v0.65.4 pin (`407c92d`) and
+Shared-stdlib note: the lane pin is **stdlib tag `4ec2055`**
+(stdlib-v0.65.7; release asset still pending; `out\stdlib-pin` on Windows,
+`~/.xvector-stdlib-pin` on WSL). The v0.65.5 pin (`88f3c12`) and
 `XVECTOR_STDLIB_BUNDLED=1` remain rollback/fallback options.
 
-**v0.65.5 is adopted (2026-11-02).** It keeps the v0.65.2 named
+**v0.65.7 is adopted (2026-11-07).** It keeps the v0.65.2 named
 `Struct{..., Vec}` push fix (XVC-C-23), the WAL recovery fix, and the
 Linux SIGPIPE-on-disconnect fix (XVC-C-24); both full batteries are green.
-v0.65.4 is the rollback; v0.65.2 and v0.64.9 are rejected/superseded.
+v0.65.5 is the rollback; v0.65.6 is blocked/superseded; v0.65.2 and
+v0.64.9 are rejected/superseded.
 
 Installer-refresh checks (2026-10-26): the v0.65.1 fleet refresh emptied
 the shared Windows package store (`%LOCALAPPDATA%\xiom\packages`); it was
