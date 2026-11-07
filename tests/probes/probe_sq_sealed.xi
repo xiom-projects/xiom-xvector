@@ -56,7 +56,7 @@ fn main() -> Int {
   var eng = engine_new();
   match engine_create_named(&mut eng, "sq", 8, DistanceMetric.Euclidean) {
     Ok(_) => {}
-    Err(e) => { io.println("  [FAIL] create: " + e.msg); return 2; }
+    Err(_) => { io.println("  [FAIL] create"); return 2; }
   }
 
   var state: Int = 12345;
@@ -72,7 +72,7 @@ fn main() -> Int {
     corpus.push(v);
     match engine_upsert(&mut eng, i + 1, v) {
       Ok(_) => {}
-      Err(e) => { io.println("  [FAIL] upsert " + int_to_str(i + 1) + ": " + e.msg); fails = fails + 1; }
+      Err(_) => { io.println("  [FAIL] upsert " + int_to_str(i + 1)); fails = fails + 1; }
     }
     i = i + 1;
   }
@@ -89,7 +89,7 @@ fn main() -> Int {
           j = j + 1;
         }
       }
-      Err(e) => { io.println("  [FAIL] pre-seal search: " + e.msg); fails = fails + 1; }
+      Err(_) => { io.println("  [FAIL] pre-seal search"); fails = fails + 1; }
     }
     qi = qi + 1;
   }
@@ -97,7 +97,7 @@ fn main() -> Int {
 
   match engine_roll_segment(&mut eng, pa) {
     Ok(_) => {}
-    Err(e) => { io.println("  [FAIL] roll: " + e.msg); return 2; }
+    Err(_) => { io.println("  [FAIL] roll"); return 2; }
   }
 
   var has_sq: Bool = false;
@@ -123,7 +123,7 @@ fn main() -> Int {
           j = j + 1;
         }
       }
-      Err(e) => { io.println("  [FAIL] post-seal search: " + e.msg); fails = fails + 1; }
+      Err(_) => { io.println("  [FAIL] post-seal search"); fails = fails + 1; }
     }
     qi = qi + 1;
   }
